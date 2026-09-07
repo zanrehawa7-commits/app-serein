@@ -1,4 +1,4 @@
-django>=5.O,<6.0
-gunicorn
-psycopg2-binary
-python-decouple
+Django>=5.0,<6.0
+gunicorn>=23.0
+psycopg2-binary>=2.9
+python-decouple>=3.8

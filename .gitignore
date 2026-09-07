@@ -1,5 +1,23 @@
+# Enveironnement variables
 .env
+
+# python
 __pycache__/
-*.pyc
-.venv/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Virtual environment
 venv/
+.venv/
+
+# Django
+db.sqlite3
+staticfiles/
+media/
+
+# IDE
+.vscode/
+
+# OS
+.DS_Store
