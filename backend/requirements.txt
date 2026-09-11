@@ -1,4 +1,21 @@
+# Frameworks
 Django>=5.0,<6.0
-gunicorn>=23.0
+djangorestframework>=3.15
+
+# Authentication  JWT
+djangorestframework-simplejwt>=5.3
+
+# Base de données
 psycopg2-binary>=2.9
+
+# CORS (pour permettre à un front séparé d'accéder à l'API)
+django-cors-headers>=4.3
+
+# Serveur WSGI en production
+gunicorn>=23.0
+
+# Variables d'environnement
 python-decouple>=3.8
+
+# Gestion des images
+Pillow>=10.3       
