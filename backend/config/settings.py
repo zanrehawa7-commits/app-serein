@@ -42,6 +42,7 @@ INSTALLED_APPS = [
     'corsheaders',
 
     # Applications locales du projet (à ajouter ici au fur et à mesure)
+    'accounts',
 ]
 
 # Middleware
@@ -108,6 +109,8 @@ AUTH_PASSWORD_VALIDATORS = [
 ]
 
 # AUTH_USER_MODEL = 'auth.User'
+AUTH_USER_MODEL = 'accounts.User'
+
 LOGIN_URL = '/login/'
 LOGIN_REDIRECT_URL = '/'
 LOGOUT_REDIRECT_URL = '/login/'
