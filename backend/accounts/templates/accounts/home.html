@@ -1,0 +1,22 @@
+{% extends 'base.html' %}
+
+{% block title %}Accueil{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-body">
+        <h2>Bienvenue, {{ user.get_full_name|default:user.email }} 👋</h2>
+
+        <p class="text-muted">
+            Vous êtes connecté(e) en tant que
+            <strong>{{ user.get_role_display }}</strong>.
+        </p>
+
+        <hr>
+
+        <p class="text-muted small mb-0">
+            Le tableau de bord sera affiché ici dans les prochains sprints.
+        </p>
+    </div>
+</div>
+{% endblock %}

@@ -111,6 +111,7 @@ AUTH_PASSWORD_VALIDATORS = [
 # AUTH_USER_MODEL = 'auth.User'
 AUTH_USER_MODEL = 'accounts.User'
 
+# Redirection après connexion et déconnexion
 LOGIN_URL = '/login/'
 LOGIN_REDIRECT_URL = '/'
 LOGOUT_REDIRECT_URL = '/login/'

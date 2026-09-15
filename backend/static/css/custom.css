@@ -1,0 +1,24 @@
+:root {
+    --primary: #1B4F72;
+    --secondary: #2E86C1;
+}
+
+body {
+    font-family: 'Segoe UI', Tahoma, sans-serif;
+    background-color: #f8f9fa;
+}
+
+.btn-primary {
+    background-color: var(--primary);
+    border-color: var(--primary);
+}
+
+.btn-primary:hover {
+    background-color: var(--secondary);
+    border-color: var(--secondary);
+}
+
+.card {
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
