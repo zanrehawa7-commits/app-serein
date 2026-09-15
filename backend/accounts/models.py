@@ -13,6 +13,7 @@ class User(AbstractUser):
     email = models.EmailField(unique=True, help_text="Adresse e-mail de l'utilisateur",)
     USERNAME_FIELD = 'email'
     REQUIRED_FIELDS = ['username', 'first_name', 'last_name']
+    membre = models.OneToOneField('referentials.Membre', on_delete=models.SET_NULL, null=True, blank=True, related_name='user_account', help_text="Obligatoire pour les maitres de stage",)
 
     class Meta:
         verbose_name = 'Utilisateur'
@@ -31,4 +32,16 @@ class User(AbstractUser):
 
     @property
     def is_intern(self):
-        return self.role == self.Role.INTERN    
+        return self.role == self.Role.INTERN
+    @property
+    def departement(self):
+        """Retourne le département associé à l'utilisateur, pour les maitres de stage."""
+        if self.membre:
+            return self.membre.departement
+        return None 
+
+    def clean(self):
+        """Valide la cohérence rôle - membre."""
+        from django.core.exceptions import ValidationError
+        if self.role == self.Role.SUPERVISOR and not self.membre:
+            raise ValidationError("Un utilisateur avec le rôle 'Maitre de stage' doit être associé à un membre d'un département.")   

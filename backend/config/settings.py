@@ -43,6 +43,7 @@ INSTALLED_APPS = [
 
     # Applications locales du projet (à ajouter ici au fur et à mesure)
     'accounts',
+    'referentials',
 ]
 
 # Middleware
