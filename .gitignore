@@ -6,18 +6,26 @@ __pycache__/
 *.py[cod]
 *.pyo
 *.pyd
+*.egg-info/
+dist/
+build/
 
 # Virtual environment
 venv/
 .venv/
 
 # Django
+*.log
 db.sqlite3
 staticfiles/
 media/
+
+# Docker
+.dockerignore
 
 # IDE
 .vscode/
 
 # OS
 .DS_Store
+Thumbs.db

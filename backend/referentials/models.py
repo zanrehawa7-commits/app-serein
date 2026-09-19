@@ -1,3 +1,4 @@
+from django.core.exceptions import  ValidationError
 from django.db import models
 
 
@@ -11,7 +12,6 @@ class Departement(models.Model):
         null=True,
         blank=True,
         related_name="departements_diriges",
-        help_text="Le responsable doit être un membre de ce département.",
     )
     description = models.TextField(blank=True)
     actif = models.BooleanField(default=True)
@@ -25,19 +25,26 @@ class Departement(models.Model):
     def __str__(self):
         return self.nom
 
+    @property
+    def nombre_membres(self):
+        return self.membres.count()
+
 
 class Membre(models.Model):
     """Membre d'un département."""
 
     nom = models.CharField(max_length=100)
     prenom = models.CharField(max_length=100)
-    email = models.EmailField(unique=True, blank=True, null=True)
+    email = models.EmailField(unique=True)
     departement = models.ForeignKey(
         Departement,
         on_delete=models.PROTECT,
         related_name="membres",
     )
-    actif = models.BooleanField(default=True)
+    actif = models.BooleanField(
+        default=False,
+        help_text="Actif = peut être désigné comme maître de stage",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -47,11 +54,12 @@ class Membre(models.Model):
         unique_together = [["nom", "prenom", "departement"]]
 
     def __str__(self):
-        return f"{self.prenom} {self.nom} — {self.departement.nom}"
+        return f"{self.prenom} {self.nom}"
 
     @property
-    def est_responsable(self):
-        return self.departements_diriges.exists()
+    def a_un_compte(self):
+        """Vrai si ce membre possède un compte utilisateur."""
+        return hasattr(self, "user_account")
 
 
 class Etablissement(models.Model):
@@ -81,14 +89,14 @@ class Etablissement(models.Model):
 
 
 class TypeStage(models.Model):
-    """Type de stage."""
+    """Type de stage (durée, rémunération, description)."""
 
     nom = models.CharField(max_length=100, unique=True)
     duree_min_mois = models.PositiveIntegerField(
-        help_text="Durée minimale en mois"
+        help_text="Durée minimale en mois",
     )
     duree_max_mois = models.PositiveIntegerField(
-        help_text="Durée maximale en mois"
+        help_text="Durée maximale en mois",
     )
     remunere = models.BooleanField(
         default=False,
@@ -104,6 +112,15 @@ class TypeStage(models.Model):
 
     def __str__(self):
         return self.nom
+    def clean(self):
+        if self.duree_min_mois and self.duree_max_mois:
+            if self.duree_min_mois > self.duree_max_mois:
+                raise ValidationError({
+                    'duree_min_mois': (
+                        "La durée minimale ne peut pas dépasser " 
+                        "La durée maximale."
+                    )
+                })
 
 
 class CanalDiffusion(models.Model):
@@ -117,11 +134,7 @@ class CanalDiffusion(models.Model):
 
     type = models.CharField(max_length=20, choices=Type.choices)
     nom = models.CharField(max_length=100)
-    compte = models.CharField(
-        max_length=150,
-        blank=True,
-        help_text="Nom du compte ou de la page",
-    )
+    compte = models.CharField(max_length=150, blank=True)
     url = models.URLField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 

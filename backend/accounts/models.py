@@ -1,47 +1,77 @@
-from django.contrib.auth.models import AbstractUser
+from django.contrib.auth.models import AbstractUser, Permission
 from django.db import models
 
-# Create your models here.
-class User(AbstractUser):
-    """
-    Modele utilisateur personnalisé pour l'application : StageTrack - Serein-ge. 3 roles internes : Administrateur, Maitre de stage, Stagiaire."""
-    class Role(models.TextChoices):
-        ADMIN = 'ADMIN', 'Administrateur'
-        SUPERVISOR = 'SUPERVISOR', 'Maitre de stage'
-        INTERN = 'INTERN', 'Stagiaire'
-    role = models.CharField(max_length=20, choices=Role.choices, default=Role.INTERN, help_text="Rôle de l'utilisateur dans l'application",)
-    email = models.EmailField(unique=True, help_text="Adresse e-mail de l'utilisateur",)
-    USERNAME_FIELD = 'email'
-    REQUIRED_FIELDS = ['username', 'first_name', 'last_name']
-    membre = models.OneToOneField('referentials.Membre', on_delete=models.SET_NULL, null=True, blank=True, related_name='user_account', help_text="Obligatoire pour les maitres de stage",)
+
+class Role(models.Model):
+    """Rôle dynamique attribué aux utilisateurs."""
+
+    code = models.SlugField(max_length=50, unique=True)
+    nom = models.CharField(max_length=100)
+    description = models.TextField(blank=True)
+    permissions = models.ManyToManyField(
+        Permission,
+        blank=True,
+        related_name="roles",
+    )
+    actif = models.BooleanField(default=True)
+    systeme = models.BooleanField(
+        default=False,
+        help_text="Un rôle système ne peut pas être supprimé.",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        verbose_name = 'Utilisateur'
-        verbose_name_plural = 'Utilisateurs'
-        ordering = ['last_name', 'first_name']
+        verbose_name = "Rôle"
+        verbose_name_plural = "Rôles"
+        ordering = ["nom"]
+
     def __str__(self):
-        return f"{self.get_full_name() or self.email} ({self.get_role_display()})"
+        return self.nom
+
+
+class User(AbstractUser):
+    email = models.EmailField(unique=True)
+
+    role = models.ForeignKey(
+        Role,
+        on_delete=models.PROTECT,
+        related_name="utilisateurs",
+        null=True,
+        blank=True,
+    )
+
+    membre = models.OneToOneField(
+        "referentials.Membre",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="user_account",
+        help_text="Obligatoire pour les maîtres de stage",
+    )
+
+    USERNAME_FIELD = "email"
+    REQUIRED_FIELDS = ["username", "first_name", "last_name"]
+
+    class Meta:
+        verbose_name = "Utilisateur"
+        verbose_name_plural = "Utilisateurs"
+        ordering = ["last_name", "first_name"]
+
+    def __str__(self):
+        return f"{self.get_full_name() or self.email}"
 
     @property
-    def is_admin(self):
-        return self.role == self.Role.ADMIN or self.is_superuser
+    def is_admin_role(self):
+        return self.role and self.role.code == "admin"
 
     @property
     def is_supervisor(self):
-        return self.role == self.Role.SUPERVISOR
+        return self.role and self.role.code == "maitre_stage"
 
     @property
     def is_intern(self):
-        return self.role == self.Role.INTERN
+        return self.role and self.role.code == "stagiaire"
+
     @property
     def departement(self):
-        """Retourne le département associé à l'utilisateur, pour les maitres de stage."""
-        if self.membre:
-            return self.membre.departement
-        return None 
-
-    def clean(self):
-        """Valide la cohérence rôle - membre."""
-        from django.core.exceptions import ValidationError
-        if self.role == self.Role.SUPERVISOR and not self.membre:
-            raise ValidationError("Un utilisateur avec le rôle 'Maitre de stage' doit être associé à un membre d'un département.")   
+        return self.membre.departement if self.membre else None
