@@ -6,7 +6,7 @@ djangorestframework>=3.15
 djangorestframework-simplejwt>=5.3
 
 # Base de données
-psycopg2-binary>=2.9
+psycopg[binary]>=3.0
 
 # CORS (pour permettre à un front séparé d'accéder à l'API)
 django-cors-headers>=4.3
