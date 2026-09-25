@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}StageTrack{% endblock %} — Serein-GE</title>
+    <title>{% block title %}Stage_App{% endblock %} — Serein-GE</title>
 
     {% load static %}
     <link rel="stylesheet" href="{% static 'vendor/bootstrap/bootstrap.min.css' %}">
@@ -14,8 +14,8 @@
     {% if user.is_authenticated and request.path != '/login/' %}
     <nav class="navbar navbar-expand-lg navbar-dark" style="background-color: #1B4F72;">
         <div class="container-fluid">
-            <a class="navbar-brand" href="{% url 'accounts:home' %}">
-                <i class="bi bi-briefcase-fill"></i> StageTrack
+            <a class="navbar-brand" href="/">
+                <i class="bi bi-briefcase-fill"></i> Stage_App
             </a>
 
             <div class="ms-auto d-flex align-items-center text-white">
@@ -23,7 +23,7 @@
                     <i class="bi bi-person-circle"></i>
                     {{ user.get_full_name|default:user.email }}
                     <span class="badge bg-light text-dark ms-1">
-                        {% if user.role %}{{ user.role.nom }}{% else %}sans rôle{% endif %}
+                        {% if user.role %}{{ user.role }}{% else %}sans rôle{% endif %}
                     </span>
                 </span>
 
@@ -52,7 +52,7 @@
     </main>
 
     <footer class="text-center text-muted py-3 small">
-        StageTrack — Serein-GE
+        Stage_App — Serein-GE
     </footer>
 
     <script src="{% static 'vendor/bootstrap/bootstrap.bundle.min.js' %}"></script>
