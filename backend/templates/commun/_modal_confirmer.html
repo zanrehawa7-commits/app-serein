@@ -1,0 +1,41 @@
+<div class="modal fade" id="modalConfirmer" tabindex="-1" aria-labelledby="modalConfirmerLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header border-0 pb-0">
+                <h6 class="modal-title fw-semibold" id="modalConfirmerLabel">
+                    <i class="bi bi-exclamation-triangle-fill text-warning me-2"></i>Confirmer l'action
+                </h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p class="mb-1">Voulez-vous vraiment <strong id="modal-action-label">supprimer</strong> :</p>
+                <p class="fw-semibold mb-1" id="modal-nom">—</p>
+                <p class="text-muted small mb-0" id="modal-info"></p>
+            </div>
+            <div class="modal-footer border-0 pt-0">
+                <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Annuler</button>
+                <form id="modal-form" method="post" class="d-inline">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-sm" id="modal-btn-confirmer">Confirmer</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    var modalEl = document.getElementById('modalConfirmer');
+    if (!modalEl) return;
+    modalEl.addEventListener('show.bs.modal', function (e) {
+        var btn = e.relatedTarget;
+        document.getElementById('modal-nom').textContent = btn.dataset.nom || '—';
+        document.getElementById('modal-form').action = btn.dataset.url || '#';
+        document.getElementById('modal-action-label').textContent = btn.dataset.action || 'supprimer';
+        document.getElementById('modal-info').textContent = btn.dataset.info || '';
+        var btnConfirmer = document.getElementById('modal-btn-confirmer');
+        btnConfirmer.className = 'btn btn-sm ' + (btn.dataset.btnClass || 'btn-danger');
+        btnConfirmer.textContent = btn.dataset.btnLabel || 'Confirmer';
+    });
+});
+</script>

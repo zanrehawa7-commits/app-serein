@@ -3,6 +3,7 @@ from django.test import TestCase, Client, override_settings
 from django.urls import reverse
 
 from comptes.models import Utilisateur
+from comptes.forms import UtilisateurCreerForm
 from referentiels.models import Departement, Membre
 
 
@@ -171,3 +172,91 @@ class Page404Tests(TestCase):
         resp = self.client.get("/url-inexistante-xyz/")
         self.assertEqual(resp.status_code, 404)
         self.assertContains(resp, "introuvable", status_code=404)
+
+
+class UtilisateurF03Tests(TestCase):
+    """F03 : règles de création et de désactivation des utilisateurs."""
+
+    def setUp(self):
+        self.admin = _creer_utilisateur("admin@serein.bf", "pass1234!", is_superuser=True)
+        Group.objects.get_or_create(name="Responsable")
+        Group.objects.get_or_create(name="Administrateur")
+        Group.objects.get_or_create(name="Secrétaire")
+
+    def test_responsable_sans_membre_formulaire_invalide(self):
+        """Créer un Responsable sans membre lié est refusé (RG)."""
+        form = UtilisateurCreerForm(data={
+            "first_name": "Paul",
+            "last_name": "Martin",
+            "email": "paul@serein.bf",
+            "role": "Responsable",
+            "password1": "Test@1234",
+            "password2": "Test@1234",
+            "membre": "",
+        })
+        self.assertFalse(form.is_valid())
+        self.assertIn("membre", form.errors)
+
+    def test_admin_sans_groupe_peut_creer_utilisateur(self):
+        """Un superuser sans groupe peut accéder à la création d'utilisateurs."""
+        self.client.force_login(self.admin)
+        resp = self.client.get(reverse("comptes:utilisateur_creer"))
+        self.assertEqual(resp.status_code, 200)
+
+    def test_admin_ne_peut_pas_desactiver_son_propre_compte(self):
+        """Un administrateur ne peut pas désactiver son propre compte (RG33)."""
+        self.client.force_login(self.admin)
+        url = reverse("comptes:utilisateur_activer", kwargs={"pk": self.admin.pk})
+        self.client.post(url)
+        self.admin.refresh_from_db()
+        self.assertTrue(self.admin.is_active, "L'admin ne doit pas pouvoir se désactiver lui-même")
+
+
+class ChangementRoleTests(TestCase):
+    """Si un Responsable change de rôle, son lien membre est retiré."""
+
+    def setUp(self):
+        self.admin = _creer_utilisateur("admin@serein.bf", "pass1234!", is_superuser=True)
+        Group.objects.get_or_create(name="Administrateur")
+        Group.objects.get_or_create(name="Responsable")
+        Group.objects.get_or_create(name="Secrétaire")
+        dept = Departement.objects.create(nom="Dept Test")
+        self.membre = Membre.objects.create(
+            nom="Doe", prenom="John", departement=dept, actif=True
+        )
+        self.resp_user = _creer_utilisateur("resp@serein.bf", "pass1234!", "Responsable")
+        self.resp_user.membre = self.membre
+        self.resp_user.save()
+
+    def test_changement_responsable_vers_secretaire_retire_membre(self):
+        """Changer un Responsable en Secrétaire retire son lien vers le membre."""
+        self.client.force_login(self.admin)
+        url = reverse("comptes:utilisateur_modifier", kwargs={"pk": self.resp_user.pk})
+        resp = self.client.post(url, {
+            "first_name": self.resp_user.first_name,
+            "last_name": self.resp_user.last_name,
+            "email": self.resp_user.email,
+            "role": "Secrétaire",
+            "membre": "",
+            "is_active": True,
+        })
+        self.resp_user.refresh_from_db()
+        self.assertIsNone(
+            self.resp_user.membre,
+            "Le lien membre doit être retiré quand un Responsable change de rôle",
+        )
+
+    def test_changement_responsable_vers_admin_retire_membre(self):
+        """Changer un Responsable en Administrateur retire aussi son lien membre."""
+        self.client.force_login(self.admin)
+        url = reverse("comptes:utilisateur_modifier", kwargs={"pk": self.resp_user.pk})
+        self.client.post(url, {
+            "first_name": self.resp_user.first_name,
+            "last_name": self.resp_user.last_name,
+            "email": self.resp_user.email,
+            "role": "Administrateur",
+            "membre": "",
+            "is_active": True,
+        })
+        self.resp_user.refresh_from_db()
+        self.assertIsNone(self.resp_user.membre)
