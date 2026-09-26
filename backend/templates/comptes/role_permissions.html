@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+
+{% block title %}Permissions — {{ groupe.name }}{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center gap-3 mb-4 flex-wrap">
+    <a href="{% url 'comptes:roles_list' %}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left"></i></a>
+    <div>
+        <h5 class="mb-0 fw-semibold"><i class="bi bi-shield-lock me-2 text-primary"></i>Permissions — {{ groupe.name }}</h5>
+        <p class="text-muted small mb-0">Les permissions comptes de l'Administrateur sont verrouillées.</p>
+    </div>
+    <div class="ms-auto d-flex gap-2">
+        {% for role in roles %}
+        <a href="{% url 'comptes:permissions_role' role %}"
+           class="btn btn-sm {% if role == role_actif %}btn-primary{% else %}btn-outline-secondary{% endif %}">
+            {{ role }}
+        </a>
+        {% endfor %}
+    </div>
+</div>
+
+<form method="post">
+    {% csrf_token %}
+    {% for bloc in structure %}
+    <div class="card border-0 shadow-sm mb-3">
+        <div class="card-header bg-white fw-semibold py-2 border-bottom">
+            <i class="bi bi-grid me-2 text-primary"></i>{{ bloc.app_label }}
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-sm mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th class="ps-3" style="width:40%">Modèle</th>
+                            {% for action_code, action_label in actions_ordre %}
+                            <th class="text-center" style="width:15%">{{ action_label }}</th>
+                            {% endfor %}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for modele in bloc.modeles %}
+                        <tr>
+                            <td class="ps-3 small fw-semibold">{{ modele.label }}</td>
+                            {% for action in modele.actions %}
+                            <td class="text-center">
+                                {% if action.exists %}
+                                    {% if action.disabled %}
+                                    <input type="checkbox" class="form-check-input" checked disabled title="Verrouillé pour l'Administrateur">
+                                    <input type="hidden" name="permissions" value="{{ action.perm.pk }}">
+                                    {% else %}
+                                    <input type="checkbox" class="form-check-input" name="permissions"
+                                           value="{{ action.perm.pk }}"
+                                           {% if action.checked %}checked{% endif %}>
+                                    {% endif %}
+                                {% endif %}
+                            </td>
+                            {% endfor %}
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+
+    <div class="d-flex gap-2 mt-3">
+        <button type="submit" class="btn btn-primary">
+            <i class="bi bi-check-lg me-1"></i>Enregistrer les permissions
+        </button>
+        <a href="{% url 'comptes:roles_list' %}" class="btn btn-outline-secondary">Annuler</a>
+    </div>
+</form>
+{% endblock %}
