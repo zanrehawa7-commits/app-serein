@@ -4,57 +4,125 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Stage_App{% endblock %} — Serein-GE</title>
-
     {% load static %}
     <link rel="stylesheet" href="{% static 'vendor/bootstrap/bootstrap.min.css' %}">
     <link rel="stylesheet" href="{% static 'vendor/bootstrap-icons/bootstrap-icons.css' %}">
     <link rel="stylesheet" href="{% static 'css/custom.css' %}">
 </head>
-<body>
-    {% if user.is_authenticated and request.path != '/login/' %}
-    <nav class="navbar navbar-expand-lg navbar-dark" style="background-color: #1B4F72;">
-        <div class="container-fluid">
-            <a class="navbar-brand" href="/">
-                <i class="bi bi-briefcase-fill"></i> Stage_App
-            </a>
+<body class="bg-light">
 
-            <div class="ms-auto d-flex align-items-center text-white">
-                <span class="me-3">
-                    <i class="bi bi-person-circle"></i>
-                    {{ user.get_full_name|default:user.email }}
-                    <span class="badge bg-light text-dark ms-1">
-                        {% if user.role %}{{ user.role }}{% else %}sans rôle{% endif %}
-                    </span>
+<nav class="navbar navbar-expand-lg navbar-dark sticky-top" style="background-color:#1B4F72;">
+    <div class="container-fluid px-3">
+        <a class="navbar-brand fw-bold" href="{% url 'comptes:tableau_de_bord' %}">
+            <i class="bi bi-briefcase-fill me-1"></i>Gestion de Stage
+        </a>
+        <div class="ms-auto d-flex align-items-center gap-3">
+            <!-- Notifications -->
+            <a href="{% url 'comptes:en_developpement' %}" class="text-white text-decoration-none position-relative" title="Notifications">
+                <i class="bi bi-bell fs-5"></i>
+                {% if nb_notifications > 0 %}
+                <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger" style="font-size:.65rem;">
+                    {{ nb_notifications }}
                 </span>
-
-                <form method="post" action="{% url 'logout' %}" class="d-inline">
-                    {% csrf_token %}
-                    <button type="submit" class="btn btn-outline-light btn-sm">
-                        <i class="bi bi-box-arrow-right"></i> Déconnexion
-                    </button>
-                </form>
-            </div>
+                {% endif %}
+            </a>
+            <!-- Utilisateur + rôle -->
+            <span class="text-white small">
+                <i class="bi bi-person-circle me-1"></i>
+                {{ request.user.get_full_name|default:request.user.email }}
+                <span class="badge bg-light text-dark ms-1">{{ role_utilisateur|default:"—" }}</span>
+            </span>
+            <!-- Changer mot de passe -->
+            <a href="{% url 'comptes:password_change' %}" class="text-white text-decoration-none small" title="Changer le mot de passe">
+                <i class="bi bi-key"></i>
+            </a>
+            <!-- Déconnexion -->
+            <form method="post" action="{% url 'comptes:deconnexion' %}" class="d-inline">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-outline-light btn-sm py-0">
+                    <i class="bi bi-box-arrow-right me-1"></i>Déconnexion
+                </button>
+            </form>
         </div>
-    </nav>
-    {% endif %}
+    </div>
+</nav>
 
-    <main class="container my-4">
+<div class="d-flex" style="min-height:calc(100vh - 56px);">
+
+    <!-- Sidebar -->
+    <nav class="d-none d-md-flex flex-column flex-shrink-0 py-3 px-2 text-white"
+         style="width:230px;background-color:#154360;min-height:100%;">
+
+        {% if role_utilisateur == "Administrateur" %}
+        <ul class="nav nav-pills flex-column gap-1">
+            <li><a href="{% url 'comptes:tableau_bord_admin' %}" class="nav-link text-white {% if request.resolver_match.url_name == 'tableau_bord_admin' %}active{% endif %}">
+                <i class="bi bi-speedometer2 me-2"></i>Tableau de bord</a></li>
+            <li><a href="{% url 'comptes:en_developpement' %}" class="nav-link text-white">
+                <i class="bi bi-people me-2"></i>Utilisateurs</a></li>
+            <li><a href="{% url 'comptes:en_developpement' %}" class="nav-link text-white">
+                <i class="bi bi-diagram-3 me-2"></i>Départements & membres</a></li>
+            <li><a href="{% url 'comptes:en_developpement' %}" class="nav-link text-white">
+                <i class="bi bi-building me-2"></i>Établissements</a></li>
+            <li><a href="{% url 'comptes:en_developpement' %}" class="nav-link text-white">
+                <i class="bi bi-tags me-2"></i>Types de stage</a></li>
+            <li><a href="{% url 'comptes:en_developpement' %}" class="nav-link text-white">
+                <i class="bi bi-megaphone me-2"></i>Canaux de publication</a></li>
+            <li><a href="{% url 'comptes:en_developpement' %}" class="nav-link text-white">
+                <i class="bi bi-star me-2"></i>Vivier</a></li>
+            <li><a href="{% url 'comptes:en_developpement' %}" class="nav-link text-white">
+                <i class="bi bi-clock-history me-2"></i>Historique</a></li>
+        </ul>
+
+        {% elif role_utilisateur == "Secrétaire" %}
+        <ul class="nav nav-pills flex-column gap-1">
+            <li><a href="{% url 'comptes:tableau_bord_secretaire' %}" class="nav-link text-white {% if request.resolver_match.url_name == 'tableau_bord_secretaire' %}active{% endif %}">
+                <i class="bi bi-speedometer2 me-2"></i>Tableau de bord</a></li>
+            <li><a href="{% url 'comptes:en_developpement' %}" class="nav-link text-white">
+                <i class="bi bi-inbox me-2"></i>Besoins reçus</a></li>
+            <li><a href="{% url 'comptes:en_developpement' %}" class="nav-link text-white">
+                <i class="bi bi-file-earmark-text me-2"></i>Offres</a></li>
+            <li><a href="{% url 'comptes:en_developpement' %}" class="nav-link text-white">
+                <i class="bi bi-person-lines-fill me-2"></i>Candidatures</a></li>
+            <li><a href="{% url 'comptes:en_developpement' %}" class="nav-link text-white">
+                <i class="bi bi-envelope me-2"></i>Candidats à informer</a></li>
+        </ul>
+
+        {% elif role_utilisateur == "Responsable" %}
+        <ul class="nav nav-pills flex-column gap-1">
+            <li><a href="{% url 'comptes:tableau_bord_responsable' %}" class="nav-link text-white {% if request.resolver_match.url_name == 'tableau_bord_responsable' %}active{% endif %}">
+                <i class="bi bi-speedometer2 me-2"></i>Tableau de bord</a></li>
+            <li><a href="{% url 'comptes:en_developpement' %}" class="nav-link text-white">
+                <i class="bi bi-plus-circle me-2"></i>Mes besoins</a></li>
+            <li><a href="{% url 'comptes:en_developpement' %}" class="nav-link text-white">
+                <i class="bi bi-person-lines-fill me-2"></i>Candidatures</a></li>
+            <li><a href="{% url 'comptes:en_developpement' %}" class="nav-link text-white">
+                <i class="bi bi-mortarboard me-2"></i>Stages</a></li>
+            <li><a href="{% url 'comptes:en_developpement' %}" class="nav-link text-white">
+                <i class="bi bi-star me-2"></i>Vivier</a></li>
+        </ul>
+        {% endif %}
+    </nav>
+
+    <!-- Contenu principal -->
+    <main class="flex-grow-1 p-4">
+
         {% if messages %}
+        <div class="mb-3">
             {% for message in messages %}
-            <div class="alert alert-{{ message.tags }} alert-dismissible fade show">
+            <div class="alert alert-{{ message.tags|default:'info' }} alert-dismissible fade show py-2" role="alert">
                 {{ message }}
                 <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
             </div>
             {% endfor %}
+        </div>
         {% endif %}
 
         {% block content %}{% endblock %}
     </main>
+</div>
 
-    <footer class="text-center text-muted py-3 small">
-        Stage_App — Serein-GE
-    </footer>
 
-    <script src="{% static 'vendor/bootstrap/bootstrap.bundle.min.js' %}"></script>
+<script src="{% static 'vendor/bootstrap/bootstrap.bundle.min.js' %}"></script>
+{% block extra_js %}{% endblock %}
 </body>
 </html>

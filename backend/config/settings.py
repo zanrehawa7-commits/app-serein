@@ -21,6 +21,8 @@ INSTALLED_APPS = [
     "rest_framework",
     "rest_framework_simplejwt",
     "corsheaders",
+    "crispy_forms",
+    "crispy_bootstrap5",
 
     # Applications du projet
     "comptes.apps.ComptesConfig",
@@ -38,6 +40,7 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "django.contrib.auth.middleware.LoginRequiredMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
@@ -55,6 +58,7 @@ TEMPLATES = [
                 "django.template.context_processors.request",
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
+                "comptes.context_processors.contexte_utilisateur",
             ],
         },
     },
@@ -76,6 +80,14 @@ DATABASES = {
 
 # Modèle utilisateur personnalisé
 AUTH_USER_MODEL = "comptes.Utilisateur"
+
+# Session : déconnexion automatique après 30 min d'inactivité
+SESSION_COOKIE_AGE = 1800
+SESSION_SAVE_EVERY_REQUEST = True
+
+# Crispy Forms
+CRISPY_ALLOWED_TEMPLATE_PACKS = "bootstrap5"
+CRISPY_TEMPLATE_PACK = "bootstrap5"
 
 # Redirections authentification (vues à brancher en étape 3)
 LOGIN_URL = "/login/"
