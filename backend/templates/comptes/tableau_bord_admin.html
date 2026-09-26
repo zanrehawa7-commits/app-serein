@@ -1,0 +1,204 @@
+{% extends "base.html" %}
+
+{% block title %}Tableau de bord — Administrateur{% endblock %}
+
+{% block content %}
+
+<!-- En-tête de bienvenue -->
+<div class="d-flex align-items-center justify-content-between mb-4 flex-wrap gap-2">
+    <div>
+        <h4 class="mb-0 fw-semibold">Bonjour, {{ request.user.first_name|default:request.user.email }} 👋</h4>
+        <p class="text-muted small mb-0">Tableau de bord Administrateur — vue d'ensemble</p>
+    </div>
+    <span class="text-muted small"><i class="bi bi-calendar3 me-1"></i>{% now "l d F Y" %}</span>
+</div>
+
+<!-- Cartes statistiques -->
+<div class="row g-3 mb-4">
+    <div class="col-6 col-xl-3">
+        <div class="card border-0 shadow-sm h-100" style="border-left:4px solid #1B4F72 !important;">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-start">
+                    <div>
+                        <p class="text-muted small mb-1 text-uppercase fw-semibold" style="font-size:.7rem;letter-spacing:.05em;">Utilisateurs</p>
+                        <h3 class="fw-bold mb-0" style="color:#1B4F72;">—</h3>
+                    </div>
+                    <div class="rounded-circle d-flex align-items-center justify-content-center text-white"
+                         style="width:44px;height:44px;background:linear-gradient(135deg,#1B4F72,#2980B9);">
+                        <i class="bi bi-people-fill"></i>
+                    </div>
+                </div>
+                <p class="text-muted small mb-0 mt-2"><i class="bi bi-arrow-up-short text-success"></i> comptes actifs</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-xl-3">
+        <div class="card border-0 shadow-sm h-100" style="border-left:4px solid #117A65 !important;">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-start">
+                    <div>
+                        <p class="text-muted small mb-1 text-uppercase fw-semibold" style="font-size:.7rem;letter-spacing:.05em;">Candidatures</p>
+                        <h3 class="fw-bold mb-0" style="color:#117A65;">—</h3>
+                    </div>
+                    <div class="rounded-circle d-flex align-items-center justify-content-center text-white"
+                         style="width:44px;height:44px;background:linear-gradient(135deg,#117A65,#1ABC9C);">
+                        <i class="bi bi-person-lines-fill"></i>
+                    </div>
+                </div>
+                <p class="text-muted small mb-0 mt-2"><i class="bi bi-clock text-warning"></i> en attente de traitement</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-xl-3">
+        <div class="card border-0 shadow-sm h-100" style="border-left:4px solid #6E2F8E !important;">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-start">
+                    <div>
+                        <p class="text-muted small mb-1 text-uppercase fw-semibold" style="font-size:.7rem;letter-spacing:.05em;">Stages en cours</p>
+                        <h3 class="fw-bold mb-0" style="color:#6E2F8E;">—</h3>
+                    </div>
+                    <div class="rounded-circle d-flex align-items-center justify-content-center text-white"
+                         style="width:44px;height:44px;background:linear-gradient(135deg,#6E2F8E,#9B59B6);">
+                        <i class="bi bi-mortarboard-fill"></i>
+                    </div>
+                </div>
+                <p class="text-muted small mb-0 mt-2"><i class="bi bi-activity text-primary"></i> actuellement actifs</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-xl-3">
+        <div class="card border-0 shadow-sm h-100" style="border-left:4px solid #B7770D !important;">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-start">
+                    <div>
+                        <p class="text-muted small mb-1 text-uppercase fw-semibold" style="font-size:.7rem;letter-spacing:.05em;">Vivier</p>
+                        <h3 class="fw-bold mb-0" style="color:#B7770D;">—</h3>
+                    </div>
+                    <div class="rounded-circle d-flex align-items-center justify-content-center text-white"
+                         style="width:44px;height:44px;background:linear-gradient(135deg,#B7770D,#F39C12);">
+                        <i class="bi bi-star-fill"></i>
+                    </div>
+                </div>
+                <p class="text-muted small mb-0 mt-2"><i class="bi bi-patch-check text-warning"></i> profils remarquables</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Ligne principale -->
+<div class="row g-3">
+
+    <!-- Accès rapides -->
+    <div class="col-lg-5">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-header bg-white border-bottom py-3">
+                <h6 class="mb-0 fw-semibold"><i class="bi bi-lightning-charge-fill text-warning me-2"></i>Accès rapides</h6>
+            </div>
+            <div class="card-body p-3">
+                <div class="row g-2">
+                    {% url 'comptes:en_developpement' as url_dev %}
+                    <div class="col-6">
+                        <a href="{{ url_dev }}" class="btn btn-outline-primary w-100 text-start py-3 d-flex align-items-center gap-2">
+                            <i class="bi bi-person-plus-fill fs-5"></i>
+                            <span class="small fw-semibold">Nouvel utilisateur</span>
+                        </a>
+                    </div>
+                    <div class="col-6">
+                        <a href="{{ url_dev }}" class="btn btn-outline-success w-100 text-start py-3 d-flex align-items-center gap-2">
+                            <i class="bi bi-building-add fs-5"></i>
+                            <span class="small fw-semibold">Nouveau département</span>
+                        </a>
+                    </div>
+                    <div class="col-6">
+                        <a href="{{ url_dev }}" class="btn btn-outline-secondary w-100 text-start py-3 d-flex align-items-center gap-2">
+                            <i class="bi bi-clock-history fs-5"></i>
+                            <span class="small fw-semibold">Historique</span>
+                        </a>
+                    </div>
+                    <div class="col-6">
+                        <a href="{{ url_dev }}" class="btn btn-outline-warning w-100 text-start py-3 d-flex align-items-center gap-2">
+                            <i class="bi bi-star fs-5"></i>
+                            <span class="small fw-semibold">Voir le vivier</span>
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modules -->
+    <div class="col-lg-7">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-header bg-white border-bottom py-3">
+                <h6 class="mb-0 fw-semibold"><i class="bi bi-grid-fill text-primary me-2"></i>Modules de l'application</h6>
+            </div>
+            <div class="card-body p-3">
+                <div class="row g-2">
+                    {% url 'comptes:en_developpement' as url_dev %}
+                    {% for module in modules %}{% endfor %}
+                    <div class="col-sm-6 col-lg-4">
+                        <a href="{{ url_dev }}" class="text-decoration-none">
+                            <div class="border rounded p-3 text-center h-100 module-card">
+                                <i class="bi bi-people fs-4 text-primary mb-2 d-block"></i>
+                                <div class="small fw-semibold text-dark">Utilisateurs</div>
+                                <div class="text-muted" style="font-size:.7rem;">Comptes & rôles</div>
+                            </div>
+                        </a>
+                    </div>
+                    <div class="col-sm-6 col-lg-4">
+                        <a href="{{ url_dev }}" class="text-decoration-none">
+                            <div class="border rounded p-3 text-center h-100 module-card">
+                                <i class="bi bi-diagram-3 fs-4 text-success mb-2 d-block"></i>
+                                <div class="small fw-semibold text-dark">Départements</div>
+                                <div class="text-muted" style="font-size:.7rem;">Structure & membres</div>
+                            </div>
+                        </a>
+                    </div>
+                    <div class="col-sm-6 col-lg-4">
+                        <a href="{{ url_dev }}" class="text-decoration-none">
+                            <div class="border rounded p-3 text-center h-100 module-card">
+                                <i class="bi bi-file-earmark-text fs-4 text-info mb-2 d-block"></i>
+                                <div class="small fw-semibold text-dark">Offres</div>
+                                <div class="text-muted" style="font-size:.7rem;">Besoins & publications</div>
+                            </div>
+                        </a>
+                    </div>
+                    <div class="col-sm-6 col-lg-4">
+                        <a href="{{ url_dev }}" class="text-decoration-none">
+                            <div class="border rounded p-3 text-center h-100 module-card">
+                                <i class="bi bi-person-lines-fill fs-4 text-warning mb-2 d-block"></i>
+                                <div class="small fw-semibold text-dark">Candidatures</div>
+                                <div class="text-muted" style="font-size:.7rem;">Dossiers & pièces</div>
+                            </div>
+                        </a>
+                    </div>
+                    <div class="col-sm-6 col-lg-4">
+                        <a href="{{ url_dev }}" class="text-decoration-none">
+                            <div class="border rounded p-3 text-center h-100 module-card">
+                                <i class="bi bi-mortarboard fs-4 text-danger mb-2 d-block"></i>
+                                <div class="small fw-semibold text-dark">Stages</div>
+                                <div class="text-muted" style="font-size:.7rem;">Suivi & évaluation</div>
+                            </div>
+                        </a>
+                    </div>
+                    <div class="col-sm-6 col-lg-4">
+                        <a href="{{ url_dev }}" class="text-decoration-none">
+                            <div class="border rounded p-3 text-center h-100 module-card">
+                                <i class="bi bi-clock-history fs-4 text-secondary mb-2 d-block"></i>
+                                <div class="small fw-semibold text-dark">Historique</div>
+                                <div class="text-muted" style="font-size:.7rem;">Traçabilité</div>
+                            </div>
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<style>
+.module-card { transition: all .15s ease; cursor: pointer; }
+.module-card:hover { background: #f0f4ff; border-color: #1B4F72 !important; transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,.08); }
+</style>
+{% endblock %}

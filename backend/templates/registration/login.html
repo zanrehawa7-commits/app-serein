@@ -1,0 +1,67 @@
+{% load static crispy_forms_tags %}
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Connexion — Serein-GE</title>
+    <link rel="stylesheet" href="{% static 'vendor/bootstrap/bootstrap.min.css' %}">
+    <link rel="stylesheet" href="{% static 'vendor/bootstrap-icons/bootstrap-icons.css' %}">
+    <link rel="stylesheet" href="{% static 'css/custom.css' %}">
+</head>
+<body class="bg-light d-flex align-items-center justify-content-center" style="min-height:100vh;">
+
+<div class="card shadow-sm" style="width:100%;max-width:420px;">
+    <div class="card-header text-white text-center py-3" style="background-color:#1B4F72;">
+        <i class="bi bi-briefcase-fill fs-3"></i>
+        <h5 class="mb-0 mt-1">Gestion de Stage </h5>
+    </div>
+    <div class="card-body p-4">
+        <h6 class="text-muted mb-3 text-center">Connectez-vous à votre espace</h6>
+
+        <form method="post">
+            {% csrf_token %}
+            {{ form|crispy }}
+            <div class="d-grid mt-3">
+                <button type="submit" class="btn btn-primary" style="background-color:#1B4F72;border-color:#1B4F72;">
+                    <i class="bi bi-box-arrow-in-right me-1"></i>Se connecter
+                </button>
+            </div>
+        </form>
+    </div>
+   
+</div>
+
+<script src="{% static 'vendor/bootstrap/bootstrap.bundle.min.js' %}"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const input = document.getElementById('id_password');
+    if (!input) return;
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'input-group';
+    input.parentNode.insertBefore(wrapper, input);
+    wrapper.appendChild(input);
+
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'btn btn-outline-secondary';
+    btn.title = 'Afficher / masquer le mot de passe';
+    btn.innerHTML = '<i class="bi bi-eye"></i>';
+    wrapper.appendChild(btn);
+
+    btn.addEventListener('click', function () {
+        const icon = btn.querySelector('i');
+        if (input.type === 'password') {
+            input.type = 'text';
+            icon.className = 'bi bi-eye-slash';
+        } else {
+            input.type = 'password';
+            icon.className = 'bi bi-eye';
+        }
+        input.focus();
+    });
+});
+</script>
+</body>
+</html>

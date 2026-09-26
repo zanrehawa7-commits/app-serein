@@ -37,6 +37,18 @@ Permet de gérer le cycle complet : besoins → offres → candidatures → stag
 - Rôles = **Groups Django** : `Administrateur`, `Secrétaire`, `Responsable`.
 - Propriété `utilisateur.role` → renvoie le nom du groupe (ou `None`).
 
+## Contrôle d'accès (étape 3)
+
+- **Protection globale** : `LoginRequiredMiddleware` natif Django 5.1+ — toutes les vues exigent la connexion sauf celles décorées `@login_not_required`.
+- **Mixins et décorateurs** : définis dans `comptes/permissions.py`.
+  - `RoleRequisMixin(roles=[...])` → CBV
+  - `@role_requis("Rôle1", "Rôle2")` → FBV
+  - `DepartementResponsableMixin` → filtre les objets par département du responsable (RG13). Surcharger `get_departement_objet()`.
+- **Superuser sans groupe** → traité comme Administrateur dans `_role_utilisateur()`.
+- **Context processor** `comptes/context_processors.py` → injecte `role_utilisateur` et `nb_notifications` dans tous les templates.
+- **Session** : déconnexion automatique après 30 min (`SESSION_COOKIE_AGE=1800`, `SESSION_SAVE_EVERY_REQUEST=True`).
+- **Formulaires** : `django-crispy-forms` + `crispy-bootstrap5`. Utiliser `{{ form|crispy }}` dans les templates.
+
 ## Règles de gestion clés
 - **RG07** : un candidat ne peut avoir qu'une seule candidature active (statut RECUE ou EN_TRAITEMENT).
 - **RG09** : si `type_demande = SUITE_OFFRE`, le champ `offre` est obligatoire ; si `SPONTANEE`, il doit être vide.
