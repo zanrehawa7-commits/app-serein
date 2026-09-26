@@ -1,4 +1,4 @@
-from django.contrib.auth.mixins import AccessMixin
+from django.contrib.auth.mixins import AccessMixin, PermissionRequiredMixin
 from django.core.exceptions import PermissionDenied
 from django.shortcuts import redirect
 from functools import wraps
@@ -36,6 +36,20 @@ def role_requis(*roles):
             return vue(request, *args, **kwargs)
         return wrapper
     return decorateur
+
+
+class RolePermMixin(RoleRequisMixin, PermissionRequiredMixin):
+    """
+    Mixin combiné : vérifie le rôle Administrateur ET la permission Django.
+    Les superusers bypasse la vérification des permissions.
+    Subclasses définissent `permission_required = "app.action_model"`.
+    """
+    roles = ["Administrateur"]
+
+    def has_permission(self):
+        if self.request.user.is_superuser:
+            return True
+        return super().has_permission()
 
 
 class DepartementResponsableMixin(AccessMixin):

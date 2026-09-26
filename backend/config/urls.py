@@ -11,6 +11,7 @@ urlpatterns = [
     path("admin/", admin.site.urls),
     path("", RedirectView.as_view(pattern_name="comptes:tableau_de_bord", permanent=False)),
     path("", include("comptes.urls")),
+    path("referentiels/", include("referentiels.urls")),
 ]
 
 if settings.DEBUG:

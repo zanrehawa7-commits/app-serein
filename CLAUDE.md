@@ -37,6 +37,48 @@ Permet de gérer le cycle complet : besoins → offres → candidatures → stag
 - Rôles = **Groups Django** : `Administrateur`, `Secrétaire`, `Responsable`.
 - Propriété `utilisateur.role` → renvoie le nom du groupe (ou `None`).
 
+## Module commun (`backend/commun/`)
+
+Utilitaires partagés entre toutes les apps.
+
+- **`commun/mixins.py` — `ListeMixin`** : à hériter sur toute `ListView`. Gère pagination (20/page), recherche texte (`champs_recherche = [...]`), filtre actif/inactif (`champ_actif = "actif"`, surcharger avec `"is_active"` pour `Utilisateur`), tri par colonne. Injecte `params_paginateur`, `q`, `actif_filtre`, `tri_actuel` dans le contexte.
+- **`commun/services.py` — `supprimer_ou_desactiver(instance, request=None)`** : tente `delete()`, intercepte `ProtectedError` → met `actif = False`. Affiche `messages.success` ou `messages.warning`.
+- **`templates/commun/formulaire.html`** : gabarit générique pour Create/Update (utilise `{% crispy form %}`, requiert `titre` et `url_retour` dans le contexte).
+- **`templates/commun/_pagination.html`** : partiel Bootstrap 5 préservant les paramètres GET.
+- **`templates/commun/_modal_confirmer.html`** : modal Bootstrap 5 avec formulaire POST + `{% csrf_token %}`. Le JS est inline (pas dans un `{% block %}`). Alimenté par `data-nom`, `data-url`, `data-action`, `data-info`, `data-btn-class`, `data-btn-label` sur le bouton déclencheur.
+
+## Étape 4 — Module Administrateur (F02–F07)
+
+### F02 — Rôles & permissions
+- Vue `PermissionsRoleView` : affiche/modifie les permissions Django d'un groupe via des cases à cocher.
+- Les permissions `comptes` de l'Administrateur sont toujours cochées et désactivées (cases grises + input hidden).
+- Garde-fou POST : les permissions `comptes` sont toujours réinjectées pour Administrateur même si absentes du POST.
+- `APPS_PERMISSIONS` et `ACTIONS_ORDRE` définis dans `comptes/views.py`.
+
+### F03 — Utilisateurs
+- `UtilisateurListView` : hérite de `RolePermMixin + ListeMixin`. `champ_actif = "is_active"`.
+- `UtilisateurCreateView / UpdateView` : formulaires `UtilisateurCreerForm / UtilisateurModifierForm`. Le rôle est un `ChoiceField` (pas un FK direct vers Group).
+- `UtilisateurActiverView` : refuse l'auto-désactivation (RG33).
+- Si rôle change DE Responsable → autre : `user.membre = None; user.save(update_fields=["membre"])`.
+- `UtilisateurReinitMdpView` : réinitialise le mot de passe sans connaître l'ancien.
+
+### F04–F07 — Référentiels
+- CRUD complet : Département, Établissement, TypeStage, CanalPublication.
+- Membres gérés uniquement depuis la page détail d'un département (`MembreCreateView` prend `dept_pk` dans l'URL).
+- Suppression via modal POST (pas de page de confirmation dédiée). Les vues delete sont de simples `View` (POST uniquement).
+- `DepartementModifierForm` filtre le queryset du responsable aux membres actifs du département (RG31).
+- `EtablissementTogglePartenaireView` : bascule le champ `partenaire` en POST.
+
+### Permissions et contrôle d'accès (F02–F07)
+- **`RolePermMixin`** (dans `comptes/permissions.py`) : combine `RoleRequisMixin(roles=["Administrateur"])` + `PermissionRequiredMixin`. Les superusers bypasse la vérification des permissions Django.
+- Les templates utilisent `{% if perms.app.action_model %}` pour afficher/masquer boutons.
+- Retirer une permission d'un rôle → bouton masqué ET vue retourne 403.
+
+### Relation Utilisateur ↔ Membre
+- `Utilisateur.membre` est un `OneToOneField` avec `related_name="compte"`.
+- Pour accéder à l'utilisateur depuis un membre : `membre.compte` (pas `membre.utilisateur`).
+- Dans les QuerySets : `Membre.objects.filter(compte__isnull=True)` (pas `utilisateur__isnull`).
+
 ## Contrôle d'accès (étape 3)
 
 - **Protection globale** : `LoginRequiredMiddleware` natif Django 5.1+ — toutes les vues exigent la connexion sauf celles décorées `@login_not_required`.

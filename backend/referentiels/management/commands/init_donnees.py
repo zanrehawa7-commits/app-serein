@@ -5,14 +5,16 @@ from django.core.management.base import BaseCommand
 from referentiels.models import TypeStage
 
 
+_CRUD = ["add", "change", "delete", "view"]
+
 GROUPES_PERMISSIONS = {
     "Administrateur": {
-        "comptes": ["add", "change", "delete", "view"],
-        "referentiels": ["add", "change", "delete", "view"],
-        "offres": ["view"],
-        "candidatures": ["view"],
-        "stages": ["view"],
-        "suivi": ["view"],
+        "comptes": _CRUD,
+        "referentiels": _CRUD,
+        "offres": _CRUD,
+        "candidatures": _CRUD,
+        "stages": _CRUD,
+        "suivi": _CRUD,
     },
     "Secrétaire": {
         "offres": ["add", "change", "view"],          # Offre, Publication
