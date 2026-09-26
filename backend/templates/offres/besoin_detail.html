@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+
+{% block title %}Besoin — {{ besoin.type_stage }}{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center gap-3 mb-4">
+    <a href="{% url 'offres:besoin_list' %}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left"></i></a>
+    <div>
+        <h5 class="mb-0 fw-semibold"><i class="bi bi-inbox me-2 text-primary"></i>{{ besoin }}</h5>
+        <p class="text-muted small mb-0">Détail du besoin</p>
+    </div>
+    <div class="ms-auto d-flex gap-2">
+        {% if role == "Responsable" and besoin.statut == "ENVOYE" %}
+        <a href="{% url 'offres:besoin_modifier' besoin.pk %}" class="btn btn-outline-primary btn-sm">
+            <i class="bi bi-pencil me-1"></i>Modifier
+        </a>
+        <button type="button" class="btn btn-outline-warning btn-sm"
+                data-bs-toggle="modal" data-bs-target="#modalConfirmer"
+                data-nom="{{ besoin }}"
+                data-url="{% url 'offres:besoin_annuler' besoin.pk %}"
+                data-action="annuler"
+                data-btn-class="btn-warning"
+                data-btn-label="Oui, annuler"
+                data-info="Cette action notifiera la secrétaire.">
+            <i class="bi bi-x-circle me-1"></i>Annuler
+        </button>
+        {% endif %}
+        {% if role == "Secrétaire" and besoin.statut == "ENVOYE" and not offre %}
+        <a href="{% url 'offres:offre_creer_depuis_besoin' besoin.pk %}" class="btn btn-primary btn-sm">
+            <i class="bi bi-file-earmark-plus me-1"></i>Créer l'offre
+        </a>
+        {% endif %}
+    </div>
+</div>
+
+<div class="row g-3">
+    <div class="col-md-6">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body">
+                <h6 class="fw-semibold mb-3 text-muted text-uppercase" style="font-size:.7rem;letter-spacing:.05em;">Informations</h6>
+                <dl class="row mb-0 small">
+                    <dt class="col-5 text-muted">Département</dt>
+                    <dd class="col-7">{{ besoin.departement }}</dd>
+                    <dt class="col-5 text-muted">Type de stage</dt>
+                    <dd class="col-7">{{ besoin.type_stage }}</dd>
+                    <dt class="col-5 text-muted">Date de début</dt>
+                    <dd class="col-7">{{ besoin.date_debut|date:"d/m/Y" }}</dd>
+                    <dt class="col-5 text-muted">Date de fin</dt>
+                    <dd class="col-7">{{ besoin.date_fin|date:"d/m/Y" }}</dd>
+                    <dt class="col-5 text-muted">Nombre de places</dt>
+                    <dd class="col-7">{{ besoin.nombre_places }}</dd>
+                    <dt class="col-5 text-muted">Statut</dt>
+                    <dd class="col-7">
+                        {% if besoin.statut == "ENVOYE" %}
+                        <span class="badge rounded-pill" style="background:#D6EAF8;color:#1A5276;">Envoyé</span>
+                        {% elif besoin.statut == "PRIS_EN_CHARGE" %}
+                        <span class="badge rounded-pill" style="background:#FEF9E7;color:#7D6608;">Pris en charge</span>
+                        {% elif besoin.statut == "CLOTURE" %}
+                        <span class="badge rounded-pill" style="background:#D5F5E3;color:#117A65;">Clôturé</span>
+                        {% elif besoin.statut == "ANNULE" %}
+                        <span class="badge rounded-pill" style="background:#F9EBEA;color:#922B21;">Annulé</span>
+                        {% endif %}
+                    </dd>
+                    <dt class="col-5 text-muted">Créé le</dt>
+                    <dd class="col-7">{{ besoin.date_creation|date:"d/m/Y à H:i" }}</dd>
+                </dl>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body">
+                <h6 class="fw-semibold mb-2 text-muted text-uppercase" style="font-size:.7rem;letter-spacing:.05em;">Profil recherché</h6>
+                <p class="small mb-0" style="white-space:pre-wrap;">{{ besoin.profil_recherche }}</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% if offre %}
+<div class="card border-0 shadow-sm mt-3" style="border-left:3px solid #1B4F72 !important;">
+    <div class="card-body py-2">
+        <div class="d-flex align-items-center gap-3">
+            <div>
+                <h6 class="mb-0 fw-semibold small"><i class="bi bi-file-earmark-text me-1 text-primary"></i>Offre associée</h6>
+                <p class="text-muted small mb-0">{{ offre.titre }}</p>
+            </div>
+            <a href="{% url 'offres:offre_detail' offre.pk %}" class="btn btn-sm btn-outline-primary ms-auto py-0">
+                <i class="bi bi-eye me-1"></i>Voir l'offre
+            </a>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% include "commun/_historique.html" %}
+
+{% include "commun/_modal_confirmer.html" %}
+{% endblock %}

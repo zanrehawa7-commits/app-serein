@@ -17,15 +17,59 @@
             <i class="bi bi-briefcase-fill me-1"></i>Gestion de Stage
         </a>
         <div class="ms-auto d-flex align-items-center gap-3">
-            <!-- Notifications -->
-            <a href="{% url 'comptes:en_developpement' %}" class="text-white text-decoration-none position-relative" title="Notifications">
-                <i class="bi bi-bell fs-5"></i>
-                {% if nb_notifications > 0 %}
-                <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger" style="font-size:.65rem;">
-                    {{ nb_notifications }}
-                </span>
-                {% endif %}
-            </a>
+
+            <!-- Notifications (dropdown) -->
+            <div class="dropdown">
+                <a class="text-white text-decoration-none position-relative" href="#"
+                   data-bs-toggle="dropdown" aria-expanded="false" title="Notifications">
+                    <i class="bi bi-bell fs-5"></i>
+                    {% if nb_notifications > 0 %}
+                    <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger" style="font-size:.65rem;">
+                        {{ nb_notifications }}
+                    </span>
+                    {% endif %}
+                </a>
+                <ul class="dropdown-menu dropdown-menu-end shadow" style="width:320px;max-height:400px;overflow-y:auto;">
+                    <li class="px-3 py-2 d-flex align-items-center justify-content-between border-bottom">
+                        <span class="fw-semibold small">Notifications</span>
+                        {% if nb_notifications > 0 %}
+                        <form method="post" action="{% url 'suivi:notification_tout_lire' %}" class="d-inline">
+                            {% csrf_token %}
+                            <button type="submit" class="btn btn-link btn-sm p-0 text-muted text-decoration-none" style="font-size:.75rem;">
+                                Tout marquer comme lu
+                            </button>
+                        </form>
+                        {% endif %}
+                    </li>
+                    {% if dernieres_notifications %}
+                        {% for notif in dernieres_notifications %}
+                        <li>
+                            <a href="{% url 'suivi:notification_lire' notif.pk %}"
+                               class="dropdown-item py-2 {% if not notif.lue %}bg-light{% endif %}">
+                                <div class="d-flex gap-2 align-items-start">
+                                    <span class="mt-1 {% if not notif.lue %}text-primary{% else %}text-muted{% endif %}" style="font-size:.5rem;">●</span>
+                                    <div>
+                                        <div class="small {% if not notif.lue %}fw-semibold{% endif %}" style="white-space:normal;">
+                                            {{ notif.message|truncatechars:60 }}
+                                        </div>
+                                        <div class="text-muted" style="font-size:.7rem;">{{ notif.date_creation|timesince }}</div>
+                                    </div>
+                                </div>
+                            </a>
+                        </li>
+                        {% endfor %}
+                    {% else %}
+                        <li class="text-center text-muted small py-3">Aucune notification</li>
+                    {% endif %}
+                    <li><hr class="dropdown-divider m-0"></li>
+                    <li>
+                        <a href="{% url 'suivi:notification_list' %}" class="dropdown-item text-center small py-2 text-primary">
+                            <i class="bi bi-list-ul me-1"></i>Voir toutes les notifications
+                        </a>
+                    </li>
+                </ul>
+            </div>
+
             <!-- Utilisateur + rôle -->
             <span class="text-white small">
                 <i class="bi bi-person-circle me-1"></i>
@@ -72,38 +116,39 @@
             <li><a href="{% url 'referentiels:canalpublication_list' %}" class="nav-link text-white {% if request.resolver_match.namespace == 'referentiels' and 'canalpublication' in request.resolver_match.url_name %}active{% endif %}">
                 <i class="bi bi-megaphone me-2"></i>Canaux de publication</a></li>
             <li class="mt-2"><small class="text-white-50 ps-2 text-uppercase fw-bold" style="font-size:.65rem;letter-spacing:.05em;">Gestion</small></li>
-            <li><a href="{% url 'comptes:en_developpement' %}" class="nav-link text-white">
-                <i class="bi bi-star me-2"></i>Vivier</a></li>
-            <li><a href="{% url 'comptes:en_developpement' %}" class="nav-link text-white">
-                <i class="bi bi-clock-history me-2"></i>Historique</a></li>
+            <li><a href="{% url 'offres:besoin_list' %}" class="nav-link text-white {% if request.resolver_match.namespace == 'offres' and 'besoin' in request.resolver_match.url_name %}active{% endif %}">
+                <i class="bi bi-inbox me-2"></i>Besoins</a></li>
+            <li><a href="{% url 'offres:offre_list' %}" class="nav-link text-white {% if request.resolver_match.namespace == 'offres' and 'offre' in request.resolver_match.url_name %}active{% endif %}">
+                <i class="bi bi-file-earmark-text me-2"></i>Offres</a></li>
         </ul>
 
         {% elif role_utilisateur == "Secrétaire" %}
         <ul class="nav nav-pills flex-column gap-1">
             <li><a href="{% url 'comptes:tableau_bord_secretaire' %}" class="nav-link text-white {% if request.resolver_match.url_name == 'tableau_bord_secretaire' %}active{% endif %}">
                 <i class="bi bi-speedometer2 me-2"></i>Tableau de bord</a></li>
-            <li><a href="{% url 'comptes:en_developpement' %}" class="nav-link text-white">
+            <li class="mt-2"><small class="text-white-50 ps-2 text-uppercase fw-bold" style="font-size:.65rem;letter-spacing:.05em;">Offres</small></li>
+            <li><a href="{% url 'offres:besoin_list' %}" class="nav-link text-white {% if request.resolver_match.namespace == 'offres' and 'besoin' in request.resolver_match.url_name %}active{% endif %}">
                 <i class="bi bi-inbox me-2"></i>Besoins reçus</a></li>
-            <li><a href="{% url 'comptes:en_developpement' %}" class="nav-link text-white">
+            <li><a href="{% url 'offres:offre_list' %}" class="nav-link text-white {% if request.resolver_match.namespace == 'offres' and 'offre' in request.resolver_match.url_name %}active{% endif %}">
                 <i class="bi bi-file-earmark-text me-2"></i>Offres</a></li>
+            <li class="mt-2"><small class="text-white-50 ps-2 text-uppercase fw-bold" style="font-size:.65rem;letter-spacing:.05em;">Candidatures</small></li>
             <li><a href="{% url 'comptes:en_developpement' %}" class="nav-link text-white">
                 <i class="bi bi-person-lines-fill me-2"></i>Candidatures</a></li>
-            <li><a href="{% url 'comptes:en_developpement' %}" class="nav-link text-white">
-                <i class="bi bi-envelope me-2"></i>Candidats à informer</a></li>
         </ul>
 
         {% elif role_utilisateur == "Responsable" %}
         <ul class="nav nav-pills flex-column gap-1">
             <li><a href="{% url 'comptes:tableau_bord_responsable' %}" class="nav-link text-white {% if request.resolver_match.url_name == 'tableau_bord_responsable' %}active{% endif %}">
                 <i class="bi bi-speedometer2 me-2"></i>Tableau de bord</a></li>
-            <li><a href="{% url 'comptes:en_developpement' %}" class="nav-link text-white">
+            <li class="mt-2"><small class="text-white-50 ps-2 text-uppercase fw-bold" style="font-size:.65rem;letter-spacing:.05em;">Stages</small></li>
+            <li><a href="{% url 'offres:besoin_list' %}" class="nav-link text-white {% if request.resolver_match.namespace == 'offres' and 'besoin' in request.resolver_match.url_name %}active{% endif %}">
                 <i class="bi bi-plus-circle me-2"></i>Mes besoins</a></li>
+            <li><a href="{% url 'offres:offre_list' %}" class="nav-link text-white {% if request.resolver_match.namespace == 'offres' and 'offre' in request.resolver_match.url_name %}active{% endif %}">
+                <i class="bi bi-file-earmark-text me-2"></i>Offres</a></li>
             <li><a href="{% url 'comptes:en_developpement' %}" class="nav-link text-white">
                 <i class="bi bi-person-lines-fill me-2"></i>Candidatures</a></li>
             <li><a href="{% url 'comptes:en_developpement' %}" class="nav-link text-white">
                 <i class="bi bi-mortarboard me-2"></i>Stages</a></li>
-            <li><a href="{% url 'comptes:en_developpement' %}" class="nav-link text-white">
-                <i class="bi bi-star me-2"></i>Vivier</a></li>
         </ul>
         {% endif %}
     </nav>

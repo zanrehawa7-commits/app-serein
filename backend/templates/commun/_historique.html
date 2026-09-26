@@ -1,0 +1,34 @@
+{% if historiques %}
+<div class="card border-0 shadow-sm mt-4">
+    <div class="card-header bg-white border-bottom py-2">
+        <h6 class="mb-0 fw-semibold text-muted text-uppercase" style="font-size:.7rem;letter-spacing:.05em;">
+            <i class="bi bi-clock-history me-1"></i>Historique
+        </h6>
+    </div>
+    <div class="card-body py-2">
+        {% for h in historiques %}
+        <div class="d-flex gap-3 {% if not forloop.last %}border-bottom{% endif %} py-2">
+            <div class="flex-shrink-0 text-center" style="width:36px;">
+                <span class="badge rounded-pill bg-light text-muted" style="font-size:.65rem;line-height:1.4;">
+                    {{ h.date_action|date:"d/m" }}
+                </span>
+            </div>
+            <div class="small flex-grow-1">
+                {% if h.ancien_statut and h.nouveau_statut %}
+                <span class="badge rounded-pill text-bg-secondary me-1" style="font-size:.65rem;">{{ h.ancien_statut }}</span>
+                <i class="bi bi-arrow-right text-muted me-1" style="font-size:.65rem;"></i>
+                <span class="badge rounded-pill text-bg-primary" style="font-size:.65rem;">{{ h.nouveau_statut }}</span>
+                {% elif h.nouveau_statut %}
+                <span class="badge rounded-pill text-bg-primary" style="font-size:.65rem;">{{ h.nouveau_statut }}</span>
+                {% endif %}
+                {% if h.commentaire %}<span class="text-muted ms-1">{{ h.commentaire }}</span>{% endif %}
+                <div class="text-muted" style="font-size:.7rem;">
+                    {{ h.date_action|date:"d/m/Y à H:i" }}
+                    {% if h.utilisateur %} · {{ h.utilisateur.get_full_name|default:h.utilisateur.email }}{% endif %}
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
