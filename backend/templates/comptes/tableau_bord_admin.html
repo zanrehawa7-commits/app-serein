@@ -37,15 +37,15 @@
             <div class="card-body">
                 <div class="d-flex justify-content-between align-items-start">
                     <div>
-                        <p class="text-muted small mb-1 text-uppercase fw-semibold" style="font-size:.7rem;letter-spacing:.05em;">Candidatures</p>
-                        <h3 class="fw-bold mb-0" style="color:#117A65;">—</h3>
+                        <p class="text-muted small mb-1 text-uppercase fw-semibold" style="font-size:.7rem;letter-spacing:.05em;">Besoins en attente</p>
+                        <h3 class="fw-bold mb-0" style="color:#117A65;">{{ nb_besoins_envoyes }}</h3>
                     </div>
                     <div class="rounded-circle d-flex align-items-center justify-content-center text-white"
                          style="width:44px;height:44px;background:linear-gradient(135deg,#117A65,#1ABC9C);">
-                        <i class="bi bi-person-lines-fill"></i>
+                        <i class="bi bi-inbox-fill"></i>
                     </div>
                 </div>
-                <p class="text-muted small mb-0 mt-2"><i class="bi bi-clock text-warning"></i> en attente de traitement</p>
+                <p class="text-muted small mb-0 mt-2"><i class="bi bi-clock text-warning"></i> besoins à traiter</p>
             </div>
         </div>
     </div>
@@ -54,15 +54,15 @@
             <div class="card-body">
                 <div class="d-flex justify-content-between align-items-start">
                     <div>
-                        <p class="text-muted small mb-1 text-uppercase fw-semibold" style="font-size:.7rem;letter-spacing:.05em;">Stages en cours</p>
-                        <h3 class="fw-bold mb-0" style="color:#6E2F8E;">—</h3>
+                        <p class="text-muted small mb-1 text-uppercase fw-semibold" style="font-size:.7rem;letter-spacing:.05em;">Offres actives</p>
+                        <h3 class="fw-bold mb-0" style="color:#6E2F8E;">{{ nb_offres_ouvertes }}</h3>
                     </div>
                     <div class="rounded-circle d-flex align-items-center justify-content-center text-white"
                          style="width:44px;height:44px;background:linear-gradient(135deg,#6E2F8E,#9B59B6);">
-                        <i class="bi bi-mortarboard-fill"></i>
+                        <i class="bi bi-broadcast"></i>
                     </div>
                 </div>
-                <p class="text-muted small mb-0 mt-2"><i class="bi bi-activity text-primary"></i> actuellement actifs</p>
+                <p class="text-muted small mb-0 mt-2"><i class="bi bi-broadcast text-success"></i> offres en ligne</p>
             </div>
         </div>
     </div>
@@ -71,15 +71,15 @@
             <div class="card-body">
                 <div class="d-flex justify-content-between align-items-start">
                     <div>
-                        <p class="text-muted small mb-1 text-uppercase fw-semibold" style="font-size:.7rem;letter-spacing:.05em;">Vivier</p>
-                        <h3 class="fw-bold mb-0" style="color:#B7770D;">—</h3>
+                        <p class="text-muted small mb-1 text-uppercase fw-semibold" style="font-size:.7rem;letter-spacing:.05em;">Total offres</p>
+                        <h3 class="fw-bold mb-0" style="color:#B7770D;">{{ nb_offres_total }}</h3>
                     </div>
                     <div class="rounded-circle d-flex align-items-center justify-content-center text-white"
                          style="width:44px;height:44px;background:linear-gradient(135deg,#B7770D,#F39C12);">
-                        <i class="bi bi-star-fill"></i>
+                        <i class="bi bi-file-earmark-text-fill"></i>
                     </div>
                 </div>
-                <p class="text-muted small mb-0 mt-2"><i class="bi bi-patch-check text-warning"></i> profils remarquables</p>
+                <p class="text-muted small mb-0 mt-2"><i class="bi bi-layers text-warning"></i> tous statuts confondus</p>
             </div>
         </div>
     </div>
@@ -98,27 +98,27 @@
                 <div class="row g-2">
                     {% url 'comptes:en_developpement' as url_dev %}
                     <div class="col-6">
-                        <a href="{{ url_dev }}" class="btn btn-outline-primary w-100 text-start py-3 d-flex align-items-center gap-2">
+                        <a href="{% url 'comptes:utilisateur_creer' %}" class="btn btn-outline-primary w-100 text-start py-3 d-flex align-items-center gap-2">
                             <i class="bi bi-person-plus-fill fs-5"></i>
                             <span class="small fw-semibold">Nouvel utilisateur</span>
                         </a>
                     </div>
                     <div class="col-6">
-                        <a href="{{ url_dev }}" class="btn btn-outline-success w-100 text-start py-3 d-flex align-items-center gap-2">
+                        <a href="{% url 'referentiels:departement_creer' %}" class="btn btn-outline-success w-100 text-start py-3 d-flex align-items-center gap-2">
                             <i class="bi bi-building-add fs-5"></i>
                             <span class="small fw-semibold">Nouveau département</span>
                         </a>
                     </div>
                     <div class="col-6">
-                        <a href="{{ url_dev }}" class="btn btn-outline-secondary w-100 text-start py-3 d-flex align-items-center gap-2">
-                            <i class="bi bi-clock-history fs-5"></i>
-                            <span class="small fw-semibold">Historique</span>
+                        <a href="{% url 'offres:besoin_list' %}" class="btn btn-outline-info w-100 text-start py-3 d-flex align-items-center gap-2">
+                            <i class="bi bi-inbox fs-5"></i>
+                            <span class="small fw-semibold">Besoins reçus</span>
                         </a>
                     </div>
                     <div class="col-6">
-                        <a href="{{ url_dev }}" class="btn btn-outline-warning w-100 text-start py-3 d-flex align-items-center gap-2">
-                            <i class="bi bi-star fs-5"></i>
-                            <span class="small fw-semibold">Voir le vivier</span>
+                        <a href="{% url 'offres:offre_list' %}" class="btn btn-outline-secondary w-100 text-start py-3 d-flex align-items-center gap-2">
+                            <i class="bi bi-file-earmark-text fs-5"></i>
+                            <span class="small fw-semibold">Voir les offres</span>
                         </a>
                     </div>
                 </div>
@@ -135,9 +135,8 @@
             <div class="card-body p-3">
                 <div class="row g-2">
                     {% url 'comptes:en_developpement' as url_dev %}
-                    {% for module in modules %}{% endfor %}
                     <div class="col-sm-6 col-lg-4">
-                        <a href="{{ url_dev }}" class="text-decoration-none">
+                        <a href="{% url 'comptes:utilisateur_list' %}" class="text-decoration-none">
                             <div class="border rounded p-3 text-center h-100 module-card">
                                 <i class="bi bi-people fs-4 text-primary mb-2 d-block"></i>
                                 <div class="small fw-semibold text-dark">Utilisateurs</div>
@@ -146,7 +145,7 @@
                         </a>
                     </div>
                     <div class="col-sm-6 col-lg-4">
-                        <a href="{{ url_dev }}" class="text-decoration-none">
+                        <a href="{% url 'referentiels:departement_list' %}" class="text-decoration-none">
                             <div class="border rounded p-3 text-center h-100 module-card">
                                 <i class="bi bi-diagram-3 fs-4 text-success mb-2 d-block"></i>
                                 <div class="small fw-semibold text-dark">Départements</div>
@@ -155,7 +154,7 @@
                         </a>
                     </div>
                     <div class="col-sm-6 col-lg-4">
-                        <a href="{{ url_dev }}" class="text-decoration-none">
+                        <a href="{% url 'offres:offre_list' %}" class="text-decoration-none">
                             <div class="border rounded p-3 text-center h-100 module-card">
                                 <i class="bi bi-file-earmark-text fs-4 text-info mb-2 d-block"></i>
                                 <div class="small fw-semibold text-dark">Offres</div>
