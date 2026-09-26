@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+
+{% block title %}Offres{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center gap-3 mb-4">
+    <div>
+        <h5 class="mb-0 fw-semibold"><i class="bi bi-file-earmark-text me-2 text-primary"></i>Offres de stage</h5>
+        <p class="text-muted small mb-0">Liste des offres publiées et en cours</p>
+    </div>
+    {% if role == "Secrétaire" %}
+    <a href="{% url 'offres:offre_creer' %}" class="btn btn-primary btn-sm ms-auto">
+        <i class="bi bi-plus-lg me-1"></i>Nouvelle offre
+    </a>
+    {% endif %}
+</div>
+
+<!-- Filtres -->
+<form method="get" class="card border-0 shadow-sm mb-3">
+    <div class="card-body py-2">
+        <div class="row g-2 align-items-center">
+            <div class="col-md-4">
+                <input type="text" name="q" value="{{ q }}" class="form-control form-control-sm" placeholder="Rechercher (titre, description, profil)…">
+            </div>
+            <div class="col-md-3">
+                <select name="statut" class="form-select form-select-sm">
+                    <option value="">Tous les statuts</option>
+                    {% for val, label in statuts %}
+                    <option value="{{ val }}" {% if val == statut_filtre %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-3">
+                <select name="type_stage" class="form-select form-select-sm">
+                    <option value="">Tous les types</option>
+                    {% for ts in types_stage %}
+                    <option value="{{ ts.pk }}" {% if ts.pk|stringformat:"s" == type_stage_filtre %}selected{% endif %}>{{ ts.libelle }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-auto">
+                <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-search"></i></button>
+                <a href="{% url 'offres:offre_list' %}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-x"></i></a>
+            </div>
+        </div>
+    </div>
+</form>
+
+<div class="card border-0 shadow-sm">
+    <div class="card-body p-0">
+        {% if offres %}
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Titre</th>
+                        <th>Type de stage</th>
+                        <th>Département</th>
+                        <th>Période</th>
+                        <th class="text-center">Places</th>
+                        <th>Statut</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for offre in offres %}
+                    <tr>
+                        <td class="fw-semibold">{{ offre.titre }}</td>
+                        <td class="text-muted small">{{ offre.type_stage }}</td>
+                        <td class="small text-muted">{{ offre.besoin.departement|default:"—" }}</td>
+                        <td class="small text-nowrap">{{ offre.date_debut|date:"d/m/Y" }} → {{ offre.date_fin|date:"d/m/Y" }}</td>
+                        <td class="text-center">{{ offre.nombre_places }}</td>
+                        <td>
+                            {% if offre.statut == "BROUILLON" %}
+                            <span class="badge rounded-pill text-bg-secondary">Brouillon</span>
+                            {% elif offre.statut == "OUVERTE" %}
+                            <span class="badge rounded-pill" style="background:#D5F5E3;color:#117A65;">Ouverte</span>
+                            {% elif offre.statut == "SUSPENDUE" %}
+                            <span class="badge rounded-pill" style="background:#FEF9E7;color:#7D6608;">Suspendue</span>
+                            {% elif offre.statut == "FERMEE" %}
+                            <span class="badge rounded-pill text-bg-dark">Fermée</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <a href="{% url 'offres:offre_detail' offre.pk %}" class="btn btn-sm btn-outline-primary py-0" title="Voir">
+                                <i class="bi bi-eye"></i>
+                            </a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% include "commun/_pagination.html" %}
+        {% else %}
+        <div class="text-center py-5 text-muted">
+            <i class="bi bi-file-earmark-x fs-3 d-block mb-2" style="opacity:.3;"></i>
+            <p class="small mb-0">Aucune offre trouvée.</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

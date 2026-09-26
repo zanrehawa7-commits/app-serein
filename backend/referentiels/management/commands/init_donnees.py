@@ -7,6 +7,7 @@ from referentiels.models import TypeStage
 
 _CRUD = ["add", "change", "delete", "view"]
 
+# Format : "app" → toutes les modèles de l'app ; "app.modele" → modèle spécifique
 GROUPES_PERMISSIONS = {
     "Administrateur": {
         "comptes": _CRUD,
@@ -17,15 +18,18 @@ GROUPES_PERMISSIONS = {
         "suivi": _CRUD,
     },
     "Secrétaire": {
-        "offres": ["add", "change", "view"],          # Offre, Publication
-        "candidatures": ["add", "change", "view"],    # Candidat, Candidature, PieceJointe
-        "referentiels": ["view"],                     # lecture Besoin incluse
+        "offres.besoin": ["view"],               # lecture seule des besoins
+        "offres.offre": _CRUD,                   # CRUD complet sur les offres
+        "offres.publication": _CRUD,             # CRUD complet sur les publications
+        "candidatures": ["add", "change", "view"],
+        "referentiels": ["view"],
     },
     "Responsable": {
-        "offres": ["add", "change", "view"],          # Besoin
-        "candidatures": ["change", "view"],           # Candidature
-        "stages": ["add", "change", "view"],          # Stage
-        "referentiels": ["view"],                     # lecture Membre
+        "offres.besoin": ["add", "change", "view"],  # CRU besoins de son département
+        "offres.offre": ["view"],                    # lecture seule des offres
+        "candidatures": ["change", "view"],
+        "stages": ["add", "change", "view"],
+        "referentiels": ["view"],
     },
 }
 
@@ -53,18 +57,31 @@ class Command(BaseCommand):
             self.stdout.write(f"  Groupe '{nom_groupe}' {action}.")
 
             perms_a_ajouter = []
-            for app_label, actions in apps_perms.items():
-                cts = ContentType.objects.filter(app_label=app_label)
-                for ct in cts:
-                    for action_perm in actions:
-                        codename = f"{action_perm}_{ct.model}"
-                        try:
-                            perm = Permission.objects.get(content_type=ct, codename=codename)
-                            perms_a_ajouter.append(perm)
-                        except Permission.DoesNotExist:
-                            pass
+            for cle, actions in apps_perms.items():
+                if "." in cle:
+                    # Format "app.modele" : une seule ContentType
+                    app_label, model_name = cle.split(".", 1)
+                    try:
+                        ct = ContentType.objects.get(app_label=app_label, model=model_name)
+                        for action_perm in actions:
+                            codename = f"{action_perm}_{model_name}"
+                            perm = Permission.objects.filter(content_type=ct, codename=codename).first()
+                            if perm:
+                                perms_a_ajouter.append(perm)
+                    except ContentType.DoesNotExist:
+                        self.stdout.write(self.style.WARNING(f"    ContentType '{cle}' introuvable — ignoré."))
+                else:
+                    # Format "app" : toutes les modèles de l'application
+                    cts = ContentType.objects.filter(app_label=cle)
+                    for ct in cts:
+                        for action_perm in actions:
+                            codename = f"{action_perm}_{ct.model}"
+                            perm = Permission.objects.filter(content_type=ct, codename=codename).first()
+                            if perm:
+                                perms_a_ajouter.append(perm)
 
             groupe.permissions.set(perms_a_ajouter)
+            self.stdout.write(f"    {len(perms_a_ajouter)} permission(s) attribuée(s).")
 
     def _creer_types_stage(self):
         for libelle in TYPES_STAGE:

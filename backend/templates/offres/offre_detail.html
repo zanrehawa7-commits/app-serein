@@ -1,0 +1,202 @@
+{% extends "base.html" %}
+
+{% block title %}{{ offre.titre }}{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center gap-3 mb-4 flex-wrap">
+    <a href="{% url 'offres:offre_list' %}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left"></i></a>
+    <div>
+        <h5 class="mb-0 fw-semibold"><i class="bi bi-file-earmark-text me-2 text-primary"></i>{{ offre.titre }}</h5>
+        <p class="text-muted small mb-0">Détail de l'offre</p>
+    </div>
+    {% if role == "Secrétaire" %}
+    <div class="ms-auto d-flex gap-2 flex-wrap">
+        {% if offre.statut != "FERMEE" %}
+        <a href="{% url 'offres:offre_modifier' offre.pk %}" class="btn btn-outline-primary btn-sm">
+            <i class="bi bi-pencil me-1"></i>Modifier
+        </a>
+        {% endif %}
+        {% if offre.statut == "BROUILLON" %}
+        <form method="post" action="{% url 'offres:offre_ouvrir' offre.pk %}">{% csrf_token %}
+            <button type="submit" class="btn btn-success btn-sm"><i class="bi bi-play-fill me-1"></i>Ouvrir</button>
+        </form>
+        <button type="button" class="btn btn-outline-danger btn-sm"
+                data-bs-toggle="modal" data-bs-target="#modalConfirmer"
+                data-nom="{{ offre.titre }}"
+                data-url="{% url 'offres:offre_supprimer' offre.pk %}"
+                data-action="supprimer"
+                data-btn-class="btn-danger"
+                data-btn-label="Supprimer">
+            <i class="bi bi-trash me-1"></i>Supprimer
+        </button>
+        {% elif offre.statut == "OUVERTE" %}
+        <form method="post" action="{% url 'offres:offre_suspendre' offre.pk %}">{% csrf_token %}
+            <button type="submit" class="btn btn-warning btn-sm"><i class="bi bi-pause-fill me-1"></i>Suspendre</button>
+        </form>
+        <form method="post" action="{% url 'offres:offre_fermer' offre.pk %}">{% csrf_token %}
+            <button type="submit" class="btn btn-dark btn-sm"><i class="bi bi-stop-fill me-1"></i>Fermer</button>
+        </form>
+        {% elif offre.statut == "SUSPENDUE" %}
+        <form method="post" action="{% url 'offres:offre_rouvrir' offre.pk %}">{% csrf_token %}
+            <button type="submit" class="btn btn-success btn-sm"><i class="bi bi-play-fill me-1"></i>Rouvrir</button>
+        </form>
+        <form method="post" action="{% url 'offres:offre_fermer' offre.pk %}">{% csrf_token %}
+            <button type="submit" class="btn btn-dark btn-sm"><i class="bi bi-stop-fill me-1"></i>Fermer</button>
+        </form>
+        {% endif %}
+    </div>
+    {% endif %}
+</div>
+
+<div class="row g-3">
+    <!-- Informations principales -->
+    <div class="col-md-5">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body">
+                <h6 class="fw-semibold mb-3 text-muted text-uppercase" style="font-size:.7rem;letter-spacing:.05em;">Informations</h6>
+                <dl class="row mb-0 small">
+                    <dt class="col-5 text-muted">Statut</dt>
+                    <dd class="col-7">
+                        {% if offre.statut == "BROUILLON" %}
+                        <span class="badge rounded-pill text-bg-secondary">Brouillon</span>
+                        {% elif offre.statut == "OUVERTE" %}
+                        <span class="badge rounded-pill" style="background:#D5F5E3;color:#117A65;">Ouverte</span>
+                        {% elif offre.statut == "SUSPENDUE" %}
+                        <span class="badge rounded-pill" style="background:#FEF9E7;color:#7D6608;">Suspendue</span>
+                        {% elif offre.statut == "FERMEE" %}
+                        <span class="badge rounded-pill text-bg-dark">Fermée</span>
+                        {% endif %}
+                    </dd>
+                    <dt class="col-5 text-muted">Type de stage</dt>
+                    <dd class="col-7">{{ offre.type_stage }}</dd>
+                    <dt class="col-5 text-muted">Période</dt>
+                    <dd class="col-7">{{ offre.date_debut|date:"d/m/Y" }} → {{ offre.date_fin|date:"d/m/Y" }}</dd>
+                    <dt class="col-5 text-muted">Places totales</dt>
+                    <dd class="col-7">{{ offre.nombre_places }}</dd>
+                    <dt class="col-5 text-muted">Places restantes</dt>
+                    <dd class="col-7">{{ places_restantes }}</dd>
+                    {% if offre.besoin %}
+                    <dt class="col-5 text-muted">Département</dt>
+                    <dd class="col-7">
+                        <a href="{% url 'offres:besoin_detail' offre.besoin.pk %}" class="text-decoration-none">
+                            {{ offre.besoin.departement }}
+                        </a>
+                    </dd>
+                    {% endif %}
+                    <dt class="col-5 text-muted">Créée le</dt>
+                    <dd class="col-7">{{ offre.date_creation|date:"d/m/Y" }}</dd>
+                </dl>
+            </div>
+        </div>
+    </div>
+
+    <!-- Description + Profil -->
+    <div class="col-md-7">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body">
+                <h6 class="fw-semibold mb-2 text-muted text-uppercase" style="font-size:.7rem;letter-spacing:.05em;">Description</h6>
+                <p class="small mb-3" style="white-space:pre-wrap;">{{ offre.description }}</p>
+                <h6 class="fw-semibold mb-2 text-muted text-uppercase" style="font-size:.7rem;letter-spacing:.05em;">Profil recherché</h6>
+                <p class="small mb-0" style="white-space:pre-wrap;">{{ offre.profil_recherche }}</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Bouton copier le texte -->
+{% if role == "Secrétaire" %}
+<div class="mt-3">
+    <pre id="texte-offre-cache" class="d-none">{{ texte_publication }}</pre>
+    <button id="btn-copier" type="button" class="btn btn-outline-secondary btn-sm" onclick="copierTexteOffre()">
+        <i class="bi bi-clipboard me-1"></i>Copier le texte de l'offre
+    </button>
+</div>
+{% endif %}
+
+<!-- Publications -->
+<div class="card border-0 shadow-sm mt-4">
+    <div class="card-header bg-white border-bottom py-3">
+        <h6 class="mb-0 fw-semibold"><i class="bi bi-megaphone me-2 text-primary"></i>Publications</h6>
+    </div>
+    <div class="card-body p-0">
+        {% if publications %}
+        <div class="table-responsive">
+            <table class="table table-hover mb-0 small">
+                <thead class="table-light">
+                    <tr>
+                        <th>Canal</th>
+                        <th>URL</th>
+                        <th>Date</th>
+                        <th>Description</th>
+                        {% if role == "Secrétaire" %}<th class="text-end">Actions</th>{% endif %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for pub in publications %}
+                    <tr>
+                        <td class="fw-semibold">{{ pub.canal }}</td>
+                        <td><a href="{{ pub.url }}" target="_blank" class="text-decoration-none text-truncate d-inline-block" style="max-width:180px;">{{ pub.url }}</a></td>
+                        <td class="text-nowrap">{{ pub.date_publication|date:"d/m/Y" }}</td>
+                        <td class="text-muted">{{ pub.description|truncatechars:50 }}</td>
+                        {% if role == "Secrétaire" %}
+                        <td class="text-end">
+                            <a href="{% url 'offres:publication_modifier' pub.pk %}" class="btn btn-sm btn-outline-primary py-0" title="Modifier"><i class="bi bi-pencil"></i></a>
+                            <button type="button" class="btn btn-sm btn-outline-danger py-0"
+                                    data-bs-toggle="modal" data-bs-target="#modalConfirmer"
+                                    data-nom="{{ pub.canal }}"
+                                    data-url="{% url 'offres:publication_supprimer' pub.pk %}"
+                                    data-action="supprimer"
+                                    data-btn-class="btn-danger"
+                                    data-btn-label="Supprimer">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </td>
+                        {% endif %}
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="text-center py-3 text-muted small">Aucune publication pour cette offre.</div>
+        {% endif %}
+
+        <!-- Formulaire ajout publication (Secrétaire + offre OUVERTE) -->
+        {% if form_publication %}
+        <div class="border-top p-3">
+            <h6 class="fw-semibold mb-2 small text-muted text-uppercase" style="font-size:.7rem;">Ajouter une publication</h6>
+            {% load crispy_forms_tags %}
+            <form method="post" action="{% url 'offres:publication_creer' offre.pk %}">
+                {% csrf_token %}
+                {{ form_publication|crispy }}
+            </form>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+{% include "commun/_historique.html" %}
+{% include "commun/_modal_confirmer.html" %}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function copierTexteOffre() {
+    var texte = document.getElementById('texte-offre-cache').textContent;
+    var btn = document.getElementById('btn-copier');
+    navigator.clipboard.writeText(texte).then(function() {
+        btn.innerHTML = '<i class="bi bi-check-lg me-1"></i>Copié !';
+        btn.classList.replace('btn-outline-secondary', 'btn-success');
+        setTimeout(function() {
+            btn.innerHTML = '<i class="bi bi-clipboard me-1"></i>Copier le texte de l\'offre';
+            btn.classList.replace('btn-success', 'btn-outline-secondary');
+        }, 2000);
+    }).catch(function() {
+        btn.innerHTML = '<i class="bi bi-exclamation-triangle me-1"></i>Erreur';
+        setTimeout(function() {
+            btn.innerHTML = '<i class="bi bi-clipboard me-1"></i>Copier le texte de l\'offre';
+        }, 2000);
+    });
+}
+</script>
+{% endblock %}

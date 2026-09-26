@@ -10,10 +10,15 @@ def contexte_utilisateur(request):
 
     try:
         nb_notifications = request.user.notifications.filter(lue=False).count()
+        dernieres_notifications = list(
+            request.user.notifications.order_by("lue", "-date_creation")[:5]
+        )
     except Exception:
         nb_notifications = 0
+        dernieres_notifications = []
 
     return {
         "role_utilisateur": role,
         "nb_notifications": nb_notifications,
+        "dernieres_notifications": dernieres_notifications,
     }

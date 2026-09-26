@@ -86,15 +86,42 @@ class TableauBordAdminView(RoleRequisMixin, TemplateView):
             return TemplateView.dispatch(self, request, *args, **kwargs)
         return super().dispatch(request, *args, **kwargs)
 
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        from offres.models import Besoin, Offre, StatutBesoin, StatutOffre
+        ctx["nb_besoins_envoyes"] = Besoin.objects.filter(statut=StatutBesoin.ENVOYE).count()
+        ctx["nb_offres_ouvertes"] = Offre.objects.filter(statut=StatutOffre.OUVERTE).count()
+        ctx["nb_offres_total"] = Offre.objects.count()
+        return ctx
+
 
 class TableauBordSecretaireView(RoleRequisMixin, TemplateView):
     roles = ["Secrétaire"]
     template_name = "comptes/tableau_bord_secretaire.html"
 
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        from offres.models import Besoin, Offre, StatutBesoin, StatutOffre
+        ctx["nb_besoins_en_attente"] = Besoin.objects.filter(statut=StatutBesoin.ENVOYE).count()
+        ctx["nb_offres_ouvertes"] = Offre.objects.filter(statut=StatutOffre.OUVERTE).count()
+        ctx["nb_offres_brouillon"] = Offre.objects.filter(statut=StatutOffre.BROUILLON).count()
+        ctx["besoins_recents"] = Besoin.objects.filter(statut=StatutBesoin.ENVOYE).select_related("departement", "type_stage").order_by("-date_creation")[:5]
+        return ctx
+
 
 class TableauBordResponsableView(RoleRequisMixin, TemplateView):
     roles = ["Responsable"]
     template_name = "comptes/tableau_bord_responsable.html"
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        if self.request.user.membre:
+            from offres.models import Besoin, StatutBesoin
+            dept = self.request.user.membre.departement
+            ctx["nb_besoins_envoyes"] = Besoin.objects.filter(departement=dept, statut=StatutBesoin.ENVOYE).count()
+            ctx["nb_besoins_pris_en_charge"] = Besoin.objects.filter(departement=dept, statut=StatutBesoin.PRIS_EN_CHARGE).count()
+            ctx["besoins_recents"] = Besoin.objects.filter(departement=dept).select_related("type_stage").order_by("-date_creation")[:5]
+        return ctx
 
 
 class EnDeveloppementView(TemplateView):

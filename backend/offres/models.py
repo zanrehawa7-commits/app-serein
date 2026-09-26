@@ -119,6 +119,10 @@ class Offre(models.Model):
         if self.nombre_places is not None and self.nombre_places < 1:
             raise ValidationError({"nombre_places": "Le nombre de places doit être au moins 1."})
 
+    def places_restantes(self):
+        """Nombre de places encore disponibles (sera affiné à l'étape stages)."""
+        return self.nombre_places
+
 
 class Publication(models.Model):
     offre = models.ForeignKey(

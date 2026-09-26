@@ -91,6 +91,52 @@ Utilitaires partagés entre toutes les apps.
 - **Session** : déconnexion automatique après 30 min (`SESSION_COOKIE_AGE=1800`, `SESSION_SAVE_EVERY_REQUEST=True`).
 - **Formulaires** : `django-crispy-forms` + `crispy-bootstrap5`. Utiliser `{{ form|crispy }}` dans les templates.
 
+## Étape 5 — Besoins, offres et publications (F08, F09) + socle suivi (F14, F17)
+
+### Socle suivi (`suivi/services.py`)
+- **`enregistrer_historique(objet, utilisateur, ancien_statut, nouveau_statut, commentaire)`** : enregistre via GenericFK (ContentType + object_id). À appeler dans chaque transition.
+- **`notifier(destinataires, message, lien="")`** : bulk_create des `Notification`. `destinataires` est une liste d'objets Utilisateur.
+- **`templates/commun/_historique.html`** : partiel à inclure dans tout détail (besoin, offre, etc.). Attend `historiques` en contexte.
+
+### Vues notifications (`suivi/`)
+- `NotificationListView` : liste paginée des notifs de l'utilisateur connecté (toutes les 3 rôles).
+- `NotificationLireView` : GET ou POST, marque comme lue puis redirige vers `notif.lien` si présent.
+- `NotificationToutLireView` : POST uniquement, bulk update.
+- Dropdown dans `base.html` : affiche les 5 dernières (`dernieres_notifications` injecté par context processor), bouton "Tout marquer comme lu", lien "Voir toutes".
+
+### Context processor (`comptes/context_processors.py`)
+Injecte dans tous les templates : `role_utilisateur`, `nb_notifications`, `dernieres_notifications` (5 dernières).
+
+### Transitions Besoin (`offres/services.py`)
+- `TransitionInterdite(Exception)` : levée par toute transition invalide.
+- `creer_besoin(...)` : statut ENVOYE, historique + notif aux Secrétaires actives.
+- `annuler_besoin(besoin, utilisateur)` : depuis ENVOYE ou PRIS_EN_CHARGE → ANNULE. Notifie les Secrétaires actives.
+- Machine d'état : ENVOYE → PRIS_EN_CHARGE (via `creer_offre`) → CLOTURE (future étape) ; ou ANNULE depuis ENVOYE/PRIS_EN_CHARGE.
+
+### Transitions Offre (`offres/services.py`)
+- `creer_offre(..., besoin=None)` : si besoin fourni, `select_for_update()` vérifie ENVOYE + pas d'offre existante → `TransitionInterdite`. Passe le besoin en PRIS_EN_CHARGE.
+- `ouvrir_offre` : BROUILLON → OUVERTE.
+- `suspendre_offre` : OUVERTE → SUSPENDUE.
+- `rouvrir_offre` : SUSPENDUE → OUVERTE.
+- `fermer_offre` : OUVERTE ou SUSPENDUE → FERMEE.
+- `supprimer_offre` : BROUILLON seulement → delete().
+- Toutes les transitions sont `@transaction.atomic` et enregistrent l'historique.
+- En cas de `TransitionInterdite` dans les vues : redirect vers la page détail + `messages.error()` (pattern PRG).
+
+### Vues offres (`offres/views.py`)
+- `BesoinListView / OffreListView` : 3 rôles, filtrage côté serveur dans `get_queryset()`.
+  - Responsable : uniquement besoins/offres de son département.
+  - Admin : lecture seule (pas de boutons de création/modification).
+- `BesoinCreateView` : Responsable uniquement. Lève `PermissionDenied` si `request.user.membre is None`.
+- `OffreCreateFromBesoinView` : Secrétaire uniquement. Utilise `creer_offre(..., besoin=besoin)`.
+- Toutes les vues de transition (ouvrir, suspendre, rouvrir, fermer) héritent de `_OffreTransitionView`.
+
+### `init_donnees.py` — Format étendu
+Support de la notation `"app.modele": [actions]` pour permissions par modèle. Secrétaire : `view_besoin` uniquement (pas add/change/delete Besoin). Responsable : `add/change/view_besoin`, `view_offre` uniquement.
+
+### `commun/_historique.html`
+Partiel timeline à inclure dans tout détail d'objet suivi. Attend la variable `historiques` (QuerySet Historique ordonné par `-date_action`).
+
 ## Règles de gestion clés
 - **RG07** : un candidat ne peut avoir qu'une seule candidature active (statut RECUE ou EN_TRAITEMENT).
 - **RG09** : si `type_demande = SUITE_OFFRE`, le champ `offre` est obligatoire ; si `SPONTANEE`, il doit être vide.
