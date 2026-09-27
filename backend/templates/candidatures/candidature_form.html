@@ -1,0 +1,226 @@
+{% extends "base.html" %}
+{% load crispy_forms_tags %}
+
+{% block title %}{{ titre }}{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-4">
+    <div>
+        <h4 class="mb-0 fw-semibold"><i class="bi bi-folder-plus me-2"></i>{{ titre }}</h4>
+        <p class="text-muted small mb-0">Candidat : <strong>{{ candidat }}</strong></p>
+    </div>
+    <a href="{% url 'candidatures:candidat_detail' candidat.pk %}" class="btn btn-outline-secondary btn-sm">
+        <i class="bi bi-arrow-left me-1"></i>Retour au candidat
+    </a>
+</div>
+
+{% if messages %}
+{% for m in messages %}
+<div class="alert alert-{{ m.tags }} mb-3">{{ m }}</div>
+{% endfor %}
+{% endif %}
+
+<form method="post" enctype="multipart/form-data" novalidate>
+    {% csrf_token %}
+
+    <div class="row g-3">
+
+        <!-- ── Informations de la candidature ── -->
+        <div class="col-lg-7">
+            <div class="card border-0 shadow-sm">
+                <div class="card-header bg-white border-bottom py-2">
+                    <h6 class="mb-0 fw-semibold">
+                        <i class="bi bi-clipboard2-data me-2 text-primary"></i>Informations de la candidature
+                    </h6>
+                </div>
+                <div class="card-body p-4">
+                    {% crispy form %}
+                </div>
+            </div>
+        </div>
+
+        <!-- ── Pièces jointes ── -->
+        <div class="col-lg-5">
+
+            {% if pieces_existantes %}
+            <div class="card border-0 shadow-sm mb-3">
+                <div class="card-header bg-white border-bottom py-2">
+                    <h6 class="mb-0 fw-semibold">Pièces jointes existantes</h6>
+                </div>
+                <ul class="list-group list-group-flush">
+                    {% for piece in pieces_existantes %}
+                    <li class="list-group-item d-flex justify-content-between align-items-center py-2">
+                        <span>
+                            <i class="bi bi-paperclip me-1 text-muted"></i>
+                            <strong class="small">{{ piece.get_type_piece_display }}</strong>
+                            <span class="text-muted small ms-1">— {{ piece.nom_original|default:piece.fichier.name }}</span>
+                        </span>
+                        <div class="form-check mb-0">
+                            <input class="form-check-input border-danger" type="checkbox"
+                                   name="delete_piece_{{ piece.pk }}" value="{{ piece.pk }}"
+                                   id="del_piece_{{ piece.pk }}">
+                            <label class="form-check-label text-danger small" for="del_piece_{{ piece.pk }}">Supprimer</label>
+                        </div>
+                    </li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+
+            <div class="card border-0 shadow-sm">
+                <div class="card-header bg-white border-bottom py-2 d-flex justify-content-between align-items-center">
+                    <h6 class="mb-0 fw-semibold">
+                        {% if pieces_existantes %}Ajouter des pièces{% else %}Pièces jointes{% endif %}
+                        <span class="badge bg-danger ms-1" style="font-size:.7rem;">CV obligatoire</span>
+                    </h6>
+                    <button type="button" id="btn-ajouter-piece" class="btn btn-outline-primary btn-sm">
+                        <i class="bi bi-plus-lg me-1"></i>Ajouter
+                    </button>
+                </div>
+
+                <div class="card-body p-3">
+                    {{ formset.management_form }}
+
+                    {% if formset.non_form_errors %}
+                    <div class="alert alert-danger py-2">
+                        {% for e in formset.non_form_errors %}
+                        <p class="mb-0 small">{{ e }}</p>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+
+                    <div id="pieces-liste">
+                        {% for piece_form in formset %}
+                        <div class="piece-row border rounded p-3 mb-2 position-relative">
+                            {% if forloop.counter > 1 %}
+                            <button type="button" class="btn-supprimer-piece btn btn-sm btn-outline-danger position-absolute top-0 end-0 m-1 py-0 px-1" title="Retirer">
+                                <i class="bi bi-x-lg"></i>
+                            </button>
+                            {% endif %}
+                            <div class="mb-2">
+                                <label class="form-label small fw-semibold mb-1">Type de pièce</label>
+                                {{ piece_form.type_piece }}
+                                {% if piece_form.type_piece.errors %}
+                                <div class="text-danger small">{{ piece_form.type_piece.errors|join:", " }}</div>
+                                {% endif %}
+                            </div>
+                            <div>
+                                <label class="form-label small fw-semibold mb-1">Fichier</label>
+                                {{ piece_form.fichier }}
+                                {% if piece_form.fichier.errors %}
+                                <div class="text-danger small">{{ piece_form.fichier.errors|join:", " }}</div>
+                                {% endif %}
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+
+                    <p class="text-muted small mt-2 mb-0">
+                        <i class="bi bi-info-circle me-1"></i>Formats acceptés : PDF, JPG, PNG — 5 Mo max.
+                    </p>
+                </div>
+            </div>
+
+            <div class="mt-3 d-flex gap-2">
+                <button type="submit" class="btn btn-primary">
+                    <i class="bi bi-check-lg me-1"></i>Enregistrer
+                </button>
+                <a href="{% url 'candidatures:candidat_detail' candidat.pk %}" class="btn btn-outline-secondary">Annuler</a>
+            </div>
+        </div>
+    </div>
+</form>
+
+<script>
+// ── Champ offre : visible uniquement si type_demande = SUITE_OFFRE ──
+document.addEventListener("DOMContentLoaded", function () {
+    var typeDemande = document.querySelector("[name$='type_demande']");
+    var divOffre = document.getElementById("div_id_offre");
+    if (typeDemande && divOffre) {
+        function toggleOffre() {
+            divOffre.style.display = typeDemande.value === "SUITE_OFFRE" ? "" : "none";
+            if (typeDemande.value !== "SUITE_OFFRE") {
+                var sel = divOffre.querySelector("select");
+                if (sel) sel.value = "";
+            }
+        }
+        typeDemande.addEventListener("change", toggleOffre);
+        toggleOffre();
+    }
+});
+
+// ── Formset dynamique : ajouter / supprimer des pièces jointes ──
+(function () {
+    var PREFIX     = "pieces";
+    var totalInput = document.getElementById("id_" + PREFIX + "-TOTAL_FORMS");
+    var liste      = document.getElementById("pieces-liste");
+    var btnAjouter = document.getElementById("btn-ajouter-piece");
+
+    if (!totalInput || !liste || !btnAjouter) return;
+
+    // Gabarit : clone de la première ligne (index 0), utilisé pour créer les suivantes
+    var gabarit = liste.querySelector(".piece-row").cloneNode(true);
+
+    function nouveauIndex() {
+        return parseInt(totalInput.value, 10);
+    }
+
+    function ajouterLigne() {
+        var idx  = nouveauIndex();
+        var copy = gabarit.cloneNode(true);
+
+        // Mettre à jour tous les attributs name / id / for qui contiennent l'index 0
+        copy.innerHTML = copy.innerHTML.replace(/pieces-0-/g, "pieces-" + idx + "-");
+
+        // Vider les valeurs
+        copy.querySelectorAll("input, select").forEach(function (el) {
+            if (el.type !== "hidden") el.value = "";
+            if (el.type === "file") {
+                // Remplacer l'input file pour vider son état
+                var newEl = el.cloneNode(true);
+                el.parentNode.replaceChild(newEl, el);
+            }
+        });
+
+        // Ajouter le bouton "Retirer" sur toutes les lignes ajoutées dynamiquement
+        var btnSuppr = copy.querySelector(".btn-supprimer-piece");
+        if (!btnSuppr) {
+            btnSuppr = document.createElement("button");
+            btnSuppr.type = "button";
+            btnSuppr.className = "btn-supprimer-piece btn btn-sm btn-outline-danger position-absolute top-0 end-0 m-1 py-0 px-1";
+            btnSuppr.title = "Retirer";
+            btnSuppr.innerHTML = '<i class="bi bi-x-lg"></i>';
+            copy.appendChild(btnSuppr);
+        }
+
+        liste.appendChild(copy);
+        totalInput.value = idx + 1;
+
+        // Lier le bouton supprimer de la nouvelle ligne
+        copy.querySelector(".btn-supprimer-piece").addEventListener("click", function () {
+            supprimerLigne(copy);
+        });
+    }
+
+    function supprimerLigne(row) {
+        // On garde au moins une ligne
+        if (liste.querySelectorAll(".piece-row").length <= 1) return;
+        row.remove();
+        // Renuméroter les lignes restantes
+        liste.querySelectorAll(".piece-row").forEach(function (r, i) {
+            r.innerHTML = r.innerHTML.replace(/pieces-\d+-/g, "pieces-" + i + "-");
+        });
+        totalInput.value = liste.querySelectorAll(".piece-row").length;
+    }
+
+    // Lier le bouton supprimer des lignes existantes (à partir de la 2e)
+    liste.querySelectorAll(".btn-supprimer-piece").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+            supprimerLigne(btn.closest(".piece-row"));
+        });
+    });
+
+    btnAjouter.addEventListener("click", ajouterLigne);
+})();
+</script>
+{% endblock %}

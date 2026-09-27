@@ -1,0 +1,147 @@
+{% extends "base.html" %}
+{% load crispy_forms_tags %}
+
+{% block title %}{{ titre }}{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-4">
+    <div>
+        <h4 class="mb-0 fw-semibold"><i class="bi bi-person me-2"></i>{{ titre }}</h4>
+        <p class="text-muted small mb-0">Les champs marqués <span class="text-danger">*</span> sont obligatoires.</p>
+    </div>
+    {% if url_retour == "candidatures:candidat_detail" and candidat %}
+    <a href="{% url 'candidatures:candidat_detail' candidat.pk %}" class="btn btn-outline-secondary btn-sm">
+        <i class="bi bi-arrow-left me-1"></i>Retour
+    </a>
+    {% else %}
+    <a href="{% url 'candidatures:candidat_recherche' %}" class="btn btn-outline-secondary btn-sm">
+        <i class="bi bi-arrow-left me-1"></i>Retour à la recherche
+    </a>
+    {% endif %}
+</div>
+
+{% if form.non_field_errors %}
+<div class="alert alert-danger mb-3" style="max-width:720px;">
+    {{ form.non_field_errors }}
+</div>
+{% endif %}
+
+<form method="post" id="form-candidat">
+    {% csrf_token %}
+
+    <!-- ── Informations personnelles ── -->
+    <div class="card border-0 shadow-sm mb-3" style="max-width:720px;">
+        <div class="card-header bg-white border-bottom py-2">
+            <h6 class="mb-0 fw-semibold">
+                <i class="bi bi-person-vcard me-2 text-primary"></i>Informations personnelles
+            </h6>
+        </div>
+        <div class="card-body p-4">
+            <div class="row g-3">
+                <div class="col-md-6">{{ form.nom|as_crispy_field }}</div>
+                <div class="col-md-6">{{ form.prenom|as_crispy_field }}</div>
+                <div class="col-md-6">{{ form.telephone|as_crispy_field }}</div>
+                <div class="col-md-6">{{ form.email|as_crispy_field }}</div>
+                <div class="col-12">{{ form.adresse|as_crispy_field }}</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Formation ── -->
+    <div class="card border-0 shadow-sm mb-4" style="max-width:720px;">
+        <div class="card-header bg-white border-bottom py-2">
+            <h6 class="mb-0 fw-semibold">
+                <i class="bi bi-mortarboard me-2 text-primary"></i>Formation
+            </h6>
+        </div>
+        <div class="card-body p-4">
+            <div class="row g-3">
+                <div class="col-md-6">{{ form.niveau_etudes|as_crispy_field }}</div>
+                <div class="col-md-6">{{ form.filiere|as_crispy_field }}</div>
+
+                <!-- Établissement -->
+                <div class="col-12">
+                    <label class="form-label fw-semibold" for="id_etablissement">
+                        Établissement
+                    </label>
+                    {# Le dropdown inclut les établissements enregistrés + "Autre" ajouté par JS #}
+                    {{ form.etablissement }}
+                    {% if form.etablissement.errors %}
+                    <div class="text-danger small mt-1">{{ form.etablissement.errors.0 }}</div>
+                    {% endif %}
+                </div>
+
+                <!-- Champ saisie libre : caché par défaut, JS l'affiche si "Autre" est sélectionné -->
+                <div class="col-12" id="bloc-etablissement-autre" style="display:none;">
+                    <label class="form-label fw-semibold" for="id_etablissement_autre">
+                        Nom de l'établissement
+                    </label>
+                    {{ form.etablissement_autre }}
+                    {% if form.etablissement_autre.errors %}
+                    <div class="text-danger small mt-1">{{ form.etablissement_autre.errors.0 }}</div>
+                    {% endif %}
+                    <div class="form-text">
+                        Indiquez le nom complet de l'université ou de l'école.
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Actions ── -->
+    <div class="d-flex gap-2" style="max-width:720px;">
+        <button type="submit" class="btn btn-primary">
+            <i class="bi bi-check-lg me-1"></i>Enregistrer
+        </button>
+        {% if url_retour == "candidatures:candidat_detail" and candidat %}
+        <a href="{% url 'candidatures:candidat_detail' candidat.pk %}" class="btn btn-outline-secondary">Annuler</a>
+        {% else %}
+        <a href="{% url 'candidatures:candidat_recherche' %}" class="btn btn-outline-secondary">Annuler</a>
+        {% endif %}
+    </div>
+</form>
+
+<script>
+(function () {
+    var SENTINEL = '__autre__';
+    var sel   = document.getElementById('id_etablissement');
+    var bloc  = document.getElementById('bloc-etablissement-autre');
+    var input = document.getElementById('id_etablissement_autre');
+    var form  = document.getElementById('form-candidat');
+
+    if (!sel || !bloc) return;
+
+    // Ajouter "Autre (non répertorié)" comme dernière option du dropdown
+    var optAutre = document.createElement('option');
+    optAutre.value = SENTINEL;
+    optAutre.textContent = 'Autre (non répertorié)';
+    sel.appendChild(optAutre);
+
+    function afficherSaisiLibre(visible) {
+        bloc.style.display = visible ? '' : 'none';
+        if (!visible && input) input.value = '';
+    }
+
+    // En mode modification : si un établissement_autre était déjà saisi (pas de FK),
+    // sélectionner automatiquement "Autre" pour que le champ libre reste visible.
+    {% if form.instance.pk and not form.instance.etablissement_id and form.instance.etablissement_autre %}
+    sel.value = SENTINEL;
+    {% endif %}
+
+    function toggle() {
+        afficherSaisiLibre(sel.value === SENTINEL);
+    }
+
+    sel.addEventListener('change', toggle);
+    toggle();
+
+    // Avant la soumission : remplacer la sentinelle par "" pour que Django reçoive un FK null valide
+    form.addEventListener('submit', function () {
+        if (sel.value === SENTINEL) {
+            sel.value = '';
+        }
+    });
+})();
+</script>
+{% endblock %}

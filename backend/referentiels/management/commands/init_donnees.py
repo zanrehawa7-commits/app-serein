@@ -13,21 +13,23 @@ GROUPES_PERMISSIONS = {
         "comptes": _CRUD,
         "referentiels": _CRUD,
         "offres": _CRUD,
-        "candidatures": _CRUD,
+        "candidatures": ["view"],                # lecture seule (pas de saisie)
         "stages": _CRUD,
         "suivi": _CRUD,
     },
     "Secrétaire": {
-        "offres.besoin": ["view"],               # lecture seule des besoins
-        "offres.offre": _CRUD,                   # CRUD complet sur les offres
-        "offres.publication": _CRUD,             # CRUD complet sur les publications
-        "candidatures": ["add", "change", "view"],
+        "offres.besoin": ["view"],
+        "offres.offre": _CRUD,
+        "offres.publication": _CRUD,
+        "candidatures.candidat": _CRUD,
+        "candidatures.candidature": ["add", "change", "view"],
+        "candidatures.piecejointe": ["add", "change", "delete", "view"],
         "referentiels": ["view"],
     },
     "Responsable": {
-        "offres.besoin": ["add", "change", "view"],  # CRU besoins de son département
-        "offres.offre": ["view"],                    # lecture seule des offres
-        "candidatures": ["change", "view"],
+        "offres.besoin": ["add", "change", "view"],
+        "offres.offre": ["view"],
+        "candidatures": ["view"],                # lecture seule (présélection à l'étape 7)
         "stages": ["add", "change", "view"],
         "referentiels": ["view"],
     },

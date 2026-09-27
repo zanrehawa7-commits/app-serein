@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+
+{% block title %}Candidatures{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-4 flex-wrap gap-2">
+    <div>
+        <h4 class="mb-0 fw-semibold"><i class="bi bi-person-lines-fill me-2"></i>Candidatures</h4>
+        <p class="text-muted small mb-0">{{ paginator.count }} candidature{{ paginator.count|pluralize }} au total</p>
+    </div>
+    {% if perms.candidatures.add_candidature %}
+    <a href="{% url 'candidatures:candidat_recherche' %}" class="btn btn-primary btn-sm">
+        <i class="bi bi-folder-plus me-1"></i>Nouvelle candidature
+    </a>
+    {% endif %}
+</div>
+
+<!-- Filtres -->
+<div class="card border-0 shadow-sm mb-3">
+    <div class="card-body py-2">
+        <form method="get" class="row g-2 align-items-end">
+            <div class="col-md-3">
+                <input type="text" name="q" value="{{ q }}" placeholder="Recherche (ref, nom, tél)…" class="form-control form-control-sm">
+            </div>
+            <div class="col-md-2">
+                <select name="statut" class="form-select form-select-sm">
+                    <option value="">Tous les statuts</option>
+                    {% for val, label in statuts %}
+                    <option value="{{ val }}" {% if statut_filtre == val %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <select name="type_demande" class="form-select form-select-sm">
+                    <option value="">Tous types</option>
+                    {% for val, label in types_demande %}
+                    <option value="{{ val }}" {% if type_demande_filtre == val %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            {% if not role_utilisateur == "Responsable" %}
+            <div class="col-md-2">
+                <select name="departement" class="form-select form-select-sm">
+                    <option value="">Tous les départements</option>
+                    {% for dept in departements %}
+                    <option value="{{ dept.pk }}" {% if departement_filtre == dept.pk|stringformat:"s" %}selected{% endif %}>{{ dept.nom }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            {% endif %}
+            <div class="col-auto">
+                <button type="submit" class="btn btn-primary btn-sm">Filtrer</button>
+                <a href="{% url 'candidatures:candidature_list' %}" class="btn btn-outline-secondary btn-sm ms-1">Réinitialiser</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="card border-0 shadow-sm">
+    <div class="card-body p-0">
+        {% if candidatures %}
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th class="ps-3">Référence</th>
+                        <th>Candidat</th>
+                        <th>Département</th>
+                        <th>Type</th>
+                        <th>Dépôt</th>
+                        <th>Statut</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for c in candidatures %}
+                    <tr>
+                        <td class="ps-3 fw-semibold">{{ c.reference }}</td>
+                        <td>{{ c.candidat }}</td>
+                        <td>{{ c.departement.nom }}</td>
+                        <td>{{ c.get_type_demande_display }}</td>
+                        <td>{{ c.date_depot|date:"d/m/Y" }}</td>
+                        <td>
+                            {% if c.statut == "RECUE" %}
+                            <span class="badge bg-primary">Reçue</span>
+                            {% elif c.statut == "EN_TRAITEMENT" %}
+                            <span class="badge bg-warning text-dark">En traitement</span>
+                            {% elif c.statut == "ACCORDEE" %}
+                            <span class="badge bg-success">Accordée</span>
+                            {% elif c.statut == "REFUSEE" %}
+                            <span class="badge bg-danger">Refusée</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-end pe-3">
+                            <a href="{% url 'candidatures:candidature_detail' c.pk %}" class="btn btn-sm btn-outline-primary">
+                                <i class="bi bi-eye"></i>
+                            </a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% include "commun/_pagination.html" %}
+        {% else %}
+        <div class="text-center py-5 text-muted">
+            <i class="bi bi-folder2 fs-1 d-block mb-2" style="opacity:.3;"></i>
+            <p class="small mb-0">Aucune candidature trouvée.</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

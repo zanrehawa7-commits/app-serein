@@ -1,6 +1,33 @@
 import os
+import uuid
+from django.conf import settings
 from django.core.exceptions import ValidationError
+from django.core.files.storage import FileSystemStorage
 from django.db import models
+
+
+def _get_stockage_prive():
+    """Stockage hors MEDIA_ROOT — les fichiers ne doivent jamais être servis via /media/."""
+    return FileSystemStorage(location=settings.FICHIERS_PRIVES_ROOT, base_url=None)
+
+
+def _piece_upload_path(instance, filename):
+    ext = os.path.splitext(filename)[1].lower()
+    safe = f"{instance.type_piece}_{uuid.uuid4().hex[:8]}{ext}"
+    candidature_id = instance.candidature_id or "tmp"
+    return f"candidatures/{candidature_id}/{safe}"
+
+
+class NiveauEtudes(models.TextChoices):
+    BAC = "BAC", "Bac"
+    BTS_DUT = "BTS", "BTS / DUT"
+    LICENCE_1 = "L1", "Licence 1"
+    LICENCE_2 = "L2", "Licence 2"
+    LICENCE_3 = "L3", "Licence 3"
+    MASTER_1 = "M1", "Master 1"
+    MASTER_2 = "M2", "Master 2"
+    DOCTORAT = "DOC", "Doctorat"
+    AUTRE = "AUTRE", "Autre"
 
 
 class TypeDemande(models.TextChoices):
@@ -46,10 +73,15 @@ def _valider_piece_jointe(fichier):
 class Candidat(models.Model):
     nom = models.CharField(max_length=100, verbose_name="nom")
     prenom = models.CharField(max_length=100, verbose_name="prénom")
-    telephone = models.CharField(max_length=20, db_index=True, verbose_name="téléphone")
+    telephone = models.CharField(max_length=20, unique=True, verbose_name="téléphone")
     email = models.EmailField(blank=True, db_index=True, verbose_name="email")
     adresse = models.TextField(blank=True, verbose_name="adresse")
-    niveau_etudes = models.CharField(max_length=100, blank=True, verbose_name="niveau d'études")
+    niveau_etudes = models.CharField(
+        max_length=10,
+        choices=NiveauEtudes.choices,
+        blank=True,
+        verbose_name="niveau d'études",
+    )
     filiere = models.CharField(max_length=150, blank=True, verbose_name="filière")
     etablissement = models.ForeignKey(
         "referentiels.Etablissement",
@@ -58,6 +90,12 @@ class Candidat(models.Model):
         blank=True,
         related_name="candidats",
         verbose_name="établissement",
+    )
+    etablissement_autre = models.CharField(
+        max_length=200,
+        blank=True,
+        verbose_name="établissement (saisie libre)",
+        help_text="Remplir uniquement si l'établissement n'est pas dans la liste.",
     )
 
     class Meta:
@@ -104,7 +142,10 @@ class Candidature(models.Model):
     )
     debut_disponibilite = models.DateField(verbose_name="début de disponibilité")
     fin_disponibilite = models.DateField(verbose_name="fin de disponibilité")
-    duree_souhaitee = models.PositiveSmallIntegerField(verbose_name="durée souhaitée (semaines)")
+    duree_souhaitee = models.PositiveSmallIntegerField(
+        verbose_name="durée souhaitée (mois)",
+        help_text="Durée en mois entiers.",
+    )
     statut = models.CharField(
         max_length=20,
         choices=StatutCandidature.choices,
@@ -198,10 +239,12 @@ class PieceJointe(models.Model):
         verbose_name="type de pièce",
     )
     fichier = models.FileField(
-        upload_to="candidatures/%Y/%m/",
+        upload_to=_piece_upload_path,
+        storage=_get_stockage_prive,
         validators=[_valider_piece_jointe],
         verbose_name="fichier",
     )
+    nom_original = models.CharField(max_length=255, blank=True, verbose_name="nom original")
     date_ajout = models.DateTimeField(auto_now_add=True, verbose_name="date d'ajout")
 
     class Meta:

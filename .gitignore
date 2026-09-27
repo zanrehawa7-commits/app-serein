@@ -19,6 +19,7 @@ venv/
 db.sqlite3
 staticfiles/
 media/
+fichiers_prives/
 
 # Docker
 .dockerignore
