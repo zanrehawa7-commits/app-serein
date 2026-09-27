@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% load crispy_forms_tags %}
+
+{% block title %}Modifier le stage{% endblock %}
+
+{% block content %}
+<div class="mb-4">
+    <h4 class="fw-semibold"><i class="bi bi-pencil me-2"></i>Modifier le stage</h4>
+    <p class="text-muted small mb-0">
+        {{ stage.candidature.candidat }} &nbsp;·&nbsp; {{ stage.candidature.departement.nom }}
+        &nbsp;·&nbsp; Statut : <strong>{{ stage.get_statut_display }}</strong>
+    </p>
+</div>
+
+<div class="row g-3">
+    <div class="col-md-7">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body">
+                {% if stage.statut == "EN_COURS" %}
+                <div class="alert alert-info py-2 small mb-3">
+                    <i class="bi bi-info-circle me-1"></i>Le stage est en cours — la date de début ne peut plus être modifiée.
+                </div>
+                {% endif %}
+                <form method="post">
+                    {% csrf_token %}
+                    {% crispy form %}
+                </form>
+                <a href="{% url 'stages:stage_detail' stage.pk %}" class="btn btn-outline-secondary btn-sm mt-2">
+                    <i class="bi bi-arrow-left me-1"></i>Annuler
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-5">
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white border-bottom py-2">
+                <h6 class="mb-0 fw-semibold text-muted small"><i class="bi bi-info-circle me-1"></i>Disponibilités</h6>
+            </div>
+            <div class="card-body small">
+                <div id="dispo-alert" class="alert alert-warning py-2 d-none" role="alert">
+                    <i class="bi bi-exclamation-triangle me-1"></i>
+                    <span id="dispo-msg"></span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const DISPOS = {{ membres_dispos|default:"{}" }};
+
+function checkDispo() {
+    const maitre = document.getElementById('id_maitre_stage')?.value;
+    const debut = document.getElementById('id_date_debut')?.value || '{{ stage.date_debut|date:"Y-m-d" }}';
+    const fin = document.getElementById('id_date_fin_prevue')?.value;
+    const alert = document.getElementById('dispo-alert');
+    const msg = document.getElementById('dispo-msg');
+
+    if (!maitre || !fin || !DISPOS[maitre]) { alert.classList.add('d-none'); return; }
+
+    const d = DISPOS[maitre];
+    if (!d.debut && !d.fin) { alert.classList.add('d-none'); return; }
+
+    const debutStage = new Date(debut);
+    const finStage = new Date(fin);
+    const debutDispo = d.debut ? new Date(d.debut) : null;
+    const finDispo = d.fin ? new Date(d.fin) : null;
+
+    const warning = (debutDispo && debutStage < debutDispo) || (finDispo && finStage > finDispo);
+    if (warning) {
+        const fmt = dt => dt ? new Date(dt).toLocaleDateString('fr-FR') : '?';
+        msg.textContent = `Attention : hors disponibilité déclarée (${fmt(d.debut)} → ${fmt(d.fin)}).`;
+        alert.classList.remove('d-none');
+    } else {
+        alert.classList.add('d-none');
+    }
+}
+
+['id_maitre_stage', 'id_date_debut', 'id_date_fin_prevue'].forEach(id => {
+    document.getElementById(id)?.addEventListener('change', checkDispo);
+});
+checkDispo();
+</script>
+{% endblock %}

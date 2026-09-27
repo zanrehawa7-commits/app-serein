@@ -246,3 +246,91 @@ Après chaque décision du Responsable, la Secrétaire doit contacter le candida
 | Candidature redirigée | Responsable du nouveau département (ou Admins) + Secrétaires |
 
 Les notifications apparaissent dans la cloche en haut à droite. Les 5 dernières sont visibles directement, un lien permet de voir toutes les notifications.
+
+---
+
+## Scénario 7 — Constituer et suivre un stage (Secrétaire + Responsable)
+
+### Prérequis
+- Une candidature au statut **Accordée** existe.
+- Le département concerné a au moins un membre actif (futur maître de stage).
+
+### Constituer le stage (Secrétaire)
+
+**Connexion :** `sec@serein.bf`
+
+1. Menu → Candidatures → ouvrir la candidature accordée
+2. Bouton "Constituer le stage" (visible uniquement si statut = Accordée et aucun stage existant)
+3. Renseigner :
+   - Date de début
+   - Date de fin prévue
+   - Maître de stage (liste filtrée aux membres actifs du département)
+4. Valider → le stage est créé avec le statut **À venir** (ou **En cours** si la date de début est déjà passée)
+5. La Secrétaire reçoit une notification → informer le stagiaire de la date de début
+
+### Vérifier dans la liste (Menu → Stages)
+- Onglets : À venir / En cours / Terminés / Interrompus
+- Filtres disponibles : recherche par nom, dates, type de stage, département
+- Un stage accordé sans stage constitué affiche un badge `!` orange dans la liste des candidatures
+
+### Modifier le stage (Secrétaire)
+1. Ouvrir le détail du stage → bouton "Modifier"
+2. Date de début modifiable seulement si statut A_VENIR
+3. Maître de stage et date de fin toujours modifiables (si A_VENIR ou EN_COURS)
+
+### Terminer un stage (Responsable)
+**Connexion :** `resp@serein.bf`
+
+1. Menu → Stages → En cours → ouvrir le stage
+2. Bouton "Terminer" → saisir la date de fin réelle (≤ aujourd'hui)
+3. Le stage passe au statut **Terminé**
+4. Les Secrétaires reçoivent une notification
+
+### Interrompre un stage (Responsable)
+1. Ouvrir un stage À venir ou En cours
+2. Bouton "Interrompre" → saisir la date et le motif (obligatoire)
+3. Le stage passe au statut **Interrompu** (irréversible)
+
+---
+
+## Commande automatique — Mise à jour des stages
+
+La commande suivante doit être planifiée quotidiennement (par exemple via cron) :
+
+```bash
+cd backend && python manage.py mettre_a_jour_stages
+```
+
+**Ce qu'elle fait :**
+1. Passe en **En cours** tous les stages À venir dont la date de début est atteinte
+2. Passe en **Terminé** tous les stages En cours dont la date de fin prévue est dépassée
+
+**Simuler une date passée** (utile si le serveur a été éteint plusieurs jours) :
+```bash
+python manage.py mettre_a_jour_stages --date 2025-06-01
+```
+
+La commande est **idempotente** — relancer plusieurs fois n'a aucun effet négatif.
+
+---
+
+## Règles métier importantes — Étape 8
+
+| Règle | Description |
+|---|---|
+| **Maître de stage = même département** | Le maître de stage doit appartenir au département de la candidature |
+| **Statut auto à la constitution** | Si date_debut ≤ aujourd'hui → EN_COURS, sinon A_VENIR |
+| **Terminer = date réelle ≤ aujourd'hui** | Impossible de saisir une date future |
+| **Interrompre = motif obligatoire** | Le motif d'interruption est requis |
+| **Maître de stage actif** | Impossible de désactiver un membre maître de stage d'un stage A_VENIR ou EN_COURS (changer d'abord le maître) |
+
+---
+
+## Notifications — Étape 8
+
+| Événement | Destinataires |
+|---|---|
+| Stage constitué | Secrétaires ("informer le stagiaire de la date de début") |
+| Stage terminé manuellement | Secrétaires |
+| Stage interrompu | Secrétaires |
+| Stage terminé automatiquement | Responsable du département ("à évaluer") |

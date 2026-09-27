@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% load crispy_forms_tags %}
+
+{% block title %}Interrompre le stage{% endblock %}
+
+{% block content %}
+<div class="mb-4">
+    <h4 class="fw-semibold"><i class="bi bi-stop-circle me-2"></i>Interrompre le stage</h4>
+    <p class="text-muted small mb-0">{{ stage.candidature.candidat }} &nbsp;·&nbsp; {{ stage.candidature.departement.nom }}</p>
+</div>
+
+<div class="row justify-content-center">
+    <div class="col-md-6">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body">
+                <div class="alert alert-warning py-2 small mb-3">
+                    <i class="bi bi-exclamation-triangle me-1"></i>
+                    Cette action est irréversible. Le stage passera au statut <strong>Interrompu</strong>.
+                </div>
+                <form method="post">
+                    {% csrf_token %}
+                    {% crispy form %}
+                </form>
+                <a href="{% url 'stages:stage_detail' stage.pk %}" class="btn btn-outline-secondary btn-sm mt-2">
+                    <i class="bi bi-arrow-left me-1"></i>Annuler
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

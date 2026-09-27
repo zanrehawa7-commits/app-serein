@@ -125,7 +125,17 @@
                             {% elif c.statut == "EN_TRAITEMENT" %}
                             <span class="badge bg-warning text-dark">En traitement</span>
                             {% elif c.statut == "ACCORDEE" %}
+                            {% if c.stage %}
                             <span class="badge bg-success">Accordée</span>
+                            <span class="badge bg-info text-dark ms-1" title="Stage constitué">
+                                <i class="bi bi-mortarboard"></i>
+                            </span>
+                            {% else %}
+                            <span class="badge bg-success">Accordée</span>
+                            <span class="badge bg-warning text-dark ms-1" title="À compléter — aucun stage">
+                                <i class="bi bi-exclamation"></i>
+                            </span>
+                            {% endif %}
                             {% elif c.statut == "REFUSEE" %}
                             <span class="badge bg-danger">Refusée</span>
                             {% endif %}

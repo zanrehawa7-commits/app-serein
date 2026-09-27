@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% load crispy_forms_tags %}
+
+{% block title %}Constituer un stage{% endblock %}
+
+{% block content %}
+<div class="mb-4">
+    <h4 class="fw-semibold"><i class="bi bi-mortarboard me-2"></i>Constituer un stage</h4>
+    <p class="text-muted small mb-0">
+        Candidature <a href="{% url 'candidatures:candidature_detail' candidature.pk %}">{{ candidature.reference }}</a>
+        &nbsp;·&nbsp;{{ candidature.candidat }} &nbsp;·&nbsp; {{ candidature.departement.nom }}
+    </p>
+</div>
+
+<div class="row g-3">
+    <div class="col-md-7">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body">
+                <form method="post">
+                    {% csrf_token %}
+                    {% crispy form %}
+                </form>
+                <a href="{% url 'candidatures:candidature_detail' candidature.pk %}" class="btn btn-outline-secondary btn-sm mt-2">
+                    <i class="bi bi-arrow-left me-1"></i>Annuler
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-5">
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white border-bottom py-2">
+                <h6 class="mb-0 fw-semibold text-muted small"><i class="bi bi-info-circle me-1"></i>Disponibilités</h6>
+            </div>
+            <div class="card-body small">
+                <p class="text-muted mb-2">Sélectionnez un maître de stage pour voir s'il est disponible sur la période choisie.</p>
+                <div id="dispo-alert" class="alert alert-warning py-2 d-none" role="alert">
+                    <i class="bi bi-exclamation-triangle me-1"></i>
+                    <span id="dispo-msg"></span>
+                </div>
+                <p class="text-muted mb-1 fw-semibold">Disponibilités déclarées :</p>
+                <ul class="list-unstyled mb-0" id="dispo-list">
+                    {% for m in form.maitre_stage.field.queryset %}
+                    <li class="mb-1">
+                        <strong>{{ m }}</strong> :
+                        {% if membres_dispos|length > 0 %}
+                        <span class="text-muted" id="dispo-{{ m.pk }}">
+                            {% if membres_dispos %}chargement…{% endif %}
+                        </span>
+                        {% endif %}
+                    </li>
+                    {% endfor %}
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const DISPOS = {{ membres_dispos|default:"{}" }};
+
+// Afficher les disponibilités dans la liste
+Object.entries(DISPOS).forEach(([pk, d]) => {
+    const el = document.getElementById('dispo-' + pk);
+    if (!el) return;
+    if (d.debut || d.fin) {
+        const fmt = dt => dt ? new Date(dt).toLocaleDateString('fr-FR') : '?';
+        el.textContent = fmt(d.debut) + ' → ' + fmt(d.fin);
+    } else {
+        el.textContent = 'non renseignée';
+        el.classList.add('text-warning');
+    }
+});
+
+function checkDispo() {
+    const maitre = document.getElementById('id_maitre_stage')?.value;
+    const debut = document.getElementById('id_date_debut')?.value;
+    const fin = document.getElementById('id_date_fin_prevue')?.value;
+    const alert = document.getElementById('dispo-alert');
+    const msg = document.getElementById('dispo-msg');
+
+    if (!maitre || !debut || !fin || !DISPOS[maitre]) {
+        alert.classList.add('d-none');
+        return;
+    }
+
+    const d = DISPOS[maitre];
+    if (!d.debut && !d.fin) { alert.classList.add('d-none'); return; }
+
+    const debutStage = new Date(debut);
+    const finStage = new Date(fin);
+    const debutDispo = d.debut ? new Date(d.debut) : null;
+    const finDispo = d.fin ? new Date(d.fin) : null;
+
+    let warning = false;
+    if (debutDispo && debutStage < debutDispo) warning = true;
+    if (finDispo && finStage > finDispo) warning = true;
+
+    if (warning) {
+        const fmt = dt => dt ? new Date(dt).toLocaleDateString('fr-FR') : '?';
+        msg.textContent = `Attention : la période du stage dépasse la disponibilité déclarée de ce maître de stage (${fmt(d.debut)} → ${fmt(d.fin)}).`;
+        alert.classList.remove('d-none');
+    } else {
+        alert.classList.add('d-none');
+    }
+}
+
+['id_maitre_stage', 'id_date_debut', 'id_date_fin_prevue'].forEach(id => {
+    document.getElementById(id)?.addEventListener('change', checkDispo);
+});
+</script>
+{% endblock %}
