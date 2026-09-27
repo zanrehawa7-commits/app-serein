@@ -117,6 +117,10 @@ STATICFILES_DIRS = [BASE_DIR / "static"]
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
 
+# Fichiers privés (pièces jointes candidatures, rapports) — HORS MEDIA_ROOT
+# Ne jamais servir ce dossier via Nginx directement ; utiliser X-Accel-Redirect.
+FICHIERS_PRIVES_ROOT = BASE_DIR / "fichiers_prives"
+
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 # Django REST Framework & JWT

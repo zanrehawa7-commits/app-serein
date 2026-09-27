@@ -120,8 +120,7 @@ class Offre(models.Model):
             raise ValidationError({"nombre_places": "Le nombre de places doit être au moins 1."})
 
     def places_restantes(self):
-        """Nombre de places encore disponibles (sera affiné à l'étape stages)."""
-        return self.nombre_places
+        return self.nombre_places - self.candidatures.filter(statut="ACCORDEE").count()
 
 
 class Publication(models.Model):

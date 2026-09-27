@@ -101,11 +101,23 @@ class TableauBordSecretaireView(RoleRequisMixin, TemplateView):
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
+        from django.utils import timezone
         from offres.models import Besoin, Offre, StatutBesoin, StatutOffre
+        from candidatures.models import Candidature, StatutCandidature
         ctx["nb_besoins_en_attente"] = Besoin.objects.filter(statut=StatutBesoin.ENVOYE).count()
         ctx["nb_offres_ouvertes"] = Offre.objects.filter(statut=StatutOffre.OUVERTE).count()
         ctx["nb_offres_brouillon"] = Offre.objects.filter(statut=StatutOffre.BROUILLON).count()
         ctx["besoins_recents"] = Besoin.objects.filter(statut=StatutBesoin.ENVOYE).select_related("departement", "type_stage").order_by("-date_creation")[:5]
+        now = timezone.now()
+        ctx["nb_candidatures_recues_mois"] = Candidature.objects.filter(
+            statut=StatutCandidature.RECUE,
+            date_depot__year=now.year,
+            date_depot__month=now.month,
+        ).count()
+        ctx["nb_candidats_informer"] = Candidature.objects.filter(
+            candidat_informe=False,
+            statut__in=[StatutCandidature.ACCORDEE, StatutCandidature.REFUSEE],
+        ).count()
         return ctx
 
 

@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+
+{% block title %}{{ candidat }}{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-4 flex-wrap gap-2">
+    <div>
+        <h4 class="mb-0 fw-semibold"><i class="bi bi-person-circle me-2"></i>{{ candidat }}</h4>
+        <p class="text-muted small mb-0">Dossier candidat</p>
+    </div>
+    <div class="d-flex gap-2">
+        {% if perms.candidatures.change_candidat %}
+        <a href="{% url 'candidatures:candidat_modifier' candidat.pk %}" class="btn btn-outline-primary btn-sm">
+            <i class="bi bi-pencil me-1"></i>Modifier
+        </a>
+        {% endif %}
+        {% if perms.candidatures.add_candidature %}
+        <a href="{% url 'candidatures:candidature_creer' candidat.pk %}" class="btn btn-primary btn-sm">
+            <i class="bi bi-folder-plus me-1"></i>Nouvelle candidature
+        </a>
+        {% endif %}
+    </div>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-md-6">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-header bg-white border-bottom py-2">
+                <h6 class="mb-0 fw-semibold">Informations personnelles</h6>
+            </div>
+            <div class="card-body">
+                <dl class="row mb-0">
+                    <dt class="col-sm-4 text-muted small">Téléphone</dt>
+                    <dd class="col-sm-8">{{ candidat.telephone }}</dd>
+                    <dt class="col-sm-4 text-muted small">Email</dt>
+                    <dd class="col-sm-8">{{ candidat.email|default:"—" }}</dd>
+                    <dt class="col-sm-4 text-muted small">Adresse</dt>
+                    <dd class="col-sm-8">{{ candidat.adresse|default:"—" }}</dd>
+                </dl>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-header bg-white border-bottom py-2">
+                <h6 class="mb-0 fw-semibold">Formation</h6>
+            </div>
+            <div class="card-body">
+                <dl class="row mb-0">
+                    <dt class="col-sm-5 text-muted small">Niveau d'études</dt>
+                    <dd class="col-sm-7">{{ candidat.get_niveau_etudes_display|default:"—" }}</dd>
+                    <dt class="col-sm-5 text-muted small">Filière</dt>
+                    <dd class="col-sm-7">{{ candidat.filiere|default:"—" }}</dd>
+                    <dt class="col-sm-5 text-muted small">Établissement</dt>
+                    <dd class="col-sm-7">{{ candidat.etablissement|default:candidat.etablissement_autre|default:"—" }}</dd>
+                </dl>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card border-0 shadow-sm">
+    <div class="card-header bg-white border-bottom py-3">
+        <h6 class="mb-0 fw-semibold"><i class="bi bi-folder2-open me-2 text-primary"></i>Historique des candidatures</h6>
+    </div>
+    <div class="card-body p-0">
+        {% if candidatures %}
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th class="ps-3">Référence</th>
+                        <th>Département</th>
+                        <th>Type de stage</th>
+                        <th>Dépôt</th>
+                        <th>Statut</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for c in candidatures %}
+                    <tr>
+                        <td class="ps-3 fw-semibold">{{ c.reference }}</td>
+                        <td>{{ c.departement.nom }}</td>
+                        <td>{{ c.type_stage.libelle }}</td>
+                        <td>{{ c.date_depot|date:"d/m/Y" }}</td>
+                        <td>
+                            {% if c.statut == "RECUE" %}
+                            <span class="badge bg-primary">Reçue</span>
+                            {% elif c.statut == "EN_TRAITEMENT" %}
+                            <span class="badge bg-warning text-dark">En traitement</span>
+                            {% elif c.statut == "ACCORDEE" %}
+                            <span class="badge bg-success">Accordée</span>
+                            {% elif c.statut == "REFUSEE" %}
+                            <span class="badge bg-danger">Refusée</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-end pe-3">
+                            <a href="{% url 'candidatures:candidature_detail' c.pk %}" class="btn btn-sm btn-outline-primary">
+                                <i class="bi bi-eye"></i>
+                            </a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="text-center py-5 text-muted">
+            <i class="bi bi-folder2 fs-1 d-block mb-2" style="opacity:.3;"></i>
+            <p class="small mb-0">Aucune candidature pour ce candidat.</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

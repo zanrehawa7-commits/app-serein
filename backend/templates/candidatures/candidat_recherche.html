@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+
+{% block title %}Rechercher un candidat{% endblock %}
+
+{% block content %}
+<div class="mb-4">
+    <h4 class="mb-0 fw-semibold"><i class="bi bi-search me-2"></i>Rechercher un candidat</h4>
+    <p class="text-muted small mb-0">Cherchez d'abord avant de créer un nouveau candidat.</p>
+</div>
+
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-body">
+        <form method="get" action="" class="row g-2 align-items-end">
+            <div class="col-md-8 col-lg-6">
+                <label class="form-label fw-semibold">Nom, prénom, téléphone ou email</label>
+                <input type="text" name="q" value="{{ request.GET.q }}"
+                       class="form-control form-control-lg"
+                       placeholder="Ex : Ouedraogo, 70123456, fatou@..."
+                       autofocus required>
+            </div>
+            <div class="col-auto">
+                <button type="submit" class="btn btn-primary btn-lg">
+                    <i class="bi bi-search me-1"></i>Rechercher
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+{% if request.GET.q %}
+<div class="card border-0 shadow-sm">
+    <div class="card-header bg-white border-bottom py-3">
+        <h6 class="mb-0 fw-semibold">
+            Résultats pour « {{ request.GET.q }} »
+            <span class="badge bg-secondary ms-1">{{ candidats|length }}</span>
+        </h6>
+    </div>
+    <div class="card-body p-0">
+        {% if candidats %}
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th class="ps-3">Nom</th>
+                        <th>Téléphone</th>
+                        <th>Email</th>
+                        <th>Établissement</th>
+                        <th class="text-center">Candidatures</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for candidat in candidats %}
+                    <tr>
+                        <td class="ps-3 fw-semibold">{{ candidat }}</td>
+                        <td>{{ candidat.telephone }}</td>
+                        <td>{{ candidat.email|default:"—" }}</td>
+                        <td>{{ candidat.etablissement|default:candidat.etablissement_autre|default:"—" }}</td>
+                        <td class="text-center">
+                            <span class="badge bg-secondary">{{ candidat.candidatures.count }}</span>
+                        </td>
+                        <td class="text-end pe-3">
+                            <div class="d-flex gap-1 justify-content-end">
+                                <a href="{% url 'candidatures:candidat_detail' candidat.pk %}"
+                                   class="btn btn-sm btn-outline-primary" title="Voir le dossier">
+                                    <i class="bi bi-eye"></i>
+                                </a>
+                                <a href="{% url 'candidatures:candidature_creer' candidat.pk %}"
+                                   class="btn btn-sm btn-primary">
+                                    <i class="bi bi-folder-plus me-1"></i>Utiliser ce candidat
+                                </a>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="text-center py-5 text-muted">
+            <i class="bi bi-person-x fs-1 d-block mb-2" style="opacity:.3;"></i>
+            <p class="mb-2">Aucun candidat trouvé pour « {{ request.GET.q }} ».</p>
+            <a href="{% url 'candidatures:candidat_creer' %}" class="btn btn-success">
+                <i class="bi bi-person-plus-fill me-1"></i>Créer ce candidat
+            </a>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+{% endblock %}

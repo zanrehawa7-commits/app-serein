@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+
+{% block title %}Candidats à informer{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-4 flex-wrap gap-2">
+    <div>
+        <h4 class="mb-0 fw-semibold"><i class="bi bi-envelope me-2"></i>Candidats à informer</h4>
+        <p class="text-muted small mb-0">Candidatures accordées ou refusées dont le candidat n'a pas encore été informé.</p>
+    </div>
+</div>
+
+<div class="card border-0 shadow-sm">
+    <div class="card-body p-0">
+        {% if candidatures %}
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th class="ps-3">Référence</th>
+                        <th>Candidat</th>
+                        <th>Département</th>
+                        <th>Décision</th>
+                        <th>Date dépôt</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for c in candidatures %}
+                    <tr>
+                        <td class="ps-3 fw-semibold">
+                            <a href="{% url 'candidatures:candidature_detail' c.pk %}">{{ c.reference }}</a>
+                        </td>
+                        <td>{{ c.candidat }}</td>
+                        <td>{{ c.departement.nom }}</td>
+                        <td>
+                            {% if c.statut == "ACCORDEE" %}
+                            <span class="badge bg-success">Accordée</span>
+                            {% elif c.statut == "REFUSEE" %}
+                            <span class="badge bg-danger">Refusée</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ c.date_depot|date:"d/m/Y" }}</td>
+                        <td class="text-end pe-3">
+                            <form method="post" action="{% url 'candidatures:candidature_informer' c.pk %}" class="d-inline">
+                                {% csrf_token %}
+                                <input type="hidden" name="next" value="{% url 'candidatures:candidats_informer' %}">
+                                <button type="submit" class="btn btn-sm btn-warning">
+                                    <i class="bi bi-envelope-check me-1"></i>Marquer informé
+                                </button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% include "commun/_pagination.html" %}
+        {% else %}
+        <div class="text-center py-5 text-muted">
+            <i class="bi bi-envelope-check fs-1 d-block mb-2" style="opacity:.3;"></i>
+            <p class="small mb-0">Tous les candidats ont été informés.</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

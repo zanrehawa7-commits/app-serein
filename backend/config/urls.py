@@ -14,6 +14,7 @@ urlpatterns = [
     path("referentiels/", include("referentiels.urls")),
     path("", include("offres.urls")),
     path("", include("suivi.urls")),
+    path("", include("candidatures.urls")),
 ]
 
 if settings.DEBUG:

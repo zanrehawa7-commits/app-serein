@@ -160,6 +160,35 @@ python manage.py init_donnees
 python manage.py createsuperuser
 ```
 
+## Étape 6 — Candidatures (F10)
+
+### Workflow de saisie
+1. Secrétaire → Rechercher un candidat (par nom/prénom/tél/email)
+2. Sélectionner un candidat existant ou créer un nouveau
+3. Créer la candidature avec au moins un CV (RG11 : pdf/jpg/jpeg/png, 5 Mo max)
+
+### Stockage privé des fichiers (`FICHIERS_PRIVES_ROOT`)
+- Les pièces jointes sont stockées dans `backend/fichiers_prives/` (hors `MEDIA_ROOT`).
+- `FileSystemStorage(location=FICHIERS_PRIVES_ROOT, base_url=None)` — `base_url=None` empêche toute URL publique.
+- **Interdiction absolue** d'utiliser `piece.fichier.url` dans les templates.
+- Tous les téléchargements passent par `PieceJointeTelechargerView` (URL `/candidatures/pieces/<pk>/telecharger/`).
+- **En production** : Nginx ne sert jamais `fichiers_prives/` directement. La vue Django envoie l'en-tête `X-Accel-Redirect` vers une location interne Nginx (ex. `location /protected/ { internal; alias /path/to/fichiers_prives/; }`) et renvoie un `FileResponse` vide en dev.
+
+### RG clés
+- **RG07** : un candidat ne peut avoir qu'une seule candidature active (RECUE ou EN_TRAITEMENT) — contrôle dans `creer_candidature()`.
+- **RG09** : offre obligatoire si `SUITE_OFFRE`, interdite si `SPONTANEE` — contrôle dans le formulaire et dans `Candidature.clean()`.
+- **RG12** : notifier le Responsable du département ; si absent → notifier tous les Administrateurs.
+- **RG19** : liste "Candidats à informer" = `candidat_informe=False` et statut ACCORDEE ou REFUSEE.
+- `Offre.places_restantes()` = `nombre_places − candidatures.filter(statut="ACCORDEE").count()`.
+
+### Permissions
+- Secrétaire : CRUD Candidat, CRU Candidature, CRUD PieceJointe.
+- Responsable : lecture seule (présélection/accord/refus à l'étape 7).
+- Administrateur : lecture seule.
+
+### Normalisation téléphone (`normaliser_telephone`)
+Supprime espaces/points/tirets, retire préfixe `+226`/`00226` → résultat 8 chiffres burkinabè. Appliqué à la saisie ET à la recherche pour détecter les doublons.
+
 ## Variables d'environnement
 Copier `.env.example` → `.env` et remplir les valeurs. Ne jamais commiter `.env`.
 Le `.env` est à la racine du projet (`app-serein/`), lu par `python-decouple` depuis `backend/`.

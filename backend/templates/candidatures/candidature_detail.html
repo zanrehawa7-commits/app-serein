@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+
+{% block title %}{{ candidature.reference }}{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-4 flex-wrap gap-2">
+    <div>
+        <h4 class="mb-0 fw-semibold"><i class="bi bi-folder2-open me-2"></i>{{ candidature.reference }}</h4>
+        <p class="text-muted small mb-0">
+            Candidat : <a href="{% url 'candidatures:candidat_detail' candidature.candidat.pk %}" class="fw-semibold">{{ candidature.candidat }}</a>
+            &nbsp;·&nbsp;Déposée le {{ candidature.date_depot|date:"d/m/Y" }}
+        </p>
+    </div>
+    <div class="d-flex gap-2">
+        {% if perms.candidatures.change_candidature and candidature.statut == "RECUE" %}
+        <a href="{% url 'candidatures:candidature_modifier' candidature.pk %}" class="btn btn-outline-primary btn-sm">
+            <i class="bi bi-pencil me-1"></i>Modifier
+        </a>
+        {% endif %}
+        {% if perms.candidatures.change_candidature and not candidature.candidat_informe and candidature.statut in "ACCORDEE REFUSEE" %}
+        <form method="post" action="{% url 'candidatures:candidature_informer' candidature.pk %}" class="d-inline">
+            {% csrf_token %}
+            <input type="hidden" name="next" value="{% url 'candidatures:candidature_detail' candidature.pk %}">
+            <button type="submit" class="btn btn-warning btn-sm">
+                <i class="bi bi-envelope-check me-1"></i>Marquer informé
+            </button>
+        </form>
+        {% endif %}
+    </div>
+</div>
+
+<div class="row g-3 mb-3">
+    <!-- Statut -->
+    <div class="col-12">
+        {% if candidature.statut == "RECUE" %}
+        <div class="alert alert-primary py-2 mb-0"><i class="bi bi-inbox me-2"></i><strong>Reçue</strong> — en attente de traitement.</div>
+        {% elif candidature.statut == "EN_TRAITEMENT" %}
+        <div class="alert alert-warning py-2 mb-0"><i class="bi bi-hourglass-split me-2"></i><strong>En traitement</strong>.</div>
+        {% elif candidature.statut == "ACCORDEE" %}
+        <div class="alert alert-success py-2 mb-0 d-flex justify-content-between align-items-center">
+            <span><i class="bi bi-check-circle me-2"></i><strong>Accordée</strong></span>
+            {% if not candidature.candidat_informe %}
+            <span class="badge bg-warning text-dark">Candidat non encore informé</span>
+            {% else %}
+            <span class="badge bg-light text-dark">Informé le {{ candidature.date_information|date:"d/m/Y" }}</span>
+            {% endif %}
+        </div>
+        {% elif candidature.statut == "REFUSEE" %}
+        <div class="alert alert-danger py-2 mb-0 d-flex justify-content-between align-items-center">
+            <span><i class="bi bi-x-circle me-2"></i><strong>Refusée</strong> — {{ candidature.get_motif_refus_display }}</span>
+            {% if not candidature.candidat_informe %}
+            <span class="badge bg-warning text-dark">Candidat non encore informé</span>
+            {% else %}
+            <span class="badge bg-light text-dark">Informé le {{ candidature.date_information|date:"d/m/Y" }}</span>
+            {% endif %}
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Fiche -->
+    <div class="col-md-6">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-header bg-white border-bottom py-2">
+                <h6 class="mb-0 fw-semibold">Détails de la candidature</h6>
+            </div>
+            <div class="card-body">
+                <dl class="row mb-0">
+                    <dt class="col-sm-5 text-muted small">Département</dt>
+                    <dd class="col-sm-7">{{ candidature.departement.nom }}</dd>
+                    <dt class="col-sm-5 text-muted small">Type de stage</dt>
+                    <dd class="col-sm-7">{{ candidature.type_stage.libelle }}</dd>
+                    <dt class="col-sm-5 text-muted small">Type de demande</dt>
+                    <dd class="col-sm-7">{{ candidature.get_type_demande_display }}</dd>
+                    {% if candidature.offre %}
+                    <dt class="col-sm-5 text-muted small">Offre liée</dt>
+                    <dd class="col-sm-7"><a href="{% url 'offres:offre_detail' candidature.offre.pk %}">{{ candidature.offre.reference }}</a></dd>
+                    {% endif %}
+                    <dt class="col-sm-5 text-muted small">Disponibilité</dt>
+                    <dd class="col-sm-7">{{ candidature.debut_disponibilite|date:"d/m/Y" }} → {{ candidature.fin_disponibilite|date:"d/m/Y" }}</dd>
+                    <dt class="col-sm-5 text-muted small">Durée souhaitée</dt>
+                    <dd class="col-sm-7">{{ candidature.duree_souhaitee }} mois</dd>
+                    {% if candidature.commentaire %}
+                    <dt class="col-sm-5 text-muted small">Commentaire</dt>
+                    <dd class="col-sm-7">{{ candidature.commentaire }}</dd>
+                    {% endif %}
+                </dl>
+            </div>
+        </div>
+    </div>
+
+    <!-- Pièces jointes -->
+    <div class="col-md-6">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-header bg-white border-bottom py-2">
+                <h6 class="mb-0 fw-semibold"><i class="bi bi-paperclip me-1"></i>Pièces jointes</h6>
+            </div>
+            <ul class="list-group list-group-flush">
+                {% for piece in pieces %}
+                <li class="list-group-item d-flex justify-content-between align-items-center py-2">
+                    <span>
+                        <span class="badge bg-light text-dark me-2">{{ piece.get_type_piece_display }}</span>
+                        <span class="small">{{ piece.nom_original|default:piece.fichier.name }}</span>
+                    </span>
+                    <div class="d-flex gap-1">
+                        <a href="{% url 'candidatures:piece_telecharger' piece.pk %}?inline=1"
+                           target="_blank"
+                           class="btn btn-sm btn-outline-primary"
+                           title="Voir dans le navigateur">
+                            <i class="bi bi-eye"></i>
+                        </a>
+                        <a href="{% url 'candidatures:piece_telecharger' piece.pk %}"
+                           class="btn btn-sm btn-outline-secondary"
+                           title="Télécharger">
+                            <i class="bi bi-download"></i>
+                        </a>
+                    </div>
+                </li>
+                {% empty %}
+                <li class="list-group-item text-muted small text-center py-3">Aucune pièce jointe.</li>
+                {% endfor %}
+            </ul>
+        </div>
+    </div>
+</div>
+
+<!-- Historique -->
+{% include "commun/_historique.html" with historiques=historiques %}
+{% endblock %}
