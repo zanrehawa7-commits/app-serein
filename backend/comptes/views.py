@@ -129,10 +129,21 @@ class TableauBordResponsableView(RoleRequisMixin, TemplateView):
         ctx = super().get_context_data(**kwargs)
         if self.request.user.membre:
             from offres.models import Besoin, StatutBesoin
+            from candidatures.models import Candidature, StatutCandidature
             dept = self.request.user.membre.departement
             ctx["nb_besoins_envoyes"] = Besoin.objects.filter(departement=dept, statut=StatutBesoin.ENVOYE).count()
             ctx["nb_besoins_pris_en_charge"] = Besoin.objects.filter(departement=dept, statut=StatutBesoin.PRIS_EN_CHARGE).count()
             ctx["besoins_recents"] = Besoin.objects.filter(departement=dept).select_related("type_stage").order_by("-date_creation")[:5]
+            base_cand = Candidature.objects.filter(departement=dept)
+            ctx["nb_recues"] = base_cand.filter(statut=StatutCandidature.RECUE).count()
+            ctx["nb_en_traitement"] = base_cand.filter(statut=StatutCandidature.EN_TRAITEMENT).count()
+            ctx["nb_accordees"] = base_cand.filter(statut=StatutCandidature.ACCORDEE).count()
+            ctx["nb_refusees"] = base_cand.filter(statut=StatutCandidature.REFUSEE).count()
+            ctx["candidatures_recentes"] = (
+                base_cand.filter(statut=StatutCandidature.RECUE)
+                .select_related("candidat")
+                .order_by("-date_depot")[:5]
+            )
         return ctx
 
 

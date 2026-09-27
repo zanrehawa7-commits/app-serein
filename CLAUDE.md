@@ -189,6 +189,42 @@ python manage.py createsuperuser
 ### Normalisation téléphone (`normaliser_telephone`)
 Supprime espaces/points/tirets, retire préfixe `+226`/`00226` → résultat 8 chiffres burkinabè. Appliqué à la saisie ET à la recherche pour détecter les doublons.
 
+## Étape 7 — Traitement des candidatures par le Responsable (F11)
+
+### Transitions (`candidatures/services.py`)
+- `TransitionInterdite(Exception)` / `QuotaAtteint(Exception)` : exceptions métier.
+- `preselectionner(candidature, utilisateur, commentaire="")` : RECUE → EN_TRAITEMENT. Reset `candidat_informe=False`, `date_information=None`. Notifie les Secrétaires.
+- `planifier_entretien(candidature, date_entretien, utilisateur)` : EN_TRAITEMENT uniquement, date future obligatoire. Reset informe. Notifie Secrétaires : "Entretien planifié le <date> pour CAND-XXXX : prévenir le candidat."
+- `accorder(candidature, utilisateur, commentaire="", confirmer_depassement=False)` : EN_TRAITEMENT → ACCORDEE. Si offre liée et quota = 0 sans `confirmer_depassement=True` → `QuotaAtteint`. Reset informe. Notifie Secrétaires.
+- `refuser(candidature, motif, precision_motif, utilisateur, commentaire="")` : RECUE ou EN_TRAITEMENT → REFUSEE. Motif obligatoire. Si `AUTRE`, precision_motif requis. Reset informe. Notifie Secrétaires.
+- `rediriger(candidature, nouveau_departement, motif, utilisateur)` : RECUE uniquement, statut reste RECUE, département change. Notifie responsable du nouveau dept (ou admins si absent) + Secrétaires.
+
+### Vues (`candidatures/views.py`)
+- `_DecisionView` (base) : `roles = ["Responsable"]`, vérifie que `candidature.departement == user.membre.departement`.
+- `PreselectionnerView`, `PlanifierEntretienView` : POST-only (redirect vers detail).
+- `AccorderView` (GET+POST) : deux passes pour quota — premier POST raise `QuotaAtteint` → re-render avec `quota_atteint=True` → second POST avec `confirmer_depassement=True`.
+- `RefuserView` (GET+POST) : JS masque/affiche le champ `precision_motif` si motif = `AUTRE`.
+- `RedirigerView` (GET+POST) : `RedirigerForm` exclut le département actuel du queryset.
+
+### Formulaires (`candidatures/forms.py`)
+- `EntretienForm` : `DateTimeInput(type=datetime-local)`, `clean_date_entretien()` valide que la date est dans le futur.
+- `AccorderForm` : `confirmer_depassement = HiddenInput` (BooleanField, required=False).
+- `RefuserForm` : `clean()` → AUTRE requiert precision non vide.
+- `RedirigerForm` : `__init__(departement_actuel=...)` exclut le dept courant du queryset.
+
+### Permissions (`init_donnees.py`)
+- Responsable : `"candidatures.candidature": ["change", "view"]`, `"candidatures.candidat": ["view"]`.
+- `CandidatureModifierView` reste protégée par `roles = ["Secrétaire"]` → Responsable → 403.
+
+### Templates
+- `candidature_detail.html` : panel « Actions — Responsable » (inline presel + lien entretien/accord/refus/redirection).
+- `candidature_accorder_form.html` : commentaire + zone quota avec `confirmer_depassement`.
+- `candidature_refuser_form.html` : select motif + zone precision (JS toggle si AUTRE).
+- `candidature_rediriger_form.html` : select dept + motif.
+- `candidature_list.html` : onglets Bootstrap 5 par statut (Responsable uniquement) avec compteurs.
+- `candidats_informer.html` : colonnes enrichies : téléphone, motif de refus, date entretien, date décision.
+- `tableau_bord_responsable.html` : 4 cartes candidatures (Reçues/En traitement/Accordées/Refusées) + tableau 5 dernières reçues.
+
 ## Variables d'environnement
 Copier `.env.example` → `.env` et remplir les valeurs. Ne jamais commiter `.env`.
 Le `.env` est à la racine du projet (`app-serein/`), lu par `python-decouple` depuis `backend/`.

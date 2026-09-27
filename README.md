@@ -154,7 +154,7 @@ app-serein/
 | **Référentiels** | Gestion des départements, membres, établissements, types de stage, canaux de publication |
 | **Utilisateurs** | Création de comptes, attribution de rôles, gestion des permissions par rôle |
 | **Offres** | Expression de besoins (Responsable), création et publication d'offres (Secrétaire) |
-| **Candidatures** | Recherche de candidats, saisie de candidatures, gestion des pièces jointes sécurisées |
+| **Candidatures** | Recherche de candidats, saisie de candidatures, pièces jointes sécurisées, décisions du Responsable (présélection, entretien, accord, refus, redirection) |
 | **Suivi** | Historique des transitions, notifications en temps réel |
 
 ---
@@ -165,7 +165,7 @@ app-serein/
 |---|---|
 | **Administrateur** | Vue d'ensemble, gestion des utilisateurs et référentiels, lecture seule sur offres/candidatures |
 | **Secrétaire** | Gestion complète des candidatures, création d'offres, traitement des besoins |
-| **Responsable** | Expression de besoins, lecture des offres et candidatures de son département |
+| **Responsable** | Expression de besoins, lecture des offres, traitement des candidatures de son département (présélection, entretien, accord, refus, redirection) |
 
 ---
 

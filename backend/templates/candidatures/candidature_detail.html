@@ -123,6 +123,77 @@
     </div>
 </div>
 
+<!-- Panel Décision — Responsable uniquement -->
+{% if est_responsable %}
+<div class="card border-0 shadow-sm mb-3">
+    <div class="card-header bg-white border-bottom py-2">
+        <h6 class="mb-0 fw-semibold"><i class="bi bi-gavel me-1"></i>Actions — Responsable</h6>
+    </div>
+    <div class="card-body">
+
+        {% if candidature.statut == "RECUE" %}
+        {# ─── Présélectionner ─── #}
+        <h6 class="text-muted small text-uppercase mb-2">Présélectionner</h6>
+        <form method="post" action="{% url 'candidatures:candidature_preselectionner' candidature.pk %}">
+            {% csrf_token %}
+            <div class="mb-2">
+                {{ form_preselection.commentaire.label_tag }}
+                {{ form_preselection.commentaire }}
+            </div>
+            <button type="submit" class="btn btn-warning btn-sm">
+                <i class="bi bi-hourglass-split me-1"></i>Présélectionner — passer En traitement
+            </button>
+        </form>
+        <hr class="my-3">
+
+        {# ─── Rediriger ─── #}
+        <a href="{% url 'candidatures:candidature_rediriger' candidature.pk %}" class="btn btn-outline-secondary btn-sm">
+            <i class="bi bi-arrow-left-right me-1"></i>Rediriger vers un autre département
+        </a>
+
+        {# ─── Refuser depuis RECUE ─── #}
+        <a href="{% url 'candidatures:candidature_refuser' candidature.pk %}" class="btn btn-outline-danger btn-sm ms-2">
+            <i class="bi bi-x-circle me-1"></i>Refuser
+        </a>
+
+        {% elif candidature.statut == "EN_TRAITEMENT" %}
+        {# ─── Planifier entretien ─── #}
+        <h6 class="text-muted small text-uppercase mb-2">Planifier un entretien</h6>
+        <form method="post" action="{% url 'candidatures:candidature_planifier_entretien' candidature.pk %}">
+            {% csrf_token %}
+            <div class="mb-2">
+                <label for="id_entretien-date_entretien" class="form-label small">Date et heure</label>
+                <input type="datetime-local" name="entretien-date_entretien" id="id_entretien-date_entretien" class="form-control form-control-sm">
+            </div>
+            <button type="submit" class="btn btn-outline-primary btn-sm">
+                <i class="bi bi-calendar-event me-1"></i>Planifier
+            </button>
+        </form>
+        {% if candidature.date_entretien %}
+        <div class="alert alert-info py-2 mt-2 mb-0 small">
+            <i class="bi bi-calendar-check me-1"></i>Entretien prévu le <strong>{{ candidature.date_entretien|date:"d/m/Y à H:i" }}</strong>
+        </div>
+        {% endif %}
+        <hr class="my-3">
+
+        {# ─── Accorder / Refuser ─── #}
+        <div class="d-flex gap-2">
+            <a href="{% url 'candidatures:candidature_accorder' candidature.pk %}" class="btn btn-success btn-sm">
+                <i class="bi bi-check-circle me-1"></i>Accorder le stage
+            </a>
+            <a href="{% url 'candidatures:candidature_refuser' candidature.pk %}" class="btn btn-outline-danger btn-sm">
+                <i class="bi bi-x-circle me-1"></i>Refuser
+            </a>
+        </div>
+
+        {% else %}
+        <p class="text-muted small mb-0">Aucune action disponible pour ce statut ({{ candidature.get_statut_display }}).</p>
+        {% endif %}
+
+    </div>
+</div>
+{% endif %}
+
 <!-- Historique -->
 {% include "commun/_historique.html" with historiques=historiques %}
 {% endblock %}

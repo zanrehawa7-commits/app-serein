@@ -204,6 +204,181 @@ def modifier_candidature(
     return candidature
 
 
+# ─── Étape 7 — Transitions (Responsable) ─────────────────────────────────────
+
+
+class TransitionInterdite(Exception):
+    pass
+
+
+class QuotaAtteint(Exception):
+    pass
+
+
+def _secretaires_actives():
+    from comptes.models import Utilisateur
+    return list(Utilisateur.objects.filter(groups__name="Secrétaire", is_active=True))
+
+
+@transaction.atomic
+def preselectionner(candidature, utilisateur, commentaire=""):
+    from suivi.services import enregistrer_historique, notifier
+    from .models import Candidature as C, StatutCandidature
+    cand = C.objects.select_for_update().get(pk=candidature.pk)
+    if cand.statut != StatutCandidature.RECUE:
+        raise TransitionInterdite(
+            f"Impossible de présélectionner : statut actuel « {cand.get_statut_display()} »."
+        )
+    cand.statut = StatutCandidature.EN_TRAITEMENT
+    cand.candidat_informe = False
+    cand.date_information = None
+    cand.save(update_fields=["statut", "candidat_informe", "date_information"])
+    enregistrer_historique(
+        cand, utilisateur,
+        StatutCandidature.RECUE, StatutCandidature.EN_TRAITEMENT,
+        commentaire or "Candidature présélectionnée.",
+    )
+    lien = f"/candidatures/{cand.pk}/"
+    secs = _secretaires_actives()
+    if secs:
+        notifier(secs, f"Décision sur {cand.reference} : En traitement. Candidat à informer.", lien)
+    return cand
+
+
+@transaction.atomic
+def planifier_entretien(candidature, date_entretien, utilisateur):
+    from suivi.services import enregistrer_historique, notifier
+    from .models import Candidature as C, StatutCandidature
+    cand = C.objects.select_for_update().get(pk=candidature.pk)
+    if cand.statut != StatutCandidature.EN_TRAITEMENT:
+        raise TransitionInterdite(
+            f"Impossible de planifier un entretien : statut actuel « {cand.get_statut_display()} »."
+        )
+    cand.date_entretien = date_entretien
+    cand.candidat_informe = False
+    cand.date_information = None
+    cand.save(update_fields=["date_entretien", "candidat_informe", "date_information"])
+    date_fmt = date_entretien.strftime("%d/%m/%Y à %H:%M")
+    enregistrer_historique(
+        cand, utilisateur,
+        StatutCandidature.EN_TRAITEMENT, StatutCandidature.EN_TRAITEMENT,
+        f"Entretien planifié le {date_fmt}.",
+    )
+    lien = f"/candidatures/{cand.pk}/"
+    secs = _secretaires_actives()
+    if secs:
+        notifier(
+            secs,
+            f"Entretien planifié le {date_fmt} pour {cand.reference} : prévenir le candidat.",
+            lien,
+        )
+    return cand
+
+
+@transaction.atomic
+def accorder(candidature, utilisateur, commentaire="", confirmer_depassement=False):
+    from suivi.services import enregistrer_historique, notifier
+    from .models import Candidature as C, StatutCandidature
+    cand = C.objects.select_for_update().get(pk=candidature.pk)
+    if cand.statut != StatutCandidature.EN_TRAITEMENT:
+        raise TransitionInterdite(
+            f"Impossible d'accorder : statut actuel « {cand.get_statut_display()} »."
+        )
+    if cand.offre_id and not confirmer_depassement:
+        cand.offre.refresh_from_db()
+        if cand.offre.places_restantes() <= 0:
+            raise QuotaAtteint(
+                f"Le quota de {cand.offre.nombre_places} place(s) est atteint pour cette offre."
+            )
+    cand.statut = StatutCandidature.ACCORDEE
+    cand.candidat_informe = False
+    cand.date_information = None
+    cand.save(update_fields=["statut", "candidat_informe", "date_information"])
+    enregistrer_historique(
+        cand, utilisateur,
+        StatutCandidature.EN_TRAITEMENT, StatutCandidature.ACCORDEE,
+        commentaire or "Candidature accordée.",
+    )
+    lien = f"/candidatures/{cand.pk}/"
+    secs = _secretaires_actives()
+    if secs:
+        notifier(secs, f"Décision sur {cand.reference} : Accordée. Candidat à informer.", lien)
+    return cand
+
+
+@transaction.atomic
+def refuser(candidature, motif, precision_motif, utilisateur, commentaire=""):
+    from suivi.services import enregistrer_historique, notifier
+    from .models import Candidature as C, StatutCandidature, MotifRefus
+    cand = C.objects.select_for_update().get(pk=candidature.pk)
+    if cand.statut not in [StatutCandidature.RECUE, StatutCandidature.EN_TRAITEMENT]:
+        raise TransitionInterdite(
+            f"Impossible de refuser : statut actuel « {cand.get_statut_display()} »."
+        )
+    if not motif:
+        raise TransitionInterdite("Le motif de refus est obligatoire.")
+    if motif == MotifRefus.AUTRE and not precision_motif.strip():
+        raise TransitionInterdite("La précision du motif est obligatoire pour « Autre ».")
+    ancien_statut = cand.statut
+    cand.statut = StatutCandidature.REFUSEE
+    cand.motif_refus = motif
+    cand.precision_motif = precision_motif
+    cand.candidat_informe = False
+    cand.date_information = None
+    cand.save(update_fields=[
+        "statut", "motif_refus", "precision_motif",
+        "candidat_informe", "date_information",
+    ])
+    enregistrer_historique(
+        cand, utilisateur,
+        ancien_statut, StatutCandidature.REFUSEE,
+        commentaire or f"Refusée — {cand.get_motif_refus_display()}.",
+    )
+    lien = f"/candidatures/{cand.pk}/"
+    secs = _secretaires_actives()
+    if secs:
+        notifier(secs, f"Décision sur {cand.reference} : Refusée. Candidat à informer.", lien)
+    return cand
+
+
+@transaction.atomic
+def rediriger(candidature, nouveau_departement, motif, utilisateur):
+    from suivi.services import enregistrer_historique, notifier
+    from .models import Candidature as C, StatutCandidature
+    cand = C.objects.select_for_update().get(pk=candidature.pk)
+    if cand.statut != StatutCandidature.RECUE:
+        raise TransitionInterdite(
+            f"Impossible de rediriger : statut actuel « {cand.get_statut_display()} »."
+        )
+    if not nouveau_departement.actif:
+        raise TransitionInterdite("Le département cible n'est pas actif.")
+    if nouveau_departement.pk == cand.departement_id:
+        raise TransitionInterdite("Le département cible doit être différent du département actuel.")
+    ancien_dept_nom = cand.departement.nom
+    cand.departement = nouveau_departement
+    cand.candidat_informe = False
+    cand.date_information = None
+    cand.save(update_fields=["departement", "candidat_informe", "date_information"])
+    commentaire_hist = f"Redirigée de {ancien_dept_nom} vers {nouveau_departement.nom} : {motif}"
+    enregistrer_historique(
+        cand, utilisateur,
+        StatutCandidature.RECUE, StatutCandidature.RECUE,
+        commentaire_hist,
+    )
+    lien = f"/candidatures/{cand.pk}/"
+    resp_nouveau = _responsable_departement(nouveau_departement)
+    if resp_nouveau:
+        notifier([resp_nouveau], f"Candidature {cand.reference} redirigée vers votre département.", lien)
+    else:
+        admins = _administrateurs_actifs()
+        if admins:
+            notifier(admins, f"Candidature {cand.reference} redirigée vers {nouveau_departement.nom} (sans responsable).", lien)
+    secs = _secretaires_actives()
+    if secs:
+        notifier(secs, f"{cand.reference} redirigée vers {nouveau_departement.nom}.", lien)
+    return cand
+
+
 @transaction.atomic
 def marquer_informe(candidature, utilisateur):
     from suivi.services import enregistrer_historique

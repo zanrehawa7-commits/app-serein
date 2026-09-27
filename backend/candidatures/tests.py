@@ -12,12 +12,20 @@ from .models import Candidat, Candidature, PieceJointe, StatutCandidature, TypeD
 from .services import (
     CandidatExistant,
     CandidatureActiveExistante,
+    QuotaAtteint,
+    TransitionInterdite,
+    accorder,
     creer_candidat,
     creer_candidature,
     marquer_informe,
     normaliser_telephone,
+    planifier_entretien,
+    preselectionner,
     rechercher_candidats,
+    rediriger,
+    refuser,
 )
+from .models import MotifRefus
 
 import tempfile, os
 from pathlib import Path
@@ -399,3 +407,265 @@ class AccesSecuriteTests(TestCase):
         response = self.client.get("/media/candidatures/1/cv_test.pdf")
         # Soit 404 soit redirige login — dans tous les cas pas 200
         self.assertNotEqual(response.status_code, 200)
+
+    def test_responsable_modifier_candidature_403(self):
+        """Responsable → vue de modification → 403 (Secrétaire uniquement)."""
+        self.client.force_login(self.res)
+        url = reverse("candidatures:candidature_modifier", args=[1])
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 403)
+
+
+# ─── Étape 7 — Transitions Responsable ───────────────────────────────────────
+
+
+def _candidature_factory(dept, ts, candidat, utilisateur, statut=StatutCandidature.RECUE):
+    return creer_candidature(
+        candidat=candidat, departement=dept, type_stage=ts,
+        type_demande=TypeDemande.SPONTANEE,
+        debut_disponibilite="2026-10-01", fin_disponibilite="2026-12-31", duree_souhaitee=2,
+        pieces_data=[{"type_piece": TypePiece.CV, "fichier": _fake_pdf(), "nom_original": "cv.pdf"}],
+        utilisateur=utilisateur,
+    )
+
+
+@override_settings(FICHIERS_PRIVES_ROOT=tempfile.mkdtemp())
+class PreselectionnerTests(TestCase):
+    def setUp(self):
+        self.sec, self.adm, self.res, self.dept, self.ts, self.candidat = _setup_base()
+        self.cand = _candidature_factory(self.dept, self.ts, self.candidat, self.sec)
+
+    def test_preselectionner_recue_ok(self):
+        from suivi.models import Notification
+        preselectionner(self.cand, self.res)
+        self.cand.refresh_from_db()
+        self.assertEqual(self.cand.statut, StatutCandidature.EN_TRAITEMENT)
+        self.assertFalse(self.cand.candidat_informe)
+        self.assertIsNone(self.cand.date_information)
+        self.assertTrue(Notification.objects.filter(destinataire__email="sec@test.com").count() >= 1)
+
+    def test_preselectionner_non_recue_leve_erreur(self):
+        self.cand.statut = StatutCandidature.EN_TRAITEMENT
+        self.cand.save(update_fields=["statut"])
+        with self.assertRaises(TransitionInterdite):
+            preselectionner(self.cand, self.res)
+
+    def test_preselectionner_vue_post_ok(self):
+        self.client.force_login(self.res)
+        url = reverse("candidatures:candidature_preselectionner", args=[self.cand.pk])
+        response = self.client.post(url, {"presel-commentaire": "Bon profil"})
+        self.assertRedirects(response, reverse("candidatures:candidature_detail", args=[self.cand.pk]))
+        self.cand.refresh_from_db()
+        self.assertEqual(self.cand.statut, StatutCandidature.EN_TRAITEMENT)
+
+    def test_preselectionner_vue_admin_403(self):
+        self.client.force_login(self.adm)
+        url = reverse("candidatures:candidature_preselectionner", args=[self.cand.pk])
+        response = self.client.post(url, {})
+        self.assertEqual(response.status_code, 403)
+
+
+@override_settings(FICHIERS_PRIVES_ROOT=tempfile.mkdtemp())
+class PlanifierEntretienTests(TestCase):
+    def setUp(self):
+        self.sec, self.adm, self.res, self.dept, self.ts, self.candidat = _setup_base()
+        cand = _candidature_factory(self.dept, self.ts, self.candidat, self.sec)
+        preselectionner(cand, self.res)
+        self.cand = cand
+
+    def test_planifier_entretien_ok(self):
+        from django.utils import timezone
+        from suivi.models import Notification
+        dt = timezone.now().replace(microsecond=0) + timezone.timedelta(days=5)
+        planifier_entretien(self.cand, dt, self.res)
+        self.cand.refresh_from_db()
+        self.assertEqual(self.cand.date_entretien, dt)
+        self.assertFalse(self.cand.candidat_informe)
+        self.assertTrue(Notification.objects.filter(destinataire__email="sec@test.com").count() >= 1)
+
+    def test_planifier_date_passee_form_invalide(self):
+        from .forms import EntretienForm
+        from django.utils import timezone
+        dt = timezone.now() - timezone.timedelta(days=1)
+        form = EntretienForm({"entretien-date_entretien": dt.strftime("%Y-%m-%dT%H:%M")}, prefix="entretien")
+        self.assertFalse(form.is_valid())
+
+    def test_planifier_statut_incorrect_leve_erreur(self):
+        from django.utils import timezone
+        self.cand.statut = StatutCandidature.RECUE
+        self.cand.save(update_fields=["statut"])
+        with self.assertRaises(TransitionInterdite):
+            planifier_entretien(self.cand, timezone.now() + timezone.timedelta(days=5), self.res)
+
+
+@override_settings(FICHIERS_PRIVES_ROOT=tempfile.mkdtemp())
+class AccorderTests(TestCase):
+    def setUp(self):
+        self.sec, self.adm, self.res, self.dept, self.ts, self.candidat = _setup_base()
+        cand = _candidature_factory(self.dept, self.ts, self.candidat, self.sec)
+        preselectionner(cand, self.res)
+        self.cand = cand
+
+    def test_accorder_ok(self):
+        from suivi.models import Notification
+        accorder(self.cand, self.res)
+        self.cand.refresh_from_db()
+        self.assertEqual(self.cand.statut, StatutCandidature.ACCORDEE)
+        self.assertFalse(self.cand.candidat_informe)
+        self.assertTrue(Notification.objects.filter(destinataire__email="sec@test.com").count() >= 1)
+
+    def test_accorder_non_en_traitement_leve_erreur(self):
+        self.cand.statut = StatutCandidature.RECUE
+        self.cand.save(update_fields=["statut"])
+        with self.assertRaises(TransitionInterdite):
+            accorder(self.cand, self.res)
+
+    def test_quota_atteint_leve_exception(self):
+        offre = _offre_factory(self.dept, self.ts)
+        offre.nombre_places = 1
+        offre.save(update_fields=["nombre_places"])
+        # Accorder une première candidature sur cette offre
+        candidat2 = creer_candidat("Quota", "Test", "70000020")
+        cand2 = creer_candidature(
+            candidat=candidat2, departement=self.dept, type_stage=self.ts,
+            type_demande=TypeDemande.SUITE_OFFRE, offre=offre,
+            debut_disponibilite="2026-10-01", fin_disponibilite="2026-12-31", duree_souhaitee=2,
+            pieces_data=[{"type_piece": TypePiece.CV, "fichier": _fake_pdf(), "nom_original": "cv.pdf"}],
+            utilisateur=self.sec,
+        )
+        cand2.statut = StatutCandidature.ACCORDEE
+        cand2.save(update_fields=["statut"])
+        # Préparer la deuxième
+        candidat3 = creer_candidat("Quota2", "Test", "70000021")
+        cand3 = creer_candidature(
+            candidat=candidat3, departement=self.dept, type_stage=self.ts,
+            type_demande=TypeDemande.SUITE_OFFRE, offre=offre,
+            debut_disponibilite="2026-10-01", fin_disponibilite="2026-12-31", duree_souhaitee=2,
+            pieces_data=[{"type_piece": TypePiece.CV, "fichier": _fake_pdf(), "nom_original": "cv.pdf"}],
+            utilisateur=self.sec,
+        )
+        preselectionner(cand3, self.res)
+        with self.assertRaises(QuotaAtteint):
+            accorder(cand3, self.res, confirmer_depassement=False)
+
+    def test_quota_peut_etre_depasse_avec_confirmation(self):
+        """Accorder malgré quota atteint doit réussir si confirmer_depassement=True."""
+        offre = _offre_factory(self.dept, self.ts)
+        offre.nombre_places = 1
+        offre.save(update_fields=["nombre_places"])
+        # Remplir le quota avec une candidature accordée
+        candidat_quota = creer_candidat("QuotaConf", "X", "70000022")
+        cand_accordee = creer_candidature(
+            candidat=candidat_quota, departement=self.dept, type_stage=self.ts,
+            type_demande=TypeDemande.SUITE_OFFRE, offre=offre,
+            debut_disponibilite="2026-10-01", fin_disponibilite="2026-12-31", duree_souhaitee=2,
+            pieces_data=[{"type_piece": TypePiece.CV, "fichier": _fake_pdf(), "nom_original": "cv.pdf"}],
+            utilisateur=self.sec,
+        )
+        cand_accordee.statut = StatutCandidature.ACCORDEE
+        cand_accordee.save(update_fields=["statut"])
+        # Préparer une 2e cand SUITE_OFFRE pour la même offre
+        candidat_depassement = creer_candidat("QuotaDep", "Y", "70000023")
+        cand_dep = creer_candidature(
+            candidat=candidat_depassement, departement=self.dept, type_stage=self.ts,
+            type_demande=TypeDemande.SUITE_OFFRE, offre=offre,
+            debut_disponibilite="2026-10-01", fin_disponibilite="2026-12-31", duree_souhaitee=2,
+            pieces_data=[{"type_piece": TypePiece.CV, "fichier": _fake_pdf(), "nom_original": "cv.pdf"}],
+            utilisateur=self.sec,
+        )
+        preselectionner(cand_dep, self.res)
+        # Quota atteint → sans confirmation → QuotaAtteint
+        with self.assertRaises(QuotaAtteint):
+            accorder(cand_dep, self.res, confirmer_depassement=False)
+        # Avec confirmation → succès
+        accorder(cand_dep, self.res, confirmer_depassement=True)
+        cand_dep.refresh_from_db()
+        self.assertEqual(cand_dep.statut, StatutCandidature.ACCORDEE)
+
+
+@override_settings(FICHIERS_PRIVES_ROOT=tempfile.mkdtemp())
+class RefuserTests(TestCase):
+    def setUp(self):
+        self.sec, self.adm, self.res, self.dept, self.ts, self.candidat = _setup_base()
+        self.cand = _candidature_factory(self.dept, self.ts, self.candidat, self.sec)
+
+    def test_refuser_depuis_recue_ok(self):
+        refuser(self.cand, MotifRefus.PROFIL_INADAPTE, "", self.res)
+        self.cand.refresh_from_db()
+        self.assertEqual(self.cand.statut, StatutCandidature.REFUSEE)
+        self.assertFalse(self.cand.candidat_informe)
+
+    def test_refuser_depuis_en_traitement_ok(self):
+        preselectionner(self.cand, self.res)
+        refuser(self.cand, MotifRefus.PROFIL_INADAPTE, "", self.res)
+        self.cand.refresh_from_db()
+        self.assertEqual(self.cand.statut, StatutCandidature.REFUSEE)
+
+    def test_refuser_autre_sans_precision_leve_erreur(self):
+        with self.assertRaises(TransitionInterdite):
+            refuser(self.cand, MotifRefus.AUTRE, "", self.res)
+
+    def test_refuser_autre_avec_precision_ok(self):
+        refuser(self.cand, MotifRefus.AUTRE, "Raison spécifique", self.res)
+        self.cand.refresh_from_db()
+        self.assertEqual(self.cand.statut, StatutCandidature.REFUSEE)
+        self.assertEqual(self.cand.precision_motif, "Raison spécifique")
+
+    def test_refuser_vue_admin_403(self):
+        self.client.force_login(self.adm)
+        url = reverse("candidatures:candidature_refuser", args=[self.cand.pk])
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 403)
+
+
+@override_settings(FICHIERS_PRIVES_ROOT=tempfile.mkdtemp())
+class RedirigerTests(TestCase):
+    def setUp(self):
+        self.sec, self.adm, self.res, self.dept, self.ts, self.candidat = _setup_base()
+        self.cand = _candidature_factory(self.dept, self.ts, self.candidat, self.sec)
+        self.dept2 = Departement.objects.create(nom="Marketing", actif=True)
+        membre2 = Membre.objects.create(nom="Resp2", prenom="R2", departement=self.dept2, actif=True)
+        g_res = Group.objects.get(name="Responsable")
+        self.res2 = Utilisateur.objects.create_user(email="res2@test.com", password="pass")
+        self.res2.groups.add(g_res)
+        self.res2.membre = membre2
+        self.res2.save()
+
+    def test_rediriger_ok(self):
+        from suivi.models import Notification
+        rediriger(self.cand, self.dept2, "Compétences marketing", self.res)
+        self.cand.refresh_from_db()
+        self.assertEqual(self.cand.departement, self.dept2)
+        self.assertFalse(self.cand.candidat_informe)
+        # Notif au responsable du nouveau dept
+        self.assertTrue(Notification.objects.filter(destinataire__email="res2@test.com").count() >= 1)
+        # Notif aux secrétaires
+        self.assertTrue(Notification.objects.filter(destinataire__email="sec@test.com").count() >= 1)
+
+    def test_rediriger_meme_dept_leve_erreur(self):
+        with self.assertRaises(TransitionInterdite):
+            rediriger(self.cand, self.dept, "Auto-redirection", self.res)
+
+    def test_rediriger_non_recue_leve_erreur(self):
+        preselectionner(self.cand, self.res)
+        with self.assertRaises(TransitionInterdite):
+            rediriger(self.cand, self.dept2, "Trop tard", self.res)
+
+    def test_rediriger_notifie_admins_si_pas_responsable(self):
+        """Département sans responsable → admins notifiés."""
+        from suivi.models import Notification
+        dept3 = Departement.objects.create(nom="SansResp", actif=True)
+        candidat2 = creer_candidat("Redir", "Test", "70000030")
+        cand2 = _candidature_factory(self.dept, self.ts, candidat2, self.sec)
+        rediriger(cand2, dept3, "Redirection test", self.res)
+        self.assertTrue(Notification.objects.filter(destinataire__email="adm@test.com").count() >= 1)
+
+    def test_rediriger_vue_post_ok(self):
+        self.client.force_login(self.res)
+        url = reverse("candidatures:candidature_rediriger", args=[self.cand.pk])
+        response = self.client.post(url, {
+            "nouveau_departement": self.dept2.pk,
+            "motif": "Compétences marketing",
+        })
+        self.cand.refresh_from_db()
+        self.assertEqual(self.cand.departement, self.dept2)

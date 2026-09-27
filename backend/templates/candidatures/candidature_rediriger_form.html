@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+
+{% block title %}Rediriger — {{ candidature.reference }}{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-4">
+    <div>
+        <h4 class="mb-0 fw-semibold"><i class="bi bi-arrow-left-right me-2"></i>Rediriger la candidature</h4>
+        <p class="text-muted small mb-0">
+            {{ candidature.reference }} — {{ candidature.candidat }}
+            &nbsp;·&nbsp;Département actuel : <strong>{{ candidature.departement.nom }}</strong>
+        </p>
+    </div>
+    <a href="{% url 'candidatures:candidature_detail' candidature.pk %}" class="btn btn-outline-secondary btn-sm">
+        <i class="bi bi-arrow-left me-1"></i>Retour
+    </a>
+</div>
+
+<div class="alert alert-info py-2 small">
+    <i class="bi bi-info-circle me-1"></i>
+    La redirection maintient le statut <strong>Reçue</strong>. Le responsable du nouveau département (ou les administrateurs s'il n'y en a pas) sera notifié.
+</div>
+
+<div class="card border-0 shadow-sm" style="max-width:600px;">
+    <div class="card-body">
+        <form method="post">
+            {% csrf_token %}
+
+            <div class="mb-3">
+                <label for="{{ form.nouveau_departement.id_for_label }}" class="form-label fw-semibold">
+                    {{ form.nouveau_departement.label }}
+                </label>
+                {{ form.nouveau_departement }}
+                {% if form.nouveau_departement.errors %}
+                <div class="text-danger small mt-1">{{ form.nouveau_departement.errors.0 }}</div>
+                {% endif %}
+            </div>
+
+            <div class="mb-3">
+                <label for="{{ form.motif.id_for_label }}" class="form-label fw-semibold">
+                    {{ form.motif.label }} <span class="text-danger">*</span>
+                </label>
+                {{ form.motif }}
+                {% if form.motif.errors %}
+                <div class="text-danger small mt-1">{{ form.motif.errors.0 }}</div>
+                {% endif %}
+            </div>
+
+            <button type="submit" class="btn btn-secondary">
+                <i class="bi bi-arrow-left-right me-1"></i>Confirmer la redirection
+            </button>
+            <a href="{% url 'candidatures:candidature_detail' candidature.pk %}" class="btn btn-outline-secondary ms-2">Annuler</a>
+        </form>
+    </div>
+</div>
+{% endblock %}
