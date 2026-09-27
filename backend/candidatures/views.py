@@ -13,20 +13,32 @@ from suivi.models import Historique
 from commun.mixins import ListeMixin
 from comptes.permissions import RoleRequisMixin
 from .forms import (
+    AccorderForm,
     CandidatForm,
     CandidatRechercheForm,
     CandidatureForm,
+    EntretienForm,
     PieceJointeFormSet,
+    PreselectionnerForm,
+    RedirigerForm,
+    RefuserForm,
 )
 from .models import Candidat, Candidature, PieceJointe, StatutCandidature, TypePiece
 from .services import (
     CandidatExistant,
     CandidatureActiveExistante,
+    QuotaAtteint,
+    TransitionInterdite,
+    accorder,
     creer_candidature,
     marquer_informe,
     modifier_candidat,
     modifier_candidature,
+    planifier_entretien,
+    preselectionner,
+    rediriger,
     rechercher_candidats,
+    refuser,
 )
 
 _ROLES_LECTURE = ["Secrétaire", "Administrateur", "Responsable"]
@@ -235,6 +247,15 @@ class CandidatureListView(RoleRequisMixin, ListeMixin, ListView):
         ctx["statut_filtre"] = self.request.GET.get("statut", "")
         ctx["departement_filtre"] = self.request.GET.get("departement", "")
         ctx["type_demande_filtre"] = self.request.GET.get("type_demande", "")
+
+        if _est_responsable(self.request.user) and self.request.user.membre:
+            dept = self.request.user.membre.departement
+            base = Candidature.objects.filter(departement=dept)
+            ctx["nb_recues"] = base.filter(statut=StatutCandidature.RECUE).count()
+            ctx["nb_en_traitement"] = base.filter(statut=StatutCandidature.EN_TRAITEMENT).count()
+            ctx["nb_accordees"] = base.filter(statut=StatutCandidature.ACCORDEE).count()
+            ctx["nb_refusees"] = base.filter(statut=StatutCandidature.REFUSEE).count()
+
         return ctx
 
 
@@ -247,17 +268,24 @@ class CandidatureDetailView(RoleRequisMixin, View):
             Candidature.objects.select_related("candidat", "departement", "type_stage", "offre"),
             pk=pk,
         )
-        if _est_responsable(request.user):
+        est_resp = _est_responsable(request.user)
+        if est_resp:
             if not request.user.membre or candidature.departement != request.user.membre.departement:
                 raise PermissionDenied
 
         pieces = candidature.pieces.order_by("type_piece")
         historiques = _get_historique(candidature).order_by("-date_action")
-        return render(request, self.template_name, {
+
+        ctx = {
             "candidature": candidature,
             "pieces": pieces,
             "historiques": historiques,
-        })
+            "est_responsable": est_resp,
+        }
+        if est_resp:
+            ctx["form_preselection"] = PreselectionnerForm(prefix="presel")
+            ctx["form_entretien"] = EntretienForm(prefix="entretien")
+        return render(request, self.template_name, ctx)
 
 
 class CandidatureModifierView(RoleRequisMixin, View):
@@ -414,6 +442,19 @@ class CandidatsInformerListView(RoleRequisMixin, ListView):
             .order_by("-date_depot")
         )
 
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        ctx["entretiens_a_annoncer"] = (
+            Candidature.objects.filter(
+                candidat_informe=False,
+                statut=StatutCandidature.EN_TRAITEMENT,
+                date_entretien__isnull=False,
+            )
+            .select_related("candidat", "departement")
+            .order_by("date_entretien")
+        )
+        return ctx
+
 
 class CandidatureMarquerInformeView(RoleRequisMixin, View):
     roles = ["Secrétaire"]
@@ -424,3 +465,142 @@ class CandidatureMarquerInformeView(RoleRequisMixin, View):
         messages.success(request, f"Candidat {candidature.candidat} marqué comme informé.")
         next_url = request.POST.get("next", "")
         return redirect(next_url or "candidatures:candidats_informer")
+
+
+# ─── Étape 7 — Décisions du Responsable ──────────────────────────────────────
+
+
+class _DecisionView(RoleRequisMixin, View):
+    """Base : vérifie que le Responsable est bien dans le département de la candidature."""
+    roles = ["Responsable"]
+
+    def _get_candidature(self, pk):
+        cand = get_object_or_404(
+            Candidature.objects.select_related("candidat", "departement"),
+            pk=pk,
+        )
+        user = self.request.user
+        if not user.membre or cand.departement != user.membre.departement:
+            raise PermissionDenied
+        return cand
+
+
+class PreselectionnerView(_DecisionView):
+    def post(self, request, pk):
+        candidature = self._get_candidature(pk)
+        form = PreselectionnerForm(request.POST, prefix="presel")
+        if form.is_valid():
+            try:
+                preselectionner(candidature, request.user, form.cleaned_data.get("commentaire", ""))
+                messages.success(request, f"{candidature.reference} présélectionnée — statut : En traitement.")
+            except TransitionInterdite as e:
+                messages.error(request, str(e))
+        else:
+            messages.error(request, "Formulaire invalide.")
+        return redirect("candidatures:candidature_detail", pk=pk)
+
+
+class PlanifierEntretienView(_DecisionView):
+    def post(self, request, pk):
+        candidature = self._get_candidature(pk)
+        form = EntretienForm(request.POST, prefix="entretien")
+        if form.is_valid():
+            try:
+                planifier_entretien(candidature, form.cleaned_data["date_entretien"], request.user)
+                messages.success(request, "Entretien planifié. Les secrétaires ont été notifiées.")
+            except TransitionInterdite as e:
+                messages.error(request, str(e))
+        else:
+            for field_errors in form.errors.values():
+                for err in field_errors:
+                    messages.error(request, err)
+        return redirect("candidatures:candidature_detail", pk=pk)
+
+
+class AccorderView(_DecisionView):
+    template_name = "candidatures/candidature_accorder_form.html"
+
+    def get(self, request, pk):
+        candidature = self._get_candidature(pk)
+        form = AccorderForm()
+        return render(request, self.template_name, {"candidature": candidature, "form": form})
+
+    def post(self, request, pk):
+        candidature = self._get_candidature(pk)
+        form = AccorderForm(request.POST)
+        if form.is_valid():
+            confirmer = form.cleaned_data.get("confirmer_depassement", False)
+            try:
+                accorder(
+                    candidature, request.user,
+                    form.cleaned_data.get("commentaire", ""),
+                    confirmer_depassement=confirmer,
+                )
+                messages.success(request, f"{candidature.reference} accordée. Le candidat doit être informé.")
+                return redirect("candidatures:candidature_detail", pk=pk)
+            except QuotaAtteint as e:
+                return render(request, self.template_name, {
+                    "candidature": candidature,
+                    "form": form,
+                    "quota_atteint": True,
+                    "quota_message": str(e),
+                })
+            except TransitionInterdite as e:
+                messages.error(request, str(e))
+                return redirect("candidatures:candidature_detail", pk=pk)
+        return render(request, self.template_name, {"candidature": candidature, "form": form})
+
+
+class RefuserView(_DecisionView):
+    template_name = "candidatures/candidature_refuser_form.html"
+
+    def get(self, request, pk):
+        candidature = self._get_candidature(pk)
+        form = RefuserForm()
+        return render(request, self.template_name, {"candidature": candidature, "form": form})
+
+    def post(self, request, pk):
+        candidature = self._get_candidature(pk)
+        form = RefuserForm(request.POST)
+        if form.is_valid():
+            try:
+                refuser(
+                    candidature,
+                    motif=form.cleaned_data["motif"],
+                    precision_motif=form.cleaned_data.get("precision_motif", ""),
+                    utilisateur=request.user,
+                    commentaire=form.cleaned_data.get("commentaire", ""),
+                )
+                messages.success(request, f"{candidature.reference} refusée. Le candidat doit être informé.")
+                return redirect("candidatures:candidature_detail", pk=pk)
+            except TransitionInterdite as e:
+                messages.error(request, str(e))
+                return redirect("candidatures:candidature_detail", pk=pk)
+        return render(request, self.template_name, {"candidature": candidature, "form": form})
+
+
+class RedirigerView(_DecisionView):
+    template_name = "candidatures/candidature_rediriger_form.html"
+
+    def get(self, request, pk):
+        candidature = self._get_candidature(pk)
+        form = RedirigerForm(departement_actuel=candidature.departement)
+        return render(request, self.template_name, {"candidature": candidature, "form": form})
+
+    def post(self, request, pk):
+        candidature = self._get_candidature(pk)
+        form = RedirigerForm(request.POST, departement_actuel=candidature.departement)
+        if form.is_valid():
+            try:
+                rediriger(
+                    candidature,
+                    nouveau_departement=form.cleaned_data["nouveau_departement"],
+                    motif=form.cleaned_data["motif"],
+                    utilisateur=request.user,
+                )
+                messages.success(request, f"{candidature.reference} redirigée.")
+                return redirect("candidatures:candidature_list")
+            except TransitionInterdite as e:
+                messages.error(request, str(e))
+                return redirect("candidatures:candidature_detail", pk=pk)
+        return render(request, self.template_name, {"candidature": candidature, "form": form})

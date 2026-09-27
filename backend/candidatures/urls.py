@@ -19,4 +19,10 @@ urlpatterns = [
     # Candidats à informer
     path("candidatures/a-informer/", views.CandidatsInformerListView.as_view(), name="candidats_informer"),
     path("candidatures/<int:pk>/informer/", views.CandidatureMarquerInformeView.as_view(), name="candidature_informer"),
+    # Décisions Responsable (étape 7)
+    path("candidatures/<int:pk>/preselectionner/", views.PreselectionnerView.as_view(), name="candidature_preselectionner"),
+    path("candidatures/<int:pk>/planifier-entretien/", views.PlanifierEntretienView.as_view(), name="candidature_planifier_entretien"),
+    path("candidatures/<int:pk>/accorder/", views.AccorderView.as_view(), name="candidature_accorder"),
+    path("candidatures/<int:pk>/refuser/", views.RefuserView.as_view(), name="candidature_refuser"),
+    path("candidatures/<int:pk>/rediriger/", views.RedirigerView.as_view(), name="candidature_rediriger"),
 ]

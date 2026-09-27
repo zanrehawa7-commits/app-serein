@@ -6,11 +6,64 @@
 <div class="d-flex align-items-center justify-content-between mb-4 flex-wrap gap-2">
     <div>
         <h4 class="mb-0 fw-semibold"><i class="bi bi-envelope me-2"></i>Candidats à informer</h4>
-        <p class="text-muted small mb-0">Candidatures accordées ou refusées dont le candidat n'a pas encore été informé.</p>
+        <p class="text-muted small mb-0">Entretiens à annoncer et décisions à communiquer aux candidats.</p>
     </div>
 </div>
 
-<div class="card border-0 shadow-sm">
+{% if entretiens_a_annoncer %}
+<div class="card border-0 shadow-sm mb-4" style="border-left: 4px solid #0d6efd !important;">
+    <div class="card-header bg-white border-bottom py-2 d-flex align-items-center gap-2">
+        <i class="bi bi-calendar-event text-primary"></i>
+        <h6 class="mb-0 fw-semibold">Entretiens à annoncer aux candidats</h6>
+        <span class="badge bg-primary ms-auto">{{ entretiens_a_annoncer|length }}</span>
+    </div>
+    <div class="table-responsive">
+        <table class="table table-hover mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th class="ps-3">Référence</th>
+                    <th>Candidat</th>
+                    <th>Téléphone</th>
+                    <th>Département</th>
+                    <th>Date de l'entretien</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for c in entretiens_a_annoncer %}
+                <tr>
+                    <td class="ps-3 fw-semibold">
+                        <a href="{% url 'candidatures:candidature_detail' c.pk %}">{{ c.reference }}</a>
+                    </td>
+                    <td>{{ c.candidat }}</td>
+                    <td class="small text-muted">{{ c.candidat.telephone }}</td>
+                    <td>{{ c.departement.nom }}</td>
+                    <td>
+                        <span class="badge bg-primary">{{ c.date_entretien|date:"d/m/Y à H:i" }}</span>
+                    </td>
+                    <td class="text-end pe-3">
+                        <form method="post" action="{% url 'candidatures:candidature_informer' c.pk %}" class="d-inline">
+                            {% csrf_token %}
+                            <input type="hidden" name="next" value="{% url 'candidatures:candidats_informer' %}">
+                            <button type="submit" class="btn btn-sm btn-outline-primary">
+                                <i class="bi bi-check2 me-1"></i>Candidat prévenu
+                            </button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+<div class="card border-0 shadow-sm" style="border-left: 4px solid #198754 !important;">
+    <div class="card-header bg-white border-bottom py-2 d-flex align-items-center gap-2">
+        <i class="bi bi-envelope-check text-success"></i>
+        <h6 class="mb-0 fw-semibold">Décisions à communiquer (Accordées / Refusées)</h6>
+        <span class="badge bg-success ms-auto">{{ candidatures|length }}</span>
+    </div>
     <div class="card-body p-0">
         {% if candidatures %}
         <div class="table-responsive">
@@ -19,9 +72,12 @@
                     <tr>
                         <th class="ps-3">Référence</th>
                         <th>Candidat</th>
+                        <th>Téléphone</th>
                         <th>Département</th>
                         <th>Décision</th>
-                        <th>Date dépôt</th>
+                        <th>Motif de refus</th>
+                        <th>Date entretien</th>
+                        <th>Date décision</th>
                         <th></th>
                     </tr>
                 </thead>
@@ -32,6 +88,7 @@
                             <a href="{% url 'candidatures:candidature_detail' c.pk %}">{{ c.reference }}</a>
                         </td>
                         <td>{{ c.candidat }}</td>
+                        <td class="small text-muted">{{ c.candidat.telephone }}</td>
                         <td>{{ c.departement.nom }}</td>
                         <td>
                             {% if c.statut == "ACCORDEE" %}
@@ -40,7 +97,16 @@
                             <span class="badge bg-danger">Refusée</span>
                             {% endif %}
                         </td>
-                        <td>{{ c.date_depot|date:"d/m/Y" }}</td>
+                        <td class="small">
+                            {% if c.statut == "REFUSEE" %}
+                                {{ c.get_motif_refus_display|default:"—" }}
+                                {% if c.precision_motif %}<br><span class="text-muted">{{ c.precision_motif }}</span>{% endif %}
+                            {% else %}—{% endif %}
+                        </td>
+                        <td class="small">
+                            {% if c.date_entretien %}{{ c.date_entretien|date:"d/m/Y H:i" }}{% else %}—{% endif %}
+                        </td>
+                        <td class="small">{{ c.date_depot|date:"d/m/Y" }}</td>
                         <td class="text-end pe-3">
                             <form method="post" action="{% url 'candidatures:candidature_informer' c.pk %}" class="d-inline">
                                 {% csrf_token %}

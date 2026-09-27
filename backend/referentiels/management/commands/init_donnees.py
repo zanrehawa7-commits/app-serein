@@ -29,7 +29,8 @@ GROUPES_PERMISSIONS = {
     "Responsable": {
         "offres.besoin": ["add", "change", "view"],
         "offres.offre": ["view"],
-        "candidatures": ["view"],                # lecture seule (présélection à l'étape 7)
+        "candidatures.candidature": ["change", "view"],
+        "candidatures.candidat": ["view"],
         "stages": ["add", "change", "view"],
         "referentiels": ["view"],
     },

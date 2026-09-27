@@ -76,17 +76,51 @@
             <div class="card-body">
                 <div class="d-flex justify-content-between align-items-start">
                     <div>
-                        <p class="text-muted small mb-1 text-uppercase fw-semibold" style="font-size:.7rem;letter-spacing:.05em;">Candidatures</p>
-                        <h3 class="fw-bold mb-0" style="color:#B7770D;">—</h3>
+                        <p class="text-muted small mb-1 text-uppercase fw-semibold" style="font-size:.7rem;letter-spacing:.05em;">Reçues</p>
+                        <h3 class="fw-bold mb-0" style="color:#B7770D;">{{ nb_recues|default:"—" }}</h3>
                     </div>
                     <div class="rounded-circle d-flex align-items-center justify-content-center text-white"
                          style="width:44px;height:44px;background:linear-gradient(135deg,#B7770D,#F39C12);">
-                        <i class="bi bi-person-lines-fill"></i>
+                        <i class="bi bi-inbox-fill"></i>
                     </div>
                 </div>
                 <p class="text-muted small mb-0 mt-2"><i class="bi bi-clock text-warning"></i> à examiner</p>
             </div>
         </div>
+    </div>
+</div>
+
+<!-- Cartes candidatures supplémentaires -->
+<div class="row g-3 mb-4">
+    <div class="col-4">
+        <a href="{% url 'candidatures:candidature_list' %}?statut=EN_TRAITEMENT" class="text-decoration-none">
+        <div class="card border-0 shadow-sm h-100" style="border-left:4px solid #E67E22 !important;">
+            <div class="card-body py-3">
+                <p class="text-muted small mb-1 text-uppercase fw-semibold" style="font-size:.7rem;">En traitement</p>
+                <h4 class="fw-bold mb-0" style="color:#E67E22;">{{ nb_en_traitement|default:"—" }}</h4>
+            </div>
+        </div>
+        </a>
+    </div>
+    <div class="col-4">
+        <a href="{% url 'candidatures:candidature_list' %}?statut=ACCORDEE" class="text-decoration-none">
+        <div class="card border-0 shadow-sm h-100" style="border-left:4px solid #27AE60 !important;">
+            <div class="card-body py-3">
+                <p class="text-muted small mb-1 text-uppercase fw-semibold" style="font-size:.7rem;">Accordées</p>
+                <h4 class="fw-bold mb-0" style="color:#27AE60;">{{ nb_accordees|default:"—" }}</h4>
+            </div>
+        </div>
+        </a>
+    </div>
+    <div class="col-4">
+        <a href="{% url 'candidatures:candidature_list' %}?statut=REFUSEE" class="text-decoration-none">
+        <div class="card border-0 shadow-sm h-100" style="border-left:4px solid #C0392B !important;">
+            <div class="card-body py-3">
+                <p class="text-muted small mb-1 text-uppercase fw-semibold" style="font-size:.7rem;">Refusées</p>
+                <h4 class="fw-bold mb-0" style="color:#C0392B;">{{ nb_refusees|default:"—" }}</h4>
+            </div>
+        </div>
+        </a>
     </div>
 </div>
 
@@ -116,7 +150,46 @@
     </div>
 
     <div class="col-lg-8">
-        <div class="card border-0 shadow-sm h-100">
+        <div class="card border-0 shadow-sm mb-3">
+            <div class="card-header bg-white border-bottom py-3 d-flex justify-content-between align-items-center">
+                <h6 class="mb-0 fw-semibold"><i class="bi bi-person-lines-fill text-warning me-2"></i>Dernières candidatures reçues</h6>
+                <a href="{% url 'candidatures:candidature_list' %}?statut=RECUE" class="btn btn-sm btn-outline-warning">Voir toutes</a>
+            </div>
+            <div class="card-body p-0">
+                {% if candidatures_recentes %}
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th class="ps-3">Référence</th>
+                                <th>Candidat</th>
+                                <th>Date dépôt</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for c in candidatures_recentes %}
+                            <tr>
+                                <td class="ps-3 fw-semibold">{{ c.reference }}</td>
+                                <td>{{ c.candidat }}</td>
+                                <td>{{ c.date_depot|date:"d/m/Y" }}</td>
+                                <td class="text-end pe-3">
+                                    <a href="{% url 'candidatures:candidature_detail' c.pk %}" class="btn btn-sm btn-outline-primary">
+                                        <i class="bi bi-eye"></i>
+                                    </a>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="text-center py-3 text-muted small">Aucune candidature reçue.</div>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="card border-0 shadow-sm">
             <div class="card-header bg-white border-bottom py-3 d-flex justify-content-between align-items-center">
                 <h6 class="mb-0 fw-semibold"><i class="bi bi-inbox-fill text-primary me-2"></i>Mes derniers besoins</h6>
                 <a href="{% url 'offres:besoin_list' %}" class="btn btn-sm btn-outline-primary">Voir tous</a>

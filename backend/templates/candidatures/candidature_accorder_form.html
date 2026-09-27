@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+
+{% block title %}Accorder — {{ candidature.reference }}{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-4">
+    <div>
+        <h4 class="mb-0 fw-semibold"><i class="bi bi-check-circle me-2 text-success"></i>Accorder le stage</h4>
+        <p class="text-muted small mb-0">Candidature {{ candidature.reference }} — {{ candidature.candidat }}</p>
+    </div>
+    <a href="{% url 'candidatures:candidature_detail' candidature.pk %}" class="btn btn-outline-secondary btn-sm">
+        <i class="bi bi-arrow-left me-1"></i>Retour
+    </a>
+</div>
+
+{% if quota_atteint %}
+<div class="alert alert-warning">
+    <i class="bi bi-exclamation-triangle me-2"></i><strong>Quota atteint</strong> — {{ quota_message }}<br>
+    Cliquez sur <em>Confirmer malgré tout</em> pour dépasser le quota.
+</div>
+{% endif %}
+
+<div class="card border-0 shadow-sm" style="max-width:600px;">
+    <div class="card-body">
+        <form method="post">
+            {% csrf_token %}
+
+            <div class="mb-3">
+                <label for="{{ form.commentaire.id_for_label }}" class="form-label">
+                    {{ form.commentaire.label }}
+                </label>
+                {{ form.commentaire }}
+            </div>
+
+            {% if quota_atteint %}
+            {# Deuxième passage : on envoie confirmer_depassement=True #}
+            <input type="hidden" name="confirmer_depassement" value="True">
+            <button type="submit" class="btn btn-danger">
+                <i class="bi bi-exclamation-triangle me-1"></i>Confirmer malgré tout (quota dépassé)
+            </button>
+            {% else %}
+            {{ form.confirmer_depassement }}
+            <button type="submit" class="btn btn-success">
+                <i class="bi bi-check-circle me-1"></i>Accorder le stage
+            </button>
+            {% endif %}
+
+            <a href="{% url 'candidatures:candidature_detail' candidature.pk %}" class="btn btn-outline-secondary ms-2">Annuler</a>
+        </form>
+    </div>
+</div>
+{% endblock %}

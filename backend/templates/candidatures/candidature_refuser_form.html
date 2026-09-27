@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+
+{% block title %}Refuser — {{ candidature.reference }}{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-4">
+    <div>
+        <h4 class="mb-0 fw-semibold"><i class="bi bi-x-circle me-2 text-danger"></i>Refuser la candidature</h4>
+        <p class="text-muted small mb-0">Candidature {{ candidature.reference }} — {{ candidature.candidat }}</p>
+    </div>
+    <a href="{% url 'candidatures:candidature_detail' candidature.pk %}" class="btn btn-outline-secondary btn-sm">
+        <i class="bi bi-arrow-left me-1"></i>Retour
+    </a>
+</div>
+
+<div class="card border-0 shadow-sm" style="max-width:600px;">
+    <div class="card-body">
+        <form method="post" id="form-refus">
+            {% csrf_token %}
+
+            <div class="mb-3">
+                <label for="{{ form.motif.id_for_label }}" class="form-label fw-semibold">{{ form.motif.label }}</label>
+                {{ form.motif }}
+                {% if form.motif.errors %}
+                <div class="text-danger small mt-1">{{ form.motif.errors.0 }}</div>
+                {% endif %}
+            </div>
+
+            <div class="mb-3" id="zone-precision" style="display:none;">
+                <label for="{{ form.precision_motif.id_for_label }}" class="form-label fw-semibold">
+                    {{ form.precision_motif.label }} <span class="text-danger">*</span>
+                </label>
+                {{ form.precision_motif }}
+                {% if form.precision_motif.errors %}
+                <div class="text-danger small mt-1">{{ form.precision_motif.errors.0 }}</div>
+                {% endif %}
+            </div>
+
+            <div class="mb-3">
+                <label for="{{ form.commentaire.id_for_label }}" class="form-label">{{ form.commentaire.label }}</label>
+                {{ form.commentaire }}
+            </div>
+
+            <button type="submit" class="btn btn-danger">
+                <i class="bi bi-x-circle me-1"></i>Confirmer le refus
+            </button>
+            <a href="{% url 'candidatures:candidature_detail' candidature.pk %}" class="btn btn-outline-secondary ms-2">Annuler</a>
+        </form>
+    </div>
+</div>
+
+<script>
+(function () {
+    var motifSelect = document.getElementById("{{ form.motif.id_for_label }}");
+    var zonePrec = document.getElementById("zone-precision");
+    function togglePrec() {
+        zonePrec.style.display = (motifSelect.value === "AUTRE") ? "" : "none";
+    }
+    motifSelect.addEventListener("change", togglePrec);
+    togglePrec(); // init
+    {% if form.motif.value == "AUTRE" %}zonePrec.style.display = "";{% endif %}
+})();
+</script>
+{% endblock %}

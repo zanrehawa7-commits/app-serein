@@ -17,8 +17,27 @@ def contexte_utilisateur(request):
         nb_notifications = 0
         dernieres_notifications = []
 
+    nb_a_informer = 0
+    if role == "Secrétaire":
+        try:
+            from candidatures.models import Candidature, StatutCandidature
+            nb_a_informer = Candidature.objects.filter(
+                candidat_informe=False,
+                statut__in=[
+                    StatutCandidature.ACCORDEE,
+                    StatutCandidature.REFUSEE,
+                ],
+            ).count() + Candidature.objects.filter(
+                candidat_informe=False,
+                statut=StatutCandidature.EN_TRAITEMENT,
+                date_entretien__isnull=False,
+            ).count()
+        except Exception:
+            nb_a_informer = 0
+
     return {
         "role_utilisateur": role,
         "nb_notifications": nb_notifications,
         "dernieres_notifications": dernieres_notifications,
+        "nb_a_informer": nb_a_informer,
     }

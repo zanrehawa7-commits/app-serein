@@ -15,13 +15,51 @@
     {% endif %}
 </div>
 
+{% if role_utilisateur == "Responsable" %}
+<!-- Onglets Responsable -->
+<ul class="nav nav-tabs mb-3">
+    <li class="nav-item">
+        <a class="nav-link {% if statut_filtre == 'RECUE' %}active{% endif %}"
+           href="{% url 'candidatures:candidature_list' %}?statut=RECUE">
+            Reçues <span class="badge bg-primary ms-1">{{ nb_recues|default:0 }}</span>
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link {% if statut_filtre == 'EN_TRAITEMENT' %}active{% endif %}"
+           href="{% url 'candidatures:candidature_list' %}?statut=EN_TRAITEMENT">
+            En traitement <span class="badge bg-warning text-dark ms-1">{{ nb_en_traitement|default:0 }}</span>
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link {% if statut_filtre == 'ACCORDEE' %}active{% endif %}"
+           href="{% url 'candidatures:candidature_list' %}?statut=ACCORDEE">
+            Accordées <span class="badge bg-success ms-1">{{ nb_accordees|default:0 }}</span>
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link {% if statut_filtre == 'REFUSEE' %}active{% endif %}"
+           href="{% url 'candidatures:candidature_list' %}?statut=REFUSEE">
+            Refusées <span class="badge bg-danger ms-1">{{ nb_refusees|default:0 }}</span>
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link {% if not statut_filtre %}active{% endif %}"
+           href="{% url 'candidatures:candidature_list' %}">
+            Toutes
+        </a>
+    </li>
+</ul>
+{% endif %}
+
 <!-- Filtres -->
 <div class="card border-0 shadow-sm mb-3">
     <div class="card-body py-2">
         <form method="get" class="row g-2 align-items-end">
+            {% if statut_filtre %}<input type="hidden" name="statut" value="{{ statut_filtre }}">{% endif %}
             <div class="col-md-3">
                 <input type="text" name="q" value="{{ q }}" placeholder="Recherche (ref, nom, tél)…" class="form-control form-control-sm">
             </div>
+            {% if role_utilisateur != "Responsable" %}
             <div class="col-md-2">
                 <select name="statut" class="form-select form-select-sm">
                     <option value="">Tous les statuts</option>
@@ -30,6 +68,7 @@
                     {% endfor %}
                 </select>
             </div>
+            {% endif %}
             <div class="col-md-2">
                 <select name="type_demande" class="form-select form-select-sm">
                     <option value="">Tous types</option>
@@ -38,7 +77,7 @@
                     {% endfor %}
                 </select>
             </div>
-            {% if not role_utilisateur == "Responsable" %}
+            {% if role_utilisateur != "Responsable" %}
             <div class="col-md-2">
                 <select name="departement" class="form-select form-select-sm">
                     <option value="">Tous les départements</option>
