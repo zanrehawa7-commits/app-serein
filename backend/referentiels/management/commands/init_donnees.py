@@ -24,6 +24,7 @@ GROUPES_PERMISSIONS = {
         "candidatures.candidat": _CRUD,
         "candidatures.candidature": ["add", "change", "view"],
         "candidatures.piecejointe": ["add", "change", "delete", "view"],
+        "stages.stage": ["add", "change", "view"],
         "referentiels": ["view"],
     },
     "Responsable": {

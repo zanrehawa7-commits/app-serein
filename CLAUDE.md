@@ -225,6 +225,58 @@ Supprime espaces/points/tirets, retire préfixe `+226`/`00226` → résultat 8 c
 - `candidats_informer.html` : colonnes enrichies : téléphone, motif de refus, date entretien, date décision.
 - `tableau_bord_responsable.html` : 4 cartes candidatures (Reçues/En traitement/Accordées/Refusées) + tableau 5 dernières reçues.
 
+## Étape 8 — Gestion des stages (F12)
+
+### Modèle `stages/models.py`
+- `StatutStage` : A_VENIR, EN_COURS, TERMINE, INTERROMPU.
+- Cycle : A_VENIR → EN_COURS → TERMINE ; A_VENIR/EN_COURS → INTERROMPU.
+- Statut calculé à la création selon la date de début (≤ aujourd'hui → EN_COURS, sinon A_VENIR).
+- Champs évaluation (note, vivier, rapport) réservés à l'étape 9 — NE PAS TOUCHER.
+
+### Transitions (`stages/services.py`)
+- `TransitionInterdite(Exception)` : exception métier.
+- `constituer_stage(candidature, date_debut, date_fin_prevue, maitre_stage, utilisateur)` : candidature doit être ACCORDEE, aucun stage existant, maître actif du même département. Reset `candidat_informe`. Notifie Secrétaires.
+- `modifier_stage(stage, date_fin_prevue, maitre_stage, utilisateur, date_debut=None)` : A_VENIR ou EN_COURS. `date_debut` modifiable seulement si A_VENIR.
+- `terminer_stage(stage, date_fin_reelle, utilisateur)` : EN_COURS → TERMINE. Date réelle ≥ début et ≤ aujourd'hui.
+- `interrompre_stage(stage, date_fin_reelle, motif, utilisateur)` : A_VENIR/EN_COURS → INTERROMPU. Motif obligatoire.
+- `demarrer_stage_auto(stage, aujourd_hui)` : A_VENIR → EN_COURS si date_debut ≤ aujourd_hui.
+- `cloturer_stage_auto(stage, aujourd_hui)` : EN_COURS → TERMINE si date_fin_prevue < aujourd_hui. Notifie le Responsable du département.
+
+### Commande de maintenance (`python manage.py mettre_a_jour_stages`)
+- Option `--date AAAA-MM-JJ` pour simuler une date passée (serveur arrêté).
+- Ordre : **démarrages d'abord** (A_VENIR → EN_COURS) puis **clôtures** (EN_COURS → TERMINE).
+- Idempotente — sans danger à relancer.
+
+### Vues (`stages/views.py`) + URLs (`stages/urls.py`)
+- `StageListView` : 3 rôles, filtres (statut, date, type de stage, département, recherche).
+- `StageDetailView` : 3 rôles, historique inclus.
+- `ConstituerStageView` : Secrétaire uniquement.
+- `ModifierStageView` : Secrétaire uniquement.
+- `TerminerStageView` : Responsable uniquement, vérifie que le stage est dans son département.
+- `InterrompreStageView` : Responsable uniquement, idem.
+
+### Permissions (`init_donnees.py`)
+- Secrétaire : `"stages.stage": ["add", "change", "view"]`.
+- Responsable : `"stages": ["add", "change", "view"]` (terminer/interrompre passent par `change`).
+- Administrateur : accès complet.
+
+### Templates (`backend/templates/stages/`)
+- `stage_list.html` : onglets par statut + filtres + tableau.
+- `stage_detail.html` : fiche + historique + boutons selon rôle/statut.
+- `stage_constituer_form.html` : formulaire + avertissement JS si disponibilité manquante.
+- `stage_modifier_form.html` : idem, date_debut grisée si EN_COURS.
+- `stage_terminer_form.html` : date de fin réelle (≤ aujourd'hui).
+- `stage_interrompre_form.html` : date + motif.
+
+### Règle Complément 5 — `referentiels/services.py`
+`desactiver_membre()` refuse si le membre est maître de stage d'un stage A_VENIR ou EN_COURS (message : "changer d'abord le maître de stage").
+
+### Mise à jour `candidature_detail.html`
+- Si statut ACCORDEE : bouton "Constituer le stage" (Secrétaire) ou "Voir le stage" si déjà constitué.
+
+### Mise à jour `candidature_list.html`
+- Onglet Accordées : badge mortarboard bleu si stage constitué, badge ! orange si à compléter.
+
 ## Variables d'environnement
 Copier `.env.example` → `.env` et remplir les valeurs. Ne jamais commiter `.env`.
 Le `.env` est à la racine du projet (`app-serein/`), lu par `python-decouple` depuis `backend/`.

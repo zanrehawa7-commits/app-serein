@@ -120,6 +120,9 @@
                 <i class="bi bi-inbox me-2"></i>Besoins</a></li>
             <li><a href="{% url 'offres:offre_list' %}" class="nav-link text-white {% if request.resolver_match.namespace == 'offres' and 'offre' in request.resolver_match.url_name %}active{% endif %}">
                 <i class="bi bi-file-earmark-text me-2"></i>Offres</a></li>
+            <li class="mt-2"><small class="text-white-50 ps-2 text-uppercase fw-bold" style="font-size:.65rem;letter-spacing:.05em;">Stages</small></li>
+            <li><a href="{% url 'stages:stage_list' %}" class="nav-link text-white {% if request.resolver_match.namespace == 'stages' %}active{% endif %}">
+                <i class="bi bi-mortarboard me-2"></i>Stages</a></li>
         </ul>
 
         {% elif role_utilisateur == "Secrétaire" %}
@@ -140,6 +143,9 @@
                 <span><i class="bi bi-envelope me-2"></i>Candidats à informer</span>
                 {% if nb_a_informer %}<span class="badge bg-warning text-dark">{{ nb_a_informer }}</span>{% endif %}
             </a></li>
+            <li class="mt-2"><small class="text-white-50 ps-2 text-uppercase fw-bold" style="font-size:.65rem;letter-spacing:.05em;">Stages</small></li>
+            <li><a href="{% url 'stages:stage_list' %}" class="nav-link text-white {% if request.resolver_match.namespace == 'stages' %}active{% endif %}">
+                <i class="bi bi-mortarboard me-2"></i>Stages</a></li>
         </ul>
 
         {% elif role_utilisateur == "Responsable" %}
@@ -160,8 +166,15 @@
                 <i class="bi bi-check-circle me-2"></i>Accordées</a></li>
             <li><a href="{% url 'candidatures:candidature_list' %}?statut=REFUSEE" class="nav-link text-white {% if request.resolver_match.namespace == 'candidatures' and request.GET.statut == 'REFUSEE' %}active{% endif %}">
                 <i class="bi bi-x-circle me-2"></i>Refusées</a></li>
-            <li><a href="{% url 'comptes:en_developpement' %}" class="nav-link text-white">
-                <i class="bi bi-mortarboard me-2"></i>Stages</a></li>
+            <li class="mt-2"><small class="text-white-50 ps-2 text-uppercase fw-bold" style="font-size:.65rem;letter-spacing:.05em;">Stages</small></li>
+            <li><a href="{% url 'stages:stage_list' %}?statut=A_VENIR" class="nav-link text-white {% if request.resolver_match.namespace == 'stages' and request.GET.statut == 'A_VENIR' %}active{% endif %}">
+                <i class="bi bi-clock me-2"></i>À venir</a></li>
+            <li><a href="{% url 'stages:stage_list' %}?statut=EN_COURS" class="nav-link text-white {% if request.resolver_match.namespace == 'stages' and request.GET.statut == 'EN_COURS' %}active{% endif %}">
+                <i class="bi bi-play-circle me-2"></i>En cours</a></li>
+            <li><a href="{% url 'stages:stage_list' %}?statut=TERMINE" class="nav-link text-white {% if request.resolver_match.namespace == 'stages' and request.GET.statut == 'TERMINE' %}active{% endif %}">
+                <i class="bi bi-check-circle me-2"></i>Terminés</a></li>
+            <li><a href="{% url 'stages:stage_list' %}?statut=INTERROMPU" class="nav-link text-white {% if request.resolver_match.namespace == 'stages' and request.GET.statut == 'INTERROMPU' %}active{% endif %}">
+                <i class="bi bi-stop-circle me-2"></i>Interrompus</a></li>
         </ul>
         {% endif %}
     </nav>

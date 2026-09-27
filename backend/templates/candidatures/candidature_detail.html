@@ -26,6 +26,17 @@
             </button>
         </form>
         {% endif %}
+        {% if perms.candidatures.change_candidature and candidature.statut == "ACCORDEE" %}
+            {% if candidature.stage %}
+            <a href="{% url 'stages:stage_detail' candidature.stage.pk %}" class="btn btn-outline-success btn-sm">
+                <i class="bi bi-mortarboard me-1"></i>Voir le stage
+            </a>
+            {% else %}
+            <a href="{% url 'stages:stage_constituer' candidature.pk %}" class="btn btn-success btn-sm">
+                <i class="bi bi-mortarboard me-1"></i>Constituer le stage
+            </a>
+            {% endif %}
+        {% endif %}
     </div>
 </div>
 

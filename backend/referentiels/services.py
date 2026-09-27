@@ -17,6 +17,19 @@ def desactiver_membre(membre, request=None):
             )
         return False
 
+    # Nouveau : refuser si maître de stage d'un stage actif (Complément 5)
+    from stages.models import Stage, StatutStage
+    if Stage.objects.filter(
+        maitre_stage=membre,
+        statut__in=[StatutStage.A_VENIR, StatutStage.EN_COURS],
+    ).exists():
+        if request:
+            messages.error(
+                request,
+                f"Impossible de désactiver « {membre} » : changer d'abord le maître de stage.",
+            )
+        return False
+
     membre.actif = not membre.actif
     membre.save(update_fields=["actif"])
     if request:

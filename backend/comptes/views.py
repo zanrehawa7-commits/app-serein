@@ -144,6 +144,10 @@ class TableauBordResponsableView(RoleRequisMixin, TemplateView):
                 .select_related("candidat")
                 .order_by("-date_depot")[:5]
             )
+            from stages.models import Stage, StatutStage
+            ctx["nb_stages_en_cours"] = Stage.objects.filter(
+                candidature__departement=dept, statut=StatutStage.EN_COURS
+            ).count()
         return ctx
 
 
