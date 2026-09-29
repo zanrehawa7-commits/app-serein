@@ -231,6 +231,11 @@ Après chaque décision du Responsable, la Secrétaire doit contacter le candida
 | **Département du Responsable** | Il ne voit que les candidatures de son département |
 | **Référentiel protégé** | Un département ou établissement utilisé ne peut pas être supprimé |
 | **Rôle et membre** | Un Responsable doit être lié à un membre d'un département |
+| **Maître de stage = même département** | Le maître de stage doit appartenir au département de la candidature |
+| **Statut auto du stage** | Si date de début ≤ aujourd'hui → En cours, sinon À venir |
+| **Terminer = date passée** | La date de fin réelle ne peut pas être dans le futur |
+| **Interrompre = motif obligatoire** | L'interruption est irréversible et nécessite un motif |
+| **Maître de stage actif** | Impossible de désactiver un membre qui encadre un stage en cours |
 
 ---
 
@@ -251,6 +256,23 @@ Les notifications apparaissent dans la cloche en haut à droite. Les 5 dernière
 
 ## Scénario 7 — Constituer et suivre un stage (Secrétaire + Responsable)
 
+### Qu'est-ce que "constituer un stage" ?
+
+Quand le Responsable accorde une candidature, cela signifie qu'il accepte le candidat en principe. Mais l'accord seul ne suffit pas : il faut encore **formaliser le stage** dans le système en précisant les dates et l'encadrant. C'est cette étape qu'on appelle "constituer le stage".
+
+```
+Candidature ACCORDÉE (décision du Responsable)
+        ↓
+Secrétaire constitue le stage
+→ saisit la date de début, la date de fin prévue, le maître de stage
+        ↓
+Stage créé → statut "À venir" ou "En cours"
+        ↓
+Stagiaire informé, suivi dans le système
+```
+
+Tant que le stage n'est pas constitué, un badge `!` orange apparaît dans la liste des candidatures accordées pour rappeler à la Secrétaire qu'il reste quelque chose à faire.
+
 ### Prérequis
 - Une candidature au statut **Accordée** existe.
 - Le département concerné a au moins un membre actif (futur maître de stage).
@@ -260,13 +282,16 @@ Les notifications apparaissent dans la cloche en haut à droite. Les 5 dernière
 **Connexion :** `sec@serein.bf`
 
 1. Menu → Candidatures → ouvrir la candidature accordée
-2. Bouton "Constituer le stage" (visible uniquement si statut = Accordée et aucun stage existant)
+2. Bouton vert **"Constituer le stage"** en haut à droite  
+   *(remplacé par "Voir le stage" si un stage existe déjà)*
 3. Renseigner :
-   - Date de début
-   - Date de fin prévue
-   - Maître de stage (liste filtrée aux membres actifs du département)
-4. Valider → le stage est créé avec le statut **À venir** (ou **En cours** si la date de début est déjà passée)
-5. La Secrétaire reçoit une notification → informer le stagiaire de la date de début
+   - **Date de début** du stage
+   - **Date de fin prévue**
+   - **Maître de stage** (liste filtrée aux membres actifs du département)
+4. Valider → le stage est créé automatiquement avec :
+   - Statut **À venir** si la date de début est dans le futur
+   - Statut **En cours** si la date de début est aujourd'hui ou passée
+5. Les Secrétaires reçoivent une notification → informer le stagiaire de sa date de début
 
 ### Vérifier dans la liste (Menu → Stages)
 - Onglets : À venir / En cours / Terminés / Interrompus
