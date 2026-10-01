@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+
+{% block title %}{{ personnel }}{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center gap-3 mb-4">
+    <a href="{% url 'referentiels:personnel_list' %}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left"></i></a>
+    <div>
+        <h5 class="mb-0 fw-semibold"><i class="bi bi-person-badge me-2 text-primary"></i>{{ personnel }}</h5>
+        <p class="text-muted small mb-0">Fiche personnel</p>
+    </div>
+    <div class="ms-auto d-flex gap-2">
+        {% if perms.referentiels.change_personnel %}
+        <a href="{% url 'referentiels:personnel_modifier' personnel.pk %}" class="btn btn-outline-primary btn-sm">
+            <i class="bi bi-pencil me-1"></i>Modifier
+        </a>
+        <button type="button" class="btn btn-sm {% if personnel.actif %}btn-outline-warning{% else %}btn-outline-success{% endif %}"
+                data-bs-toggle="modal" data-bs-target="#modalConfirmer"
+                data-nom="{{ personnel }}"
+                data-url="{% url 'referentiels:personnel_desactiver' personnel.pk %}"
+                data-action="{% if personnel.actif %}désactiver{% else %}réactiver{% endif %}"
+                data-btn-class="{% if personnel.actif %}btn-warning{% else %}btn-success{% endif %}"
+                data-btn-label="Confirmer">
+            <i class="bi {% if personnel.actif %}bi-person-slash{% else %}bi-person-check{% endif %} me-1"></i>
+            {% if personnel.actif %}Désactiver{% else %}Réactiver{% endif %}
+        </button>
+        {% endif %}
+    </div>
+</div>
+
+<div class="row g-3">
+    <div class="col-md-6">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body">
+                <h6 class="fw-semibold mb-3 text-muted text-uppercase" style="font-size:.7rem;letter-spacing:.05em;">Informations</h6>
+                <dl class="row mb-0 small">
+                    <dt class="col-5 text-muted">Prénom</dt>
+                    <dd class="col-7">{{ personnel.prenom }}</dd>
+                    <dt class="col-5 text-muted">Nom</dt>
+                    <dd class="col-7">{{ personnel.nom }}</dd>
+                    <dt class="col-5 text-muted">Fonction</dt>
+                    <dd class="col-7">{{ personnel.fonction|default:"—" }}</dd>
+                    <dt class="col-5 text-muted">Téléphone</dt>
+                    <dd class="col-7">{{ personnel.telephone|default:"—" }}</dd>
+                    <dt class="col-5 text-muted">Email</dt>
+                    <dd class="col-7">{{ personnel.email|default:"—" }}</dd>
+                    <dt class="col-5 text-muted">Département</dt>
+                    <dd class="col-7">
+                        {% if personnel.departement %}
+                        <a href="{% url 'referentiels:departement_detail' personnel.departement.pk %}">{{ personnel.departement }}</a>
+                        {% else %}<span class="text-muted">—</span>{% endif %}
+                    </dd>
+                    <dt class="col-5 text-muted">Rôle</dt>
+                    <dd class="col-7">
+                        {% if dept_dirige %}
+                        <span class="badge" style="background:#EBF5FB;color:#1B4F72;">
+                            <i class="bi bi-star-fill me-1"></i>Responsable de {{ dept_dirige.nom }}
+                        </span>
+                        {% else %}
+                        <span class="text-muted">—</span>
+                        {% endif %}
+                    </dd>
+                    <dt class="col-5 text-muted">Statut</dt>
+                    <dd class="col-7">
+                        {% if personnel.actif %}
+                        <span class="badge rounded-pill" style="background:#D5F5E3;color:#117A65;">Actif</span>
+                        {% else %}
+                        <span class="badge rounded-pill" style="background:#F0F0F0;color:#666;">Inactif</span>
+                        {% endif %}
+                    </dd>
+                </dl>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-6">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body">
+                <h6 class="fw-semibold mb-3 text-muted text-uppercase" style="font-size:.7rem;letter-spacing:.05em;">Compte utilisateur</h6>
+                {% if personnel.compte %}
+                <dl class="row mb-0 small">
+                    <dt class="col-5 text-muted">Email connexion</dt>
+                    <dd class="col-7">{{ personnel.compte.email }}</dd>
+                    <dt class="col-5 text-muted">Rôle</dt>
+                    <dd class="col-7">{{ personnel.compte.role|default:"—" }}</dd>
+                    <dt class="col-5 text-muted">Statut compte</dt>
+                    <dd class="col-7">
+                        {% if personnel.compte.is_active %}
+                        <span class="badge rounded-pill" style="background:#D5F5E3;color:#117A65;">Actif</span>
+                        {% else %}
+                        <span class="badge rounded-pill" style="background:#F9EBEA;color:#922B21;">Désactivé</span>
+                        {% endif %}
+                    </dd>
+                </dl>
+                {% if perms.comptes.change_utilisateur %}
+                <a href="{% url 'comptes:utilisateur_modifier' personnel.compte.pk %}" class="btn btn-outline-primary btn-sm mt-3">
+                    <i class="bi bi-person-gear me-1"></i>Gérer le compte
+                </a>
+                {% endif %}
+                {% else %}
+                <div class="text-muted small mb-3">Ce personnel n'a pas encore de compte utilisateur.</div>
+                {% if perms.comptes.add_utilisateur and personnel.departement %}
+                <a href="{% url 'comptes:utilisateur_creer' %}?personnel={{ personnel.pk }}&role=Responsable&designer=1&next={% url 'referentiels:personnel_detail' personnel.pk %}"
+                   class="btn btn-outline-primary btn-sm">
+                    <i class="bi bi-person-plus me-1"></i>Créer un compte
+                </a>
+                {% endif %}
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+{% include "commun/_modal_confirmer.html" %}
+{% endblock %}

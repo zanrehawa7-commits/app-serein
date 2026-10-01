@@ -40,13 +40,13 @@ def _get_historique(stage):
 
 def _get_departement_utilisateur(user):
     try:
-        return user.membre.departement
+        return user.personnel.departement
     except Exception:
         return None
 
 
 def _get_membres_dispos(departement):
-    """Le modèle Membre ne possède pas de champs de disponibilité — retourne un dict vide."""
+    """Retourne un dict vide (aucun champ de disponibilité sur Personnel)."""
     return {}
 
 

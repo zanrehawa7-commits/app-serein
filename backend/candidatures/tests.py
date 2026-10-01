@@ -6,7 +6,7 @@ from django.urls import reverse
 
 from comptes.models import Utilisateur
 from offres.models import Offre, StatutOffre
-from referentiels.models import Departement, TypeStage, Membre
+from referentiels.models import Departement, TypeStage, Personnel
 
 from .models import Candidat, Candidature, PieceJointe, StatutCandidature, TypeDemande, TypePiece
 from .services import (
@@ -121,10 +121,10 @@ def _setup_base():
     dept = Departement.objects.create(nom="Informatique", actif=True)
     ts = TypeStage.objects.create(libelle="Stage pro", actif=True)
 
-    membre = Membre.objects.create(nom="Responsable", prenom="R", departement=dept, actif=True)
+    membre = Personnel.objects.create(nom="Responsable", prenom="R", departement=dept, actif=True)
     res = Utilisateur.objects.create_user(email="res@test.com", password="pass", first_name="Res")
     res.groups.add(g_res)
-    res.membre = membre
+    res.personnel = membre
     res.save()
 
     candidat = creer_candidat("Test", "Candidat", "70999999")
@@ -375,11 +375,11 @@ class AccesSecuriteTests(TestCase):
         self.sec, self.adm, self.res, self.dept, self.ts, self.candidat = _setup_base()
         # dept2 avec un responsable différent
         self.dept2 = Departement.objects.create(nom="Autre", actif=True)
-        membre2 = Membre.objects.create(nom="Res2", prenom="R", departement=self.dept2, actif=True)
+        membre2 = Personnel.objects.create(nom="Res2", prenom="R", departement=self.dept2, actif=True)
         g_res = Group.objects.get(name="Responsable")
         self.res2 = Utilisateur.objects.create_user(email="res2@test.com", password="pass")
         self.res2.groups.add(g_res)
-        self.res2.membre = membre2
+        self.res2.personnel = membre2
         self.res2.save()
 
     @override_settings(FICHIERS_PRIVES_ROOT=tempfile.mkdtemp())
@@ -624,11 +624,11 @@ class RedirigerTests(TestCase):
         self.sec, self.adm, self.res, self.dept, self.ts, self.candidat = _setup_base()
         self.cand = _candidature_factory(self.dept, self.ts, self.candidat, self.sec)
         self.dept2 = Departement.objects.create(nom="Marketing", actif=True)
-        membre2 = Membre.objects.create(nom="Resp2", prenom="R2", departement=self.dept2, actif=True)
+        membre2 = Personnel.objects.create(nom="Resp2", prenom="R2", departement=self.dept2, actif=True)
         g_res = Group.objects.get(name="Responsable")
         self.res2 = Utilisateur.objects.create_user(email="res2@test.com", password="pass")
         self.res2.groups.add(g_res)
-        self.res2.membre = membre2
+        self.res2.personnel = membre2
         self.res2.save()
 
     def test_rediriger_ok(self):

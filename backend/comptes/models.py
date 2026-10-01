@@ -26,13 +26,13 @@ class Utilisateur(AbstractUser):
     username = None
     email = models.EmailField(unique=True, verbose_name="email")
     telephone = models.CharField(max_length=20, blank=True, verbose_name="téléphone")
-    membre = models.OneToOneField(
-        "referentiels.Membre",
+    personnel = models.OneToOneField(
+        "referentiels.Personnel",
         on_delete=models.PROTECT,
         null=True,
         blank=True,
         related_name="compte",
-        verbose_name="membre associé",
+        verbose_name="personnel associé",
     )
 
     USERNAME_FIELD = "email"

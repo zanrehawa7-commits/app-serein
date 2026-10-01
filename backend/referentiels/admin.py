@@ -1,9 +1,9 @@
 from django.contrib import admin
-from .models import CanalPublication, Departement, Etablissement, Membre, TypeStage
+from .models import CanalPublication, Departement, Etablissement, Personnel, TypeStage
 
 
-class MembreInline(admin.TabularInline):
-    model = Membre
+class PersonnelInline(admin.TabularInline):
+    model = Personnel
     extra = 0
     fields = ["nom", "prenom", "fonction", "telephone", "email", "actif"]
     show_change_link = True
@@ -14,11 +14,11 @@ class DepartementAdmin(admin.ModelAdmin):
     list_display = ["nom", "responsable", "actif"]
     list_filter = ["actif"]
     search_fields = ["nom"]
-    inlines = [MembreInline]
+    inlines = [PersonnelInline]
 
 
-@admin.register(Membre)
-class MembreAdmin(admin.ModelAdmin):
+@admin.register(Personnel)
+class PersonnelAdmin(admin.ModelAdmin):
     list_display = ["nom", "prenom", "fonction", "departement", "telephone", "email", "actif"]
     list_filter = ["actif", "departement"]
     search_fields = ["nom", "prenom", "email", "telephone"]

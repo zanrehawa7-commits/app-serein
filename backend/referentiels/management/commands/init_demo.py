@@ -16,7 +16,7 @@ from django.contrib.auth.models import Group
 from django.core.management.base import BaseCommand, CommandError
 
 from comptes.models import Utilisateur
-from referentiels.models import Departement, Membre
+from referentiels.models import Departement, Personnel
 
 
 COMPTES_DEMO = [
@@ -26,7 +26,7 @@ COMPTES_DEMO = [
         "first_name": "Admin",
         "last_name": "Serein",
         "groupe": "Administrateur",
-        "membre": None,
+        "personnel": None,
     },
     {
         "email": "sec@serein.bf",
@@ -34,7 +34,7 @@ COMPTES_DEMO = [
         "first_name": "Marie",
         "last_name": "Koné",
         "groupe": "Secrétaire",
-        "membre": None,
+        "personnel": None,
     },
     {
         "email": "resp@serein.bf",
@@ -42,7 +42,7 @@ COMPTES_DEMO = [
         "first_name": "Paul",
         "last_name": "Traoré",
         "groupe": "Responsable",
-        "membre": {"nom": "Traoré", "prenom": "Paul", "departement": "Informatique"},
+        "personnel": {"nom": "Traoré", "prenom": "Paul", "departement": "Informatique"},
     },
 ]
 
@@ -92,19 +92,22 @@ class Command(BaseCommand):
                 user.last_name = data["last_name"]
                 user.set_password(data["password"])
 
-            # Membre + département pour le Responsable
-            if data["membre"] and not user.membre:
+            # Personnel + département pour le Responsable
+            if data["personnel"] and not user.personnel:
                 dept, _ = Departement.objects.get_or_create(
-                    nom=data["membre"]["departement"],
+                    nom=data["personnel"]["departement"],
                     defaults={"actif": True},
                 )
-                membre, _ = Membre.objects.get_or_create(
-                    nom=data["membre"]["nom"],
-                    prenom=data["membre"]["prenom"],
+                personnel, _ = Personnel.objects.get_or_create(
+                    nom=data["personnel"]["nom"],
+                    prenom=data["personnel"]["prenom"],
                     departement=dept,
                     defaults={"actif": True},
                 )
-                user.membre = membre
+                user.personnel = personnel
+                # Désigner comme responsable du département
+                dept.responsable = personnel
+                dept.save(update_fields=["responsable"])
 
             user.save()
 

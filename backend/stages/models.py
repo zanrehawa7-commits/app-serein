@@ -23,7 +23,7 @@ class Stage(models.Model):
         verbose_name="candidature",
     )
     maitre_stage = models.ForeignKey(
-        "referentiels.Membre",
+        "referentiels.Personnel",
         on_delete=models.PROTECT,
         related_name="stages_encadres",
         verbose_name="maître de stage",

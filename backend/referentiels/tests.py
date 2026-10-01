@@ -7,10 +7,16 @@ from django.test import Client, TestCase
 from django.urls import reverse
 
 from comptes.models import Utilisateur
-from referentiels.models import Departement, Etablissement, Membre, TypeStage
+from referentiels.models import Departement, Etablissement, Personnel, TypeStage
+from referentiels.services import (
+    ConfirmationRequise,
+    CreerCompteRequis,
+    TransitionInterdite,
+    designer_responsable,
+)
 
 
-def _creer_utilisateur(email, password="pass1234!", groupe=None, is_superuser=False):
+def _creer_utilisateur(email, password="pass1234!", groupe=None, is_superuser=False, personnel=None):
     user = Utilisateur.objects.create_user(
         email=email, password=password,
         first_name="Test", last_name="User",
@@ -19,8 +25,13 @@ def _creer_utilisateur(email, password="pass1234!", groupe=None, is_superuser=Fa
     if groupe:
         grp, _ = Group.objects.get_or_create(name=groupe)
         user.groups.add(grp)
+    if personnel:
+        user.personnel = personnel
+        user.save(update_fields=["personnel"])
     return user
 
+
+# ─── Tests AccèsRoles ─────────────────────────────────────────────────────────
 
 class AccesRolesTests(TestCase):
     """Secrétaire et Responsable reçoivent 403 sur toutes les pages du module référentiels."""
@@ -31,6 +42,7 @@ class AccesRolesTests(TestCase):
         self.dept = Departement.objects.create(nom="Dept Test")
         self.ts = TypeStage.objects.create(libelle="Stage test")
         self.etab = Etablissement.objects.create(nom="Ecole A", ville="Ouaga")
+        self.personnel = Personnel.objects.create(nom="Doe", prenom="John", departement=self.dept)
 
     def _assert_403(self, url_name, url_kwargs=None):
         for user in [self.secretaire, self.responsable]:
@@ -72,6 +84,17 @@ class AccesRolesTests(TestCase):
     def test_canalpublication_list_interdit(self):
         self._assert_403("referentiels:canalpublication_list")
 
+    def test_personnel_list_interdit(self):
+        self._assert_403("referentiels:personnel_list")
+
+    def test_personnel_creer_interdit(self):
+        self._assert_403("referentiels:personnel_creer")
+
+    def test_personnel_modifier_interdit(self):
+        self._assert_403("referentiels:personnel_modifier", {"pk": self.personnel.pk})
+
+
+# ─── Tests TypeStage suppression ──────────────────────────────────────────────
 
 class TypeStageSuppressionTests(TestCase):
     """Suppression TypeStage : désactivation si ProtectedError."""
@@ -81,110 +104,281 @@ class TypeStageSuppressionTests(TestCase):
         self.ts = TypeStage.objects.create(libelle="Stage utilisé", actif=True)
 
     def test_suppression_non_utilise(self):
-        """Un TypeStage non référencé est supprimé définitivement."""
         self.client.force_login(self.admin)
         url = reverse("referentiels:typestage_supprimer", kwargs={"pk": self.ts.pk})
         self.client.post(url)
         self.assertFalse(TypeStage.objects.filter(pk=self.ts.pk).exists())
 
     def test_suppression_protegee_desactive_au_lieu_de_supprimer(self):
-        """Si suppression impossible (ProtectedError), le TypeStage est désactivé."""
         self.client.force_login(self.admin)
         url = reverse("referentiels:typestage_supprimer", kwargs={"pk": self.ts.pk})
         with patch.object(TypeStage, "delete", side_effect=ProtectedError("en utilisation", set())):
             self.client.post(url)
         self.ts.refresh_from_db()
-        self.assertTrue(TypeStage.objects.filter(pk=self.ts.pk).exists(), "Le TypeStage doit exister")
-        self.assertFalse(self.ts.actif, "Le TypeStage doit être marqué inactif")
+        self.assertTrue(TypeStage.objects.filter(pk=self.ts.pk).exists())
+        self.assertFalse(self.ts.actif)
 
 
-class MembreDesactiverTests(TestCase):
-    """Désactivation membre : refusée si responsable actuel du département."""
+# ─── Tests Personnel désactivation ────────────────────────────────────────────
+
+class PersonnelDesactiverTests(TestCase):
+    """Désactivation personnel : refusée si responsable actuel."""
 
     def setUp(self):
         self.admin = _creer_utilisateur("admin@serein.bf", is_superuser=True)
         self.dept = Departement.objects.create(nom="Dept Test")
-        self.membre = Membre.objects.create(
+        self.personnel = Personnel.objects.create(
             nom="Doe", prenom="John", departement=self.dept, actif=True
         )
 
-    def test_desactiver_membre_non_responsable_ok(self):
-        """Un membre ordinaire peut être désactivé."""
+    def test_desactiver_personnel_non_responsable_ok(self):
         self.client.force_login(self.admin)
-        url = reverse("referentiels:membre_desactiver", kwargs={"pk": self.membre.pk})
+        url = reverse("referentiels:personnel_desactiver", kwargs={"pk": self.personnel.pk})
         self.client.post(url)
-        self.membre.refresh_from_db()
-        self.assertFalse(self.membre.actif)
+        self.personnel.refresh_from_db()
+        self.assertFalse(self.personnel.actif)
 
-    def test_desactiver_membre_responsable_refuse(self):
-        """Impossible de désactiver un membre qui est responsable de son département."""
-        self.dept.responsable = self.membre
+    def test_desactiver_personnel_responsable_refuse(self):
+        self.dept.responsable = self.personnel
         self.dept.save()
         self.client.force_login(self.admin)
-        url = reverse("referentiels:membre_desactiver", kwargs={"pk": self.membre.pk})
+        url = reverse("referentiels:personnel_desactiver", kwargs={"pk": self.personnel.pk})
         self.client.post(url)
-        self.membre.refresh_from_db()
-        self.assertTrue(self.membre.actif, "Le membre responsable ne doit PAS être désactivé")
+        self.personnel.refresh_from_db()
+        self.assertTrue(self.personnel.actif, "Le responsable ne doit PAS être désactivé")
 
-    def test_reactiver_membre_desactive(self):
-        """Un membre désactivé peut être réactivé."""
-        self.membre.actif = False
-        self.membre.save()
+    def test_reactiver_personnel_desactive(self):
+        self.personnel.actif = False
+        self.personnel.save()
         self.client.force_login(self.admin)
-        url = reverse("referentiels:membre_desactiver", kwargs={"pk": self.membre.pk})
+        url = reverse("referentiels:personnel_desactiver", kwargs={"pk": self.personnel.pk})
         self.client.post(url)
-        self.membre.refresh_from_db()
-        self.assertTrue(self.membre.actif)
+        self.personnel.refresh_from_db()
+        self.assertTrue(self.personnel.actif)
 
 
-class DepartementResponsableTests(TestCase):
-    """Le formulaire rejette un responsable qui n'appartient pas au département."""
+# ─── Tests DesignerResponsable (service) ──────────────────────────────────────
+
+class DesignerResponsableTests(TestCase):
+
+    def setUp(self):
+        self.dept = Departement.objects.create(nom="Informatique")
+        self.personnel = Personnel.objects.create(
+            nom="Traoré", prenom="Paul", departement=self.dept, actif=True
+        )
+        self.admin_user = _creer_utilisateur("admin@serein.bf", is_superuser=True)
+        Utilisateur.objects.get_or_create_superuser = None  # pas utile
+
+    def _creer_compte_responsable(self, personnel, email):
+        groupe, _ = Group.objects.get_or_create(name="Responsable")
+        user = Utilisateur.objects.create_user(
+            email=email, password="pass1234!",
+            first_name=personnel.prenom, last_name=personnel.nom,
+        )
+        user.groups.add(groupe)
+        user.personnel = personnel
+        user.save(update_fields=["personnel"])
+        return user
+
+    def test_designation_simple(self):
+        compte = self._creer_compte_responsable(self.personnel, "resp@test.bf")
+        designer_responsable(self.personnel, self.admin_user, confirmer=True)
+        self.dept.refresh_from_db()
+        self.assertEqual(self.dept.responsable, self.personnel)
+
+    def test_personnel_inactif_interdit(self):
+        self.personnel.actif = False
+        self.personnel.save()
+        with self.assertRaises(TransitionInterdite):
+            designer_responsable(self.personnel, self.admin_user)
+
+    def test_personnel_sans_departement_interdit(self):
+        p = Personnel.objects.create(nom="Sans", prenom="Dept", departement=None, actif=True)
+        with self.assertRaises(TransitionInterdite):
+            designer_responsable(p, self.admin_user)
+
+    def test_personnel_sans_compte_leve_creer_compte_requis_sans_modification(self):
+        """CreerCompteRequis doit être levée AVANT tout changement en base."""
+        ancien = Personnel.objects.create(nom="Ancien", prenom="Resp", departement=self.dept, actif=True)
+        ancien_compte = self._creer_compte_responsable(ancien, "ancien@test.bf")
+        self.dept.responsable = ancien
+        self.dept.save()
+
+        # self.personnel n'a pas de compte
+        with self.assertRaises(CreerCompteRequis):
+            designer_responsable(self.personnel, self.admin_user, confirmer=True)
+
+        # Aucune modification en base : l'ancien responsable est toujours actif
+        self.dept.refresh_from_db()
+        self.assertEqual(self.dept.responsable, ancien)
+        ancien_compte.refresh_from_db()
+        self.assertTrue(ancien_compte.is_active, "L'ancien responsable doit rester actif")
+
+    def test_remplacement_confirmation_requise_sans_confirmer(self):
+        ancien = Personnel.objects.create(nom="Ancien", prenom="Resp", departement=self.dept, actif=True)
+        self._creer_compte_responsable(ancien, "ancien@test.bf")
+        self.dept.responsable = ancien
+        self.dept.save()
+        self._creer_compte_responsable(self.personnel, "nouveau@test.bf")
+
+        with self.assertRaises(ConfirmationRequise):
+            designer_responsable(self.personnel, self.admin_user, confirmer=False)
+
+        # Aucune modification
+        self.dept.refresh_from_db()
+        self.assertEqual(self.dept.responsable, ancien)
+
+    def test_remplacement_confirme_desactive_ancien_compte(self):
+        ancien = Personnel.objects.create(nom="Ancien", prenom="Resp", departement=self.dept, actif=True)
+        ancien_compte = self._creer_compte_responsable(ancien, "ancien@test.bf")
+        self.dept.responsable = ancien
+        self.dept.save()
+        self._creer_compte_responsable(self.personnel, "nouveau@test.bf")
+        # Groupe admin pour recevoir la notif
+        Group.objects.get_or_create(name="Administrateur")
+
+        designer_responsable(self.personnel, self.admin_user, confirmer=True)
+
+        self.dept.refresh_from_db()
+        self.assertEqual(self.dept.responsable, self.personnel)
+        ancien_compte.refresh_from_db()
+        self.assertFalse(ancien_compte.is_active, "Le compte de l'ancien responsable doit être désactivé")
+
+
+# ─── Tests Département responsable (formulaire) ───────────────────────────────
+
+class DepartementResponsableFormTests(TestCase):
+    """Le formulaire de modification rejette un responsable qui n'est pas dans le département."""
 
     def setUp(self):
         self.admin = _creer_utilisateur("admin@serein.bf", is_superuser=True)
         self.dept_a = Departement.objects.create(nom="Dept A")
         self.dept_b = Departement.objects.create(nom="Dept B")
-        self.membre_b = Membre.objects.create(
+        self.personnel_b = Personnel.objects.create(
             nom="Smith", prenom="Jane", departement=self.dept_b, actif=True
         )
 
     def test_responsable_hors_departement_refuse(self):
         """
         Poster un responsable d'un autre département doit invalider le formulaire :
-        le membre n'est pas dans le queryset restreint au département A.
+        le personnel n'est pas dans le queryset restreint au département A.
         """
         self.client.force_login(self.admin)
         url = reverse("referentiels:departement_modifier", kwargs={"pk": self.dept_a.pk})
         resp = self.client.post(url, {
             "nom": self.dept_a.nom,
             "description": "",
-            "responsable": self.membre_b.pk,
+            "responsable": self.personnel_b.pk,
             "actif": True,
         })
-        # Formulaire invalide → réaffichage (200) sans modification
-        self.assertEqual(resp.status_code, 200)
+        # Formulaire invalide ou CreerCompteRequis → redirection ou réaffichage
         self.dept_a.refresh_from_db()
         self.assertIsNone(
             self.dept_a.responsable,
             "Un responsable d'un autre département ne doit pas être accepté",
         )
 
-    def test_responsable_meme_departement_accepte(self):
-        """Un membre du département A peut être désigné responsable."""
-        membre_a = Membre.objects.create(
+    def test_responsable_meme_departement_avec_compte_accepte(self):
+        """Un personnel du département A avec un compte peut être désigné responsable."""
+        personnel_a = Personnel.objects.create(
             nom="Martin", prenom="Paul", departement=self.dept_a, actif=True
         )
+        groupe, _ = Group.objects.get_or_create(name="Responsable")
+        groupe_admin, _ = Group.objects.get_or_create(name="Administrateur")
+        compte = Utilisateur.objects.create_user(
+            email="martin@test.bf", password="pass1234!",
+            first_name="Paul", last_name="Martin",
+        )
+        compte.groups.add(groupe)
+        compte.personnel = personnel_a
+        compte.save(update_fields=["personnel"])
+
         self.client.force_login(self.admin)
         url = reverse("referentiels:departement_modifier", kwargs={"pk": self.dept_a.pk})
-        resp = self.client.post(url, {
+        self.client.post(url, {
             "nom": self.dept_a.nom,
             "description": "",
-            "responsable": membre_a.pk,
+            "responsable": personnel_a.pk,
             "actif": True,
         })
         self.dept_a.refresh_from_db()
-        self.assertEqual(self.dept_a.responsable, membre_a)
+        self.assertEqual(self.dept_a.responsable, personnel_a)
 
+
+# ─── Tests changement département interdit si responsable ─────────────────────
+
+class PersonnelChangerDeptTests(TestCase):
+
+    def setUp(self):
+        self.admin = _creer_utilisateur("admin@serein.bf", is_superuser=True)
+        self.dept_a = Departement.objects.create(nom="Dept A")
+        self.dept_b = Departement.objects.create(nom="Dept B")
+        self.responsable = Personnel.objects.create(
+            nom="Kone", prenom="Ibrahim", departement=self.dept_a, actif=True
+        )
+        self.dept_a.responsable = self.responsable
+        self.dept_a.save()
+
+    def test_changer_departement_responsable_refuse(self):
+        """Modifier le département d'un responsable via le formulaire doit être refusé."""
+        self.client.force_login(self.admin)
+        url = reverse("referentiels:personnel_modifier", kwargs={"pk": self.responsable.pk})
+        resp = self.client.post(url, {
+            "nom": self.responsable.nom,
+            "prenom": self.responsable.prenom,
+            "fonction": "",
+            "telephone": "",
+            "email": "",
+            "departement": self.dept_b.pk,
+            "actif": True,
+            "designer_responsable": "",
+        })
+        # Formulaire invalide → réaffichage avec erreur
+        self.assertEqual(resp.status_code, 200)
+        self.responsable.refresh_from_db()
+        self.assertEqual(
+            self.responsable.departement, self.dept_a,
+            "Le département du responsable ne doit pas changer",
+        )
+
+
+# ─── Tests permissions *_personnel dans les groupes ───────────────────────────
+
+class PermissionsPersonnelGroupesTests(TestCase):
+    """Après init_donnees, les groupes ont *_personnel (pas *_membre)."""
+
+    def setUp(self):
+        from referentiels.management.commands.init_donnees import Command
+        cmd = Command()
+        cmd.stdout = type("FakeOut", (), {"write": lambda s, m: None})()
+        cmd._creer_groupes()
+
+    def test_groupe_administrateur_a_permissions_personnel(self):
+        groupe = Group.objects.get(name="Administrateur")
+        codenames = set(groupe.permissions.values_list("codename", flat=True))
+        for action in ["add", "change", "delete", "view"]:
+            with self.subTest(action=action):
+                self.assertIn(f"{action}_personnel", codenames)
+
+    def test_groupe_administrateur_sans_permissions_membre(self):
+        groupe = Group.objects.get(name="Administrateur")
+        codenames = set(groupe.permissions.values_list("codename", flat=True))
+        for action in ["add", "change", "delete", "view"]:
+            with self.subTest(action=action):
+                self.assertNotIn(f"{action}_membre", codenames)
+
+    def test_groupe_secretaire_a_view_personnel(self):
+        groupe = Group.objects.get(name="Secrétaire")
+        codenames = set(groupe.permissions.values_list("codename", flat=True))
+        self.assertIn("view_personnel", codenames)
+
+    def test_groupe_responsable_a_view_personnel(self):
+        groupe = Group.objects.get(name="Responsable")
+        codenames = set(groupe.permissions.values_list("codename", flat=True))
+        self.assertIn("view_personnel", codenames)
+
+
+# ─── Tests permissions TypeStage ──────────────────────────────────────────────
 
 class PermissionsTypestageTests(TestCase):
     """Retirer add_typestage du rôle → vue 403 et bouton masqué dans la liste."""
@@ -192,7 +386,6 @@ class PermissionsTypestageTests(TestCase):
     def setUp(self):
         self.groupe, _ = Group.objects.get_or_create(name="Administrateur")
         ct = ContentType.objects.get_for_model(TypeStage)
-        # Attribue view, change, delete — pas add
         for codename in ["view_typestage", "change_typestage", "delete_typestage"]:
             perm = Permission.objects.get(content_type=ct, codename=codename)
             self.groupe.permissions.add(perm)
@@ -203,13 +396,11 @@ class PermissionsTypestageTests(TestCase):
         self.admin.groups.add(self.groupe)
 
     def test_vue_creer_typestage_403_sans_permission_add(self):
-        """Sans add_typestage, la vue de création retourne 403."""
         self.client.force_login(self.admin)
         resp = self.client.get(reverse("referentiels:typestage_creer"))
         self.assertEqual(resp.status_code, 403)
 
     def test_bouton_nouveau_absent_sans_permission_add(self):
-        """Sans add_typestage, le bouton 'Nouveau' n'apparaît pas dans la liste."""
         self.client.force_login(self.admin)
         resp = self.client.get(reverse("referentiels:typestage_list"))
         self.assertEqual(resp.status_code, 200)

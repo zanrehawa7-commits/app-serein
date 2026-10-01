@@ -64,7 +64,7 @@ class DepartementResponsableMixin(AccessMixin):
         if role != "Responsable":
             return super().dispatch(request, *args, **kwargs)
 
-        if not request.user.membre or not request.user.membre.departement_id:
+        if not request.user.personnel or not request.user.personnel.departement_id:
             from django.contrib import messages
             messages.error(
                 request,
@@ -82,6 +82,6 @@ class DepartementResponsableMixin(AccessMixin):
     def verifier_departement(self):
         """Lève PermissionDenied si l'objet n'appartient pas au département du responsable."""
         dept_objet = self.get_departement_objet()
-        dept_user = self.request.user.membre.departement
+        dept_user = self.request.user.personnel.departement
         if dept_objet != dept_user:
             raise PermissionDenied

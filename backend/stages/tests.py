@@ -5,7 +5,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from comptes.models import Utilisateur
-from referentiels.models import Departement, Membre
+from referentiels.models import Departement, Personnel
 from offres.models import Offre, StatutOffre
 from candidatures.models import Candidat, Candidature, StatutCandidature, TypeDemande
 from referentiels.models import TypeStage
@@ -40,7 +40,7 @@ def _dept(nom="DRH"):
 
 
 def _membre(dept, nom="Traoré"):
-    return Membre.objects.create(
+    return Personnel.objects.create(
         nom=nom,
         prenom="Jean",
         departement=dept,
@@ -80,8 +80,8 @@ def _secretaire():
 def _responsable(dept):
     u = _user("resp@test.com", "Responsable")
     m = _membre(dept, "Resp")
-    u.membre = m
-    u.save(update_fields=["membre"])
+    u.personnel = m
+    u.save(update_fields=["personnel"])
     return u
 
 
@@ -343,7 +343,7 @@ class CloturerStageAutoTests(TestCase):
 # ─── Désactiver membre — maître de stage actif (Complément 5) ─────────────────
 
 
-class DesactiverMembreStageActifTests(TestCase):
+class DesactiverPersonnelStageActifTests(TestCase):
     def setUp(self):
         self.dept = _dept()
         self.maitre = _membre(self.dept)
@@ -354,17 +354,17 @@ class DesactiverMembreStageActifTests(TestCase):
         self.stage = constituer_stage(self.cand, debut, fin, self.maitre, self.sec)
 
     def test_refuse_desactiver_maitre_stage_actif(self):
-        from referentiels.services import desactiver_membre
-        result = desactiver_membre(self.maitre)
+        from referentiels.services import desactiver_personnel
+        result = desactiver_personnel(self.maitre)
         self.assertFalse(result)
         self.maitre.refresh_from_db()
         self.assertTrue(self.maitre.actif)
 
     def test_autorise_desactiver_maitre_stage_termine(self):
-        from referentiels.services import desactiver_membre
+        from referentiels.services import desactiver_personnel
         self.stage.statut = StatutStage.TERMINE
         self.stage.save(update_fields=["statut"])
-        result = desactiver_membre(self.maitre)
+        result = desactiver_personnel(self.maitre)
         self.assertTrue(result)
         self.maitre.refresh_from_db()
         self.assertFalse(self.maitre.actif)
@@ -568,8 +568,8 @@ class EvaluerStageViewTests(TestCase):
         dept2 = _dept("AutreDeptEval")
         resp2 = _user("resp2eval@test.com", "Responsable")
         m2 = _membre(dept2, "RespM2Eval")
-        resp2.membre = m2
-        resp2.save(update_fields=["membre"])
+        resp2.personnel = m2
+        resp2.save(update_fields=["personnel"])
         self.client.force_login(resp2)
         url = reverse("stages:stage_evaluer", args=[self.stage.pk])
         # Devrait retourner 404 (statut TERMINE requis OU 403)

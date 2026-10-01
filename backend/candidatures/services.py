@@ -96,7 +96,7 @@ def _generer_reference():
 def _responsable_departement(departement):
     from comptes.models import Utilisateur
     return Utilisateur.objects.filter(
-        membre__departement=departement,
+        personnel__departement=departement,
         is_active=True,
         groups__name="Responsable",
     ).first()

@@ -127,10 +127,10 @@ class TableauBordResponsableView(RoleRequisMixin, TemplateView):
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
-        if self.request.user.membre:
+        if self.request.user.personnel:
             from offres.models import Besoin, StatutBesoin
             from candidatures.models import Candidature, StatutCandidature
-            dept = self.request.user.membre.departement
+            dept = self.request.user.personnel.departement
             ctx["nb_besoins_envoyes"] = Besoin.objects.filter(departement=dept, statut=StatutBesoin.ENVOYE).count()
             ctx["nb_besoins_pris_en_charge"] = Besoin.objects.filter(departement=dept, statut=StatutBesoin.PRIS_EN_CHARGE).count()
             ctx["besoins_recents"] = Besoin.objects.filter(departement=dept).select_related("type_stage").order_by("-date_creation")[:5]
@@ -180,7 +180,7 @@ class UtilisateurListView(RolePermMixin, ListeMixin, ListView):
         role_filtre = self.request.GET.get("role", "")
         if role_filtre:
             qs = qs.filter(groups__name=role_filtre)
-        return qs.prefetch_related("groups", "membre__departement")
+        return qs.prefetch_related("groups", "personnel__departement")
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
@@ -192,25 +192,68 @@ class UtilisateurListView(RolePermMixin, ListeMixin, ListView):
 class UtilisateurCreateView(RolePermMixin, View):
     permission_required = "comptes.add_utilisateur"
 
-    def get(self, request):
-        form = UtilisateurCreerForm()
-        return render(request, _FORM_TPL, {
+    def _get_context(self, request, form):
+        """Contexte enrichi quand appelé depuis le flux designer_responsable."""
+        from referentiels.models import Personnel
+        ctx = {
             "form": form,
             "titre": "Nouvel utilisateur",
             "url_retour": reverse_lazy("comptes:utilisateur_list"),
-        })
+        }
+        personnel_pk = request.GET.get("personnel") or request.POST.get("_personnel_pk")
+        if personnel_pk and request.GET.get("designer") == "1":
+            try:
+                personnel = Personnel.objects.select_related("departement__responsable").get(pk=personnel_pk)
+                ctx["designer_mode"] = True
+                ctx["personnel_designer"] = personnel
+                # Avertissement si un autre responsable existe déjà
+                dept = personnel.departement
+                if dept and dept.responsable and dept.responsable.pk != personnel.pk:
+                    ctx["avertissement_remplacement"] = (
+                        f"Le département « {dept.nom} » a déjà pour responsable "
+                        f"« {dept.responsable} ». En créant ce compte, vous le remplacerez "
+                        f"et son compte sera désactivé."
+                    )
+            except Personnel.DoesNotExist:
+                pass
+        return ctx
+
+    def get(self, request):
+        initial = {}
+        role_pre = request.GET.get("role", "")
+        if role_pre:
+            initial["role"] = role_pre
+        personnel_pk = request.GET.get("personnel")
+        if personnel_pk:
+            initial["personnel"] = personnel_pk
+        form = UtilisateurCreerForm(initial=initial)
+        return render(request, "comptes/utilisateur_creer_form.html", self._get_context(request, form))
 
     def post(self, request):
         form = UtilisateurCreerForm(request.POST)
         if form.is_valid():
             user = form.save()
             messages.success(request, f"Compte de « {user.get_full_name() or user.email} » créé.")
-            return redirect("comptes:utilisateur_list")
-        return render(request, _FORM_TPL, {
-            "form": form,
-            "titre": "Nouvel utilisateur",
-            "url_retour": reverse_lazy("comptes:utilisateur_list"),
-        })
+
+            # Flux designer_responsable : appeler le service après création du compte
+            if request.POST.get("designer") == "1" and user.personnel:
+                from referentiels.services import (
+                    designer_responsable, ConfirmationRequise, TransitionInterdite,
+                )
+                try:
+                    designer_responsable(user.personnel, request.user, confirmer=True)
+                    messages.success(
+                        request,
+                        f"« {user.personnel} » désigné(e) responsable du département "
+                        f"{user.personnel.departement}.",
+                    )
+                except (ConfirmationRequise, TransitionInterdite) as e:
+                    messages.warning(request, f"Compte créé mais désignation échouée : {e}")
+
+            next_url = request.POST.get("next") or request.GET.get("next", "")
+            return redirect(next_url or "comptes:utilisateur_list")
+
+        return render(request, "comptes/utilisateur_creer_form.html", self._get_context(request, form))
 
 
 class UtilisateurUpdateView(RolePermMixin, View):
@@ -236,8 +279,8 @@ class UtilisateurUpdateView(RolePermMixin, View):
             user = form.save()
             nouveau_role = form.cleaned_data.get("role")
             if ancien_role == "Responsable" and nouveau_role != "Responsable":
-                user.membre = None
-                user.save(update_fields=["membre"])
+                user.personnel = None
+                user.save(update_fields=["personnel"])
             messages.success(request, f"Compte de « {user.get_full_name() or user.email} » mis à jour.")
             return redirect("comptes:utilisateur_list")
         return render(request, _FORM_TPL, {

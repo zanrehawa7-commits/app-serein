@@ -3,7 +3,7 @@ from django.test import TestCase
 from django.urls import reverse
 
 from comptes.models import Utilisateur
-from referentiels.models import CanalPublication, Departement, Membre, TypeStage
+from referentiels.models import CanalPublication, Departement, Personnel, TypeStage
 
 from .models import Besoin, Offre, Publication, StatutBesoin, StatutOffre
 from .services import (
@@ -49,8 +49,8 @@ class TransitionsBesoinTests(TestCase):
         self.ts = TypeStage.objects.create(libelle="Stage test")
         self.secretaire = _user("sec@serein.bf", groupe="Secrétaire")
         self.responsable = _user("resp@serein.bf", groupe="Responsable")
-        membre = Membre.objects.create(nom="Doe", prenom="Jane", departement=self.dept)
-        self.responsable.membre = membre
+        membre = Personnel.objects.create(nom="Doe", prenom="Jane", departement=self.dept)
+        self.responsable.personnel = membre
         self.responsable.save()
 
     def test_creer_besoin_statut_envoye(self):
@@ -256,9 +256,9 @@ class AccesVuesBesoinTests(TestCase):
         self.ts = TypeStage.objects.create(libelle="Stage test")
         self.admin = _user("admin@serein.bf", is_superuser=True)
         self.secretaire = _user("sec@serein.bf", groupe="Secrétaire")
-        membre = Membre.objects.create(nom="Doe", prenom="Jane", departement=self.dept)
+        membre = Personnel.objects.create(nom="Doe", prenom="Jane", departement=self.dept)
         self.responsable = _user("resp@serein.bf", groupe="Responsable")
-        self.responsable.membre = membre
+        self.responsable.personnel = membre
         self.responsable.save()
         self.besoin = _besoin(self.dept, self.ts)
         self.besoin_autre = _besoin(self.dept_b, self.ts)

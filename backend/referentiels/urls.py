@@ -11,10 +11,12 @@ urlpatterns = [
     path("departements/<int:pk>/modifier/", views.DepartementUpdateView.as_view(), name="departement_modifier"),
     path("departements/<int:pk>/supprimer/", views.DepartementDeleteView.as_view(), name="departement_supprimer"),
 
-    # ── Membres (depuis page détail département) ───────────────────────────────
-    path("departements/<int:dept_pk>/membres/nouveau/", views.MembreCreateView.as_view(), name="membre_creer"),
-    path("membres/<int:pk>/modifier/", views.MembreUpdateView.as_view(), name="membre_modifier"),
-    path("membres/<int:pk>/desactiver/", views.MembreDesactiverView.as_view(), name="membre_desactiver"),
+    # ── Personnel ─────────────────────────────────────────────────────────────
+    path("personnels/", views.PersonnelListView.as_view(), name="personnel_list"),
+    path("personnels/nouveau/", views.PersonnelCreateView.as_view(), name="personnel_creer"),
+    path("personnels/<int:pk>/", views.PersonnelDetailView.as_view(), name="personnel_detail"),
+    path("personnels/<int:pk>/modifier/", views.PersonnelUpdateView.as_view(), name="personnel_modifier"),
+    path("personnels/<int:pk>/desactiver/", views.PersonnelDesactiverView.as_view(), name="personnel_desactiver"),
 
     # ── Établissements ────────────────────────────────────────────────────────
     path("etablissements/", views.EtablissementListView.as_view(), name="etablissement_list"),

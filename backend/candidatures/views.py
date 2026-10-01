@@ -224,8 +224,8 @@ class CandidatureListView(RoleRequisMixin, ListeMixin, ListView):
         qs = super().get_queryset().select_related("candidat", "departement", "type_stage")
 
         if _est_responsable(self.request.user):
-            if self.request.user.membre:
-                qs = qs.filter(departement=self.request.user.membre.departement)
+            if self.request.user.personnel:
+                qs = qs.filter(departement=self.request.user.personnel.departement)
             else:
                 qs = qs.none()
 
@@ -254,8 +254,8 @@ class CandidatureListView(RoleRequisMixin, ListeMixin, ListView):
         ctx["departement_filtre"] = self.request.GET.get("departement", "")
         ctx["type_demande_filtre"] = self.request.GET.get("type_demande", "")
 
-        if _est_responsable(self.request.user) and self.request.user.membre:
-            dept = self.request.user.membre.departement
+        if _est_responsable(self.request.user) and self.request.user.personnel:
+            dept = self.request.user.personnel.departement
             base = Candidature.objects.filter(departement=dept)
             ctx["nb_recues"] = base.filter(statut=StatutCandidature.RECUE).count()
             ctx["nb_en_traitement"] = base.filter(statut=StatutCandidature.EN_TRAITEMENT).count()
@@ -276,7 +276,7 @@ class CandidatureDetailView(RoleRequisMixin, View):
         )
         est_resp = _est_responsable(request.user)
         if est_resp:
-            if not request.user.membre or candidature.departement != request.user.membre.departement:
+            if not request.user.personnel or candidature.departement != request.user.personnel.departement:
                 raise PermissionDenied
 
         pieces = candidature.pieces.order_by("type_piece")
@@ -403,7 +403,7 @@ class PieceJointeTelechargerView(RoleRequisMixin, View):
             PieceJointe.objects.select_related("candidature__departement"), pk=pk
         )
         if _est_responsable(request.user):
-            if not request.user.membre or piece.candidature.departement != request.user.membre.departement:
+            if not request.user.personnel or piece.candidature.departement != request.user.personnel.departement:
                 raise PermissionDenied
 
         file_path = Path(settings.FICHIERS_PRIVES_ROOT) / piece.fichier.name
@@ -486,7 +486,7 @@ class _DecisionView(RoleRequisMixin, View):
             pk=pk,
         )
         user = self.request.user
-        if not user.membre or cand.departement != user.membre.departement:
+        if not user.personnel or cand.departement != user.personnel.departement:
             raise PermissionDenied
         return cand
 

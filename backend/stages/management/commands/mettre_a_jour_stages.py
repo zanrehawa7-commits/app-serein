@@ -9,7 +9,7 @@ from stages.services import demarrer_stage_auto, cloturer_stage_auto
 def _responsable_dept(departement):
     from comptes.models import Utilisateur
     return Utilisateur.objects.filter(
-        membre__departement=departement,
+        personnel__departement=departement,
         is_active=True,
         groups__name="Responsable",
     ).first()

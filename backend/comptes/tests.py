@@ -4,17 +4,17 @@ from django.urls import reverse
 
 from comptes.models import Utilisateur
 from comptes.forms import UtilisateurCreerForm
-from referentiels.models import Departement, Membre
+from referentiels.models import Departement, Personnel
 
 
-def _creer_utilisateur(email, password, groupe=None, is_active=True, is_superuser=False, membre=None):
+def _creer_utilisateur(email, password, groupe=None, is_active=True, is_superuser=False, personnel=None):
     user = Utilisateur.objects.create_user(
         email=email, password=password,
         first_name="Test", last_name="User",
         is_active=is_active, is_superuser=is_superuser,
     )
-    if membre:
-        user.membre = membre
+    if personnel:
+        user.personnel = personnel
         user.save()
     if groupe:
         grp, _ = Group.objects.get_or_create(name=groupe)
@@ -123,10 +123,10 @@ class DepartementMixinTests(TestCase):
     def setUp(self):
         self.dept_a = Departement.objects.create(nom="Département A")
         self.dept_b = Departement.objects.create(nom="Département B")
-        self.membre_a = Membre.objects.create(
+        self.membre_a = Personnel.objects.create(
             nom="Doe", prenom="John", departement=self.dept_a
         )
-        self.membre_b = Membre.objects.create(
+        self.membre_b = Personnel.objects.create(
             nom="Smith", prenom="Jane", departement=self.dept_b
         )
 
@@ -183,8 +183,8 @@ class UtilisateurF03Tests(TestCase):
         Group.objects.get_or_create(name="Administrateur")
         Group.objects.get_or_create(name="Secrétaire")
 
-    def test_responsable_sans_membre_formulaire_invalide(self):
-        """Créer un Responsable sans membre lié est refusé (RG)."""
+    def test_responsable_sans_personnel_formulaire_invalide(self):
+        """Créer un Responsable sans personnel lié est refusé (RG)."""
         form = UtilisateurCreerForm(data={
             "first_name": "Paul",
             "last_name": "Martin",
@@ -192,10 +192,10 @@ class UtilisateurF03Tests(TestCase):
             "role": "Responsable",
             "password1": "Test@1234",
             "password2": "Test@1234",
-            "membre": "",
+            "personnel": "",
         })
         self.assertFalse(form.is_valid())
-        self.assertIn("membre", form.errors)
+        self.assertIn("personnel", form.errors)
 
     def test_admin_sans_groupe_peut_creer_utilisateur(self):
         """Un superuser sans groupe peut accéder à la création d'utilisateurs."""
@@ -213,7 +213,7 @@ class UtilisateurF03Tests(TestCase):
 
 
 class ChangementRoleTests(TestCase):
-    """Si un Responsable change de rôle, son lien membre est retiré."""
+    """Si un Responsable change de rôle, son lien personnel est retiré."""
 
     def setUp(self):
         self.admin = _creer_utilisateur("admin@serein.bf", "pass1234!", is_superuser=True)
@@ -221,33 +221,33 @@ class ChangementRoleTests(TestCase):
         Group.objects.get_or_create(name="Responsable")
         Group.objects.get_or_create(name="Secrétaire")
         dept = Departement.objects.create(nom="Dept Test")
-        self.membre = Membre.objects.create(
+        self.pers = Personnel.objects.create(
             nom="Doe", prenom="John", departement=dept, actif=True
         )
         self.resp_user = _creer_utilisateur("resp@serein.bf", "pass1234!", "Responsable")
-        self.resp_user.membre = self.membre
+        self.resp_user.personnel = self.pers
         self.resp_user.save()
 
-    def test_changement_responsable_vers_secretaire_retire_membre(self):
-        """Changer un Responsable en Secrétaire retire son lien vers le membre."""
+    def test_changement_responsable_vers_secretaire_retire_personnel(self):
+        """Changer un Responsable en Secrétaire retire son lien vers le personnel."""
         self.client.force_login(self.admin)
         url = reverse("comptes:utilisateur_modifier", kwargs={"pk": self.resp_user.pk})
-        resp = self.client.post(url, {
+        self.client.post(url, {
             "first_name": self.resp_user.first_name,
             "last_name": self.resp_user.last_name,
             "email": self.resp_user.email,
             "role": "Secrétaire",
-            "membre": "",
+            "personnel": "",
             "is_active": True,
         })
         self.resp_user.refresh_from_db()
         self.assertIsNone(
-            self.resp_user.membre,
-            "Le lien membre doit être retiré quand un Responsable change de rôle",
+            self.resp_user.personnel,
+            "Le lien personnel doit être retiré quand un Responsable change de rôle",
         )
 
-    def test_changement_responsable_vers_admin_retire_membre(self):
-        """Changer un Responsable en Administrateur retire aussi son lien membre."""
+    def test_changement_responsable_vers_admin_retire_personnel(self):
+        """Changer un Responsable en Administrateur retire aussi son lien personnel."""
         self.client.force_login(self.admin)
         url = reverse("comptes:utilisateur_modifier", kwargs={"pk": self.resp_user.pk})
         self.client.post(url, {
@@ -255,8 +255,8 @@ class ChangementRoleTests(TestCase):
             "last_name": self.resp_user.last_name,
             "email": self.resp_user.email,
             "role": "Administrateur",
-            "membre": "",
+            "personnel": "",
             "is_active": True,
         })
         self.resp_user.refresh_from_db()
-        self.assertIsNone(self.resp_user.membre)
+        self.assertIsNone(self.resp_user.personnel)

@@ -2,7 +2,7 @@ from django import forms
 from crispy_forms.helper import FormHelper
 from crispy_forms.layout import Submit
 
-from .models import CanalPublication, Departement, Etablissement, Membre, TypeStage
+from .models import CanalPublication, Departement, Etablissement, Personnel, TypeStage
 
 
 def _helper(label_submit="Enregistrer"):
@@ -12,6 +12,14 @@ def _helper(label_submit="Enregistrer"):
 
 
 class DepartementCreerForm(forms.ModelForm):
+    # Champ non-modèle : personnels actifs sans département (disponibles pour rattachement)
+    nouveau_responsable = forms.ModelChoiceField(
+        queryset=Personnel.objects.none(),
+        required=False,
+        label="Responsable (optionnel)",
+        help_text="Personnels actifs sans département actuellement affecté.",
+    )
+
     class Meta:
         model = Departement
         fields = ["nom", "description", "actif"]
@@ -20,36 +28,71 @@ class DepartementCreerForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.helper = _helper()
+        self.fields["nouveau_responsable"].queryset = Personnel.objects.filter(
+            departement__isnull=True, actif=True
+        ).order_by("nom", "prenom")
 
 
 class DepartementModifierForm(forms.ModelForm):
+    # Champ non-modèle pour contourner le save() automatique et passer par le service
+    responsable = forms.ModelChoiceField(
+        queryset=Personnel.objects.none(),
+        required=False,
+        label="Responsable",
+        help_text="Personnels actifs de ce département (RG31).",
+    )
+
     class Meta:
         model = Departement
-        fields = ["nom", "description", "responsable", "actif"]
+        fields = ["nom", "description", "actif"]
         widgets = {"description": forms.Textarea(attrs={"rows": 3})}
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.helper = _helper()
-        if self.instance.pk:
-            self.fields["responsable"].queryset = Membre.objects.filter(
+        if self.instance and self.instance.pk:
+            qs = Personnel.objects.filter(
                 departement=self.instance, actif=True
-            )
-            self.fields["responsable"].help_text = (
-                "Uniquement les membres actifs de ce département (RG31)."
-            )
-        else:
-            self.fields["responsable"].queryset = Membre.objects.none()
+            ).order_by("nom", "prenom")
+            self.fields["responsable"].queryset = qs
+            self.fields["responsable"].initial = self.instance.responsable
 
 
-class MembreForm(forms.ModelForm):
+class PersonnelForm(forms.ModelForm):
+    designer_responsable = forms.BooleanField(
+        required=False,
+        label="Désigner comme responsable du département",
+    )
+
     class Meta:
-        model = Membre
-        fields = ["nom", "prenom", "fonction", "telephone", "email", "departement"]
+        model = Personnel
+        fields = ["nom", "prenom", "fonction", "telephone", "email", "departement", "actif"]
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.helper = _helper()
+        self.fields["departement"].queryset = Departement.objects.filter(actif=True).order_by("nom")
+        self.fields["departement"].required = False
+
+    def clean(self):
+        cleaned = super().clean()
+        nouveau_dept = cleaned.get("departement")
+
+        if self.instance and self.instance.pk:
+            # Correction 3 : interdit de changer le département si le personnel est responsable
+            dept_dirige = Departement.objects.filter(responsable=self.instance).first()
+            if dept_dirige and nouveau_dept != self.instance.departement:
+                raise forms.ValidationError(
+                    f"Ce personnel est responsable du département « {dept_dirige.nom} ». "
+                    "Désignez d'abord un autre responsable ou décochez la case."
+                )
+
+        # Désigner responsable exige un département
+        if cleaned.get("designer_responsable") and not nouveau_dept:
+            raise forms.ValidationError(
+                "Impossible de désigner comme responsable : aucun département sélectionné."
+            )
+        return cleaned
 
 
 class EtablissementForm(forms.ModelForm):

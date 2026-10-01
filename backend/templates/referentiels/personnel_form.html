@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% load crispy_forms_tags %}
+
+{% block title %}{{ titre }}{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center gap-3 mb-4">
+    <a href="{{ url_retour }}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left"></i></a>
+    <div>
+        <h5 class="mb-0 fw-semibold">{{ titre }}</h5>
+    </div>
+</div>
+
+{% if confirmation_requise %}
+<div class="alert alert-warning d-flex align-items-start gap-2" role="alert">
+    <i class="bi bi-exclamation-triangle-fill flex-shrink-0 mt-1"></i>
+    <div>
+        <strong>Remplacement de responsable</strong><br>
+        Le département a déjà pour responsable <strong>{{ ancien_responsable }}</strong>.
+        Le remplacer désactivera son compte utilisateur (s'il en a un) et notifiera les Administrateurs.
+        <form method="post" class="mt-2 d-inline">
+            {% csrf_token %}
+            {% for field in form %}
+                {% if field.name != "designer_responsable" %}
+                {{ field.as_hidden }}
+                {% endif %}
+            {% endfor %}
+            <input type="hidden" name="designer_responsable" value="true">
+            <input type="hidden" name="confirmer_remplacement" value="1">
+            <button type="submit" class="btn btn-warning btn-sm">
+                <i class="bi bi-arrow-repeat me-1"></i>Confirmer le remplacement
+            </button>
+            <a href="{{ url_retour }}" class="btn btn-outline-secondary btn-sm ms-1">Annuler</a>
+        </form>
+    </div>
+</div>
+{% endif %}
+
+{% if dept_dirige and not confirmation_requise %}
+<div class="alert alert-info py-2 small">
+    <i class="bi bi-info-circle me-1"></i>
+    Ce personnel est <strong>responsable du département {{ dept_dirige.nom }}</strong>.
+    Décocher la case ci-dessous retirera ce rôle.
+</div>
+{% endif %}
+
+<div class="card border-0 shadow-sm" style="max-width:600px;">
+    <div class="card-body">
+        <form method="post">
+            {% csrf_token %}
+            {{ form|crispy }}
+        </form>
+    </div>
+</div>
+{% endblock %}

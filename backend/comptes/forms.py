@@ -76,16 +76,16 @@ class UtilisateurCreerForm(forms.ModelForm):
 
     class Meta:
         model = Utilisateur
-        fields = ["first_name", "last_name", "email", "telephone", "membre"]
+        fields = ["first_name", "last_name", "email", "telephone", "personnel"]
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        from referentiels.models import Membre
-        self.fields["membre"].queryset = Membre.objects.filter(
+        from referentiels.models import Personnel
+        self.fields["personnel"].queryset = Personnel.objects.filter(
             actif=True, compte__isnull=True
         ).order_by("nom", "prenom")
-        self.fields["membre"].required = False
-        self.fields["membre"].label = "Membre lié (obligatoire si rôle = Responsable)"
+        self.fields["personnel"].required = False
+        self.fields["personnel"].label = "Personnel lié (obligatoire si rôle = Responsable)"
         self.fields["first_name"].required = True
         self.fields["last_name"].required = True
         self.helper = _helper("Créer le compte")
@@ -93,11 +93,11 @@ class UtilisateurCreerForm(forms.ModelForm):
     def clean(self):
         cleaned = super().clean()
         role = cleaned.get("role")
-        membre = cleaned.get("membre")
+        personnel = cleaned.get("personnel")
         p1 = cleaned.get("password1")
         p2 = cleaned.get("password2")
-        if role == "Responsable" and not membre:
-            self.add_error("membre", "Obligatoire pour le rôle Responsable.")
+        if role == "Responsable" and not personnel:
+            self.add_error("personnel", "Obligatoire pour le rôle Responsable.")
         if p1 and p2 and p1 != p2:
             self.add_error("password2", "Les mots de passe ne correspondent pas.")
         return cleaned
@@ -117,22 +117,22 @@ class UtilisateurModifierForm(forms.ModelForm):
 
     class Meta:
         model = Utilisateur
-        fields = ["first_name", "last_name", "email", "telephone", "membre", "is_active"]
+        fields = ["first_name", "last_name", "email", "telephone", "personnel", "is_active"]
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         from django.db.models import Q
-        from referentiels.models import Membre
+        from referentiels.models import Personnel
         instance = self.instance
-        if instance and instance.pk and instance.membre_id:
-            qs = Membre.objects.filter(actif=True).filter(
-                Q(compte__isnull=True) | Q(pk=instance.membre_id)
+        if instance and instance.pk and instance.personnel_id:
+            qs = Personnel.objects.filter(actif=True).filter(
+                Q(compte__isnull=True) | Q(pk=instance.personnel_id)
             )
         else:
-            qs = Membre.objects.filter(actif=True, utilisateur__isnull=True)
-        self.fields["membre"].queryset = qs.order_by("nom", "prenom")
-        self.fields["membre"].required = False
-        self.fields["membre"].label = "Membre lié (obligatoire si rôle = Responsable)"
+            qs = Personnel.objects.filter(actif=True, compte__isnull=True)
+        self.fields["personnel"].queryset = qs.order_by("nom", "prenom")
+        self.fields["personnel"].required = False
+        self.fields["personnel"].label = "Personnel lié (obligatoire si rôle = Responsable)"
         self.fields["first_name"].required = True
         self.fields["last_name"].required = True
         if instance and instance.pk:
@@ -142,9 +142,9 @@ class UtilisateurModifierForm(forms.ModelForm):
     def clean(self):
         cleaned = super().clean()
         role = cleaned.get("role")
-        membre = cleaned.get("membre")
-        if role == "Responsable" and not membre:
-            self.add_error("membre", "Obligatoire pour le rôle Responsable.")
+        personnel = cleaned.get("personnel")
+        if role == "Responsable" and not personnel:
+            self.add_error("personnel", "Obligatoire pour le rôle Responsable.")
         return cleaned
 
     def save(self, commit=True):

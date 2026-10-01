@@ -7,7 +7,7 @@ class Departement(models.Model):
     description = models.TextField(blank=True, verbose_name="description")
     actif = models.BooleanField(default=True, verbose_name="actif")
     responsable = models.OneToOneField(
-        "Membre",
+        "Personnel",
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
@@ -24,7 +24,7 @@ class Departement(models.Model):
         return self.nom
 
 
-class Membre(models.Model):
+class Personnel(models.Model):
     nom = models.CharField(max_length=100, verbose_name="nom")
     prenom = models.CharField(max_length=100, verbose_name="prénom")
     fonction = models.CharField(max_length=150, blank=True, verbose_name="fonction")
@@ -34,24 +34,33 @@ class Membre(models.Model):
     departement = models.ForeignKey(
         Departement,
         on_delete=models.PROTECT,
-        related_name="membres",
+        null=True,
+        blank=True,
+        related_name="personnels",
         verbose_name="département",
     )
 
     class Meta:
-        verbose_name = "Membre"
-        verbose_name_plural = "Membres"
+        verbose_name = "Personnel"
+        verbose_name_plural = "Personnels"
         ordering = ["nom", "prenom"]
-        unique_together = [["nom", "prenom", "departement"]]
 
     def __str__(self):
         return f"{self.prenom} {self.nom}"
 
     def clean(self):
-        # RG : le responsable d'un département doit être membre de ce département
-        if self.pk and hasattr(self, "departement_dirige"):
-            dept = self.departement_dirige
-            if dept and dept.pk != self.departement_id:
+        # Si ce personnel est responsable d'un département, il doit y appartenir.
+        try:
+            dept_dirige = self.departement_dirige
+        except Departement.DoesNotExist:
+            dept_dirige = None
+
+        if dept_dirige:
+            if self.departement is None:
+                raise ValidationError(
+                    "Le responsable d'un département doit être rattaché à ce département."
+                )
+            if dept_dirige.pk != self.departement_id:
                 raise ValidationError(
                     "Le responsable d'un département doit être membre de ce département."
                 )

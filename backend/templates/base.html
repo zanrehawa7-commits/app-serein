@@ -107,8 +107,10 @@
             <li><a href="{% url 'comptes:roles_list' %}" class="nav-link text-white {% if 'role' in request.resolver_match.url_name or 'permissions' in request.resolver_match.url_name %}active{% endif %}">
                 <i class="bi bi-shield-lock me-2"></i>Rôles & permissions</a></li>
             <li class="mt-2"><small class="text-white-50 ps-2 text-uppercase fw-bold" style="font-size:.65rem;letter-spacing:.05em;">Référentiels</small></li>
-            <li><a href="{% url 'referentiels:departement_list' %}" class="nav-link text-white {% if request.resolver_match.namespace == 'referentiels' and 'departement' in request.resolver_match.url_name or 'membre' in request.resolver_match.url_name %}active{% endif %}">
+            <li><a href="{% url 'referentiels:departement_list' %}" class="nav-link text-white {% if request.resolver_match.namespace == 'referentiels' and 'departement' in request.resolver_match.url_name %}active{% endif %}">
                 <i class="bi bi-diagram-3 me-2"></i>Départements</a></li>
+            <li><a href="{% url 'referentiels:personnel_list' %}" class="nav-link text-white {% if request.resolver_match.namespace == 'referentiels' and 'personnel' in request.resolver_match.url_name %}active{% endif %}">
+                <i class="bi bi-person-badge me-2"></i>Personnel</a></li>
             <li><a href="{% url 'referentiels:etablissement_list' %}" class="nav-link text-white {% if request.resolver_match.namespace == 'referentiels' and 'etablissement' in request.resolver_match.url_name %}active{% endif %}">
                 <i class="bi bi-building me-2"></i>Établissements</a></li>
             <li><a href="{% url 'referentiels:typestage_list' %}" class="nav-link text-white {% if request.resolver_match.namespace == 'referentiels' and 'typestage' in request.resolver_match.url_name %}active{% endif %}">

@@ -13,7 +13,7 @@ class UtilisateurAdmin(BaseUserAdmin):
     fieldsets = (
         (None, {"fields": ("email", "password")}),
         ("Informations personnelles", {"fields": ("first_name", "last_name", "telephone")}),
-        ("Rôle et accès", {"fields": ("groups", "membre", "is_active", "is_staff", "is_superuser")}),
+        ("Rôle et accès", {"fields": ("groups", "personnel", "is_active", "is_staff", "is_superuser")}),
         ("Dates", {"fields": ("last_login", "date_joined"), "classes": ("collapse",)}),
     )
     add_fieldsets = (

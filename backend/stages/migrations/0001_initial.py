@@ -10,7 +10,7 @@ class Migration(migrations.Migration):
 
     dependencies = [
         ('candidatures', '0001_initial'),
-        ('referentiels', '0001_initial'),
+        ('referentiels', '0002_rename_membre_personnel'),
     ]
 
     operations = [
@@ -28,7 +28,7 @@ class Migration(migrations.Migration):
                 ('rapport', models.FileField(blank=True, null=True, upload_to='rapports/%Y/', verbose_name='rapport de stage')),
                 ('date_evaluation', models.DateField(blank=True, null=True, verbose_name="date d'évaluation")),
                 ('candidature', models.OneToOneField(on_delete=django.db.models.deletion.PROTECT, related_name='stage', to='candidatures.candidature', verbose_name='candidature')),
-                ('maitre_stage', models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name='stages_encadres', to='referentiels.membre', verbose_name='maître de stage')),
+                ('maitre_stage', models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name='stages_encadres', to='referentiels.personnel', verbose_name='maître de stage')),
             ],
             options={
                 'verbose_name': 'Stage',

@@ -3,7 +3,7 @@ from django.utils import timezone
 from crispy_forms.helper import FormHelper
 from crispy_forms.layout import Layout, Field, Row, Column, Submit, HTML, Div
 
-from referentiels.models import Membre
+from referentiels.models import Personnel
 
 
 class ConstituerStageForm(forms.Form):
@@ -17,13 +17,13 @@ class ConstituerStageForm(forms.Form):
     )
     maitre_stage = forms.ModelChoiceField(
         label="Maître de stage",
-        queryset=Membre.objects.none(),
+        queryset=Personnel.objects.none(),
     )
 
     def __init__(self, *args, departement=None, **kwargs):
         super().__init__(*args, **kwargs)
         if departement is not None:
-            self.fields["maitre_stage"].queryset = Membre.objects.filter(
+            self.fields["maitre_stage"].queryset = Personnel.objects.filter(
                 departement=departement, actif=True
             ).order_by("nom", "prenom")
 
@@ -58,13 +58,13 @@ class ModifierStageForm(forms.Form):
     )
     maitre_stage = forms.ModelChoiceField(
         label="Maître de stage",
-        queryset=Membre.objects.none(),
+        queryset=Personnel.objects.none(),
     )
 
     def __init__(self, *args, departement=None, stage=None, **kwargs):
         super().__init__(*args, **kwargs)
         if departement is not None:
-            self.fields["maitre_stage"].queryset = Membre.objects.filter(
+            self.fields["maitre_stage"].queryset = Personnel.objects.filter(
                 departement=departement, actif=True
             ).order_by("nom", "prenom")
 
