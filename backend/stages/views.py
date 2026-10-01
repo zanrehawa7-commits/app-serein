@@ -1,6 +1,9 @@
+import csv
+import os
 from django.contrib import messages
 from django.contrib.contenttypes.models import ContentType
 from django.core.exceptions import PermissionDenied
+from django.http import FileResponse, Http404, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views import View
 from django.views.generic import ListView
@@ -9,13 +12,21 @@ from commun.mixins import ListeMixin
 from comptes.permissions import RoleRequisMixin, _role_utilisateur
 from suivi.models import Historique
 
-from .forms import ConstituerStageForm, InterrompreStageForm, ModifierStageForm, TerminerStageForm
+from .forms import (
+    ConstituerStageForm,
+    EvaluerStageForm,
+    InterrompreStageForm,
+    ModifierStageForm,
+    TerminerStageForm,
+)
 from .models import Stage, StatutStage
 from .services import (
     TransitionInterdite,
     constituer_stage,
+    evaluer_stage,
     interrompre_stage,
     modifier_stage,
+    peut_evaluer,
     terminer_stage,
 )
 
@@ -121,6 +132,9 @@ class StageDetailView(RoleRequisMixin, View):
         )
         historiques = _get_historique(stage)
         role = _role_utilisateur(request.user)
+        _peut_eval, _ = peut_evaluer(stage) if stage.statut == StatutStage.TERMINE and role == "Responsable" else (False, None)
+        dept = _get_departement_utilisateur(request.user)
+        _dept_ok = not dept or stage.candidature.departement == dept
         return render(request, "stages/stage_detail.html", {
             "stage": stage,
             "historiques": historiques,
@@ -129,11 +143,12 @@ class StageDetailView(RoleRequisMixin, View):
                 role == "Secrétaire" and
                 stage.statut in [StatutStage.A_VENIR, StatutStage.EN_COURS]
             ),
-            "peut_terminer": role == "Responsable" and stage.statut == StatutStage.EN_COURS,
+            "peut_terminer": role == "Responsable" and stage.statut == StatutStage.EN_COURS and _dept_ok,
             "peut_interrompre": (
                 role == "Responsable" and
-                stage.statut in [StatutStage.A_VENIR, StatutStage.EN_COURS]
+                stage.statut in [StatutStage.A_VENIR, StatutStage.EN_COURS] and _dept_ok
             ),
+            "peut_evaluer": _peut_eval and _dept_ok,
         })
 
 
@@ -346,3 +361,195 @@ class InterrompreStageView(RoleRequisMixin, View):
                 messages.error(request, str(e))
                 return redirect("stages:stage_detail", pk=pk)
         return render(request, "stages/stage_interrompre_form.html", {"form": form, "stage": stage})
+
+
+class EvaluerStageView(RoleRequisMixin, View):
+    roles = ["Responsable"]
+
+    def _get_stage(self, pk, request):
+        stage = get_object_or_404(
+            Stage.objects.select_related(
+                "candidature__departement", "candidature__candidat"
+            ),
+            pk=pk,
+            statut=StatutStage.TERMINE,
+        )
+        dept = _get_departement_utilisateur(request.user)
+        if dept and stage.candidature.departement != dept:
+            raise PermissionDenied
+        return stage
+
+    def get(self, request, pk):
+        stage = self._get_stage(pk, request)
+        peut, date_verrou = peut_evaluer(stage)
+        if not peut:
+            messages.error(
+                request,
+                "L'évaluation de ce stage est verrouillée"
+                + (f" depuis le {date_verrou.strftime('%d/%m/%Y')}." if date_verrou else "."),
+            )
+            return redirect("stages:stage_detail", pk=pk)
+        initial = {}
+        if stage.note is not None:
+            initial["note"] = stage.note
+            initial["vivier"] = stage.vivier
+        form = EvaluerStageForm(initial=initial)
+        return render(request, "stages/stage_evaluer_form.html", {
+            "form": form,
+            "stage": stage,
+            "date_verrou": date_verrou,
+        })
+
+    def post(self, request, pk):
+        stage = self._get_stage(pk, request)
+        peut, date_verrou = peut_evaluer(stage)
+        if not peut:
+            messages.error(request, "L'évaluation est verrouillée.")
+            return redirect("stages:stage_detail", pk=pk)
+        form = EvaluerStageForm(request.POST, request.FILES)
+        if form.is_valid():
+            try:
+                evaluer_stage(
+                    stage=stage,
+                    note=form.cleaned_data["note"],
+                    vivier=form.cleaned_data["vivier"],
+                    rapport_file=form.cleaned_data.get("rapport"),
+                    utilisateur=request.user,
+                )
+                messages.success(request, "Évaluation enregistrée.")
+                return redirect("stages:stage_detail", pk=pk)
+            except TransitionInterdite as e:
+                messages.error(request, str(e))
+                return redirect("stages:stage_detail", pk=pk)
+        return render(request, "stages/stage_evaluer_form.html", {
+            "form": form,
+            "stage": stage,
+            "date_verrou": date_verrou,
+        })
+
+
+class StagesAEvaluerListView(RoleRequisMixin, View):
+    roles = ["Responsable", "Administrateur"]
+
+    def get(self, request):
+        import datetime
+        from django.utils import timezone
+        today = timezone.localdate()
+        seuil = today - datetime.timedelta(days=7)
+
+        qs = Stage.objects.filter(
+            statut=StatutStage.TERMINE,
+            note__isnull=True,
+            date_fin_reelle__lte=seuil,
+        ).select_related(
+            "candidature__candidat",
+            "candidature__departement",
+            "maitre_stage",
+        )
+
+        role = _role_utilisateur(request.user)
+        if role == "Responsable":
+            dept = _get_departement_utilisateur(request.user)
+            qs = qs.filter(candidature__departement=dept) if dept else qs.none()
+
+        return render(request, "stages/stages_a_evaluer.html", {
+            "stages": qs.order_by("date_fin_reelle"),
+            "role": role,
+        })
+
+
+class VivierListView(RoleRequisMixin, ListView):
+    model = Stage
+    template_name = "stages/vivier.html"
+    roles = ["Responsable", "Administrateur"]
+    paginate_by = 20
+
+    def get_queryset(self):
+        return Stage.objects.filter(vivier=True).select_related(
+            "candidature__candidat",
+            "candidature__candidat__etablissement",
+            "candidature__departement",
+            "candidature__type_stage",
+            "maitre_stage",
+        ).order_by("-note", "candidature__candidat__nom")
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        ctx["role"] = _role_utilisateur(self.request.user)
+        return ctx
+
+
+class VivierExportCsvView(RoleRequisMixin, View):
+    roles = ["Responsable", "Administrateur"]
+
+    def get(self, request):
+        response = HttpResponse(content_type="text/csv; charset=utf-8-sig")
+        response["Content-Disposition"] = 'attachment; filename="vivier.csv"'
+
+        writer = csv.writer(response)
+        writer.writerow([
+            "Candidat", "Téléphone", "Email", "Niveau d'études", "Filière",
+            "Établissement", "Type de stage", "Département",
+            "Date début", "Date fin", "Note /20", "Maître de stage",
+        ])
+
+        stages = Stage.objects.filter(vivier=True).select_related(
+            "candidature__candidat",
+            "candidature__candidat__etablissement",
+            "candidature__departement",
+            "candidature__type_stage",
+            "maitre_stage",
+        ).order_by("-note", "candidature__candidat__nom")
+
+        for s in stages:
+            c = s.candidature.candidat
+            writer.writerow([
+                str(c),
+                c.telephone,
+                c.email or "",
+                c.get_niveau_etudes_display() or "",
+                c.filiere or "",
+                str(c.etablissement or c.etablissement_autre or ""),
+                s.candidature.type_stage.libelle,
+                s.candidature.departement.nom,
+                s.date_debut.strftime("%d/%m/%Y"),
+                (s.date_fin_reelle or s.date_fin_prevue).strftime("%d/%m/%Y"),
+                str(s.note),
+                str(s.maitre_stage),
+            ])
+
+        return response
+
+
+class RapportTelechargerView(RoleRequisMixin, View):
+    roles = ["Responsable", "Administrateur"]
+
+    def get(self, request, pk):
+        stage = get_object_or_404(
+            Stage.objects.select_related("candidature__departement"),
+            pk=pk,
+        )
+
+        if not stage.rapport:
+            raise Http404("Aucun rapport pour ce stage.")
+
+        role = _role_utilisateur(request.user)
+        if role == "Responsable":
+            dept = _get_departement_utilisateur(request.user)
+            if dept and stage.candidature.departement != dept:
+                if not stage.vivier:
+                    raise PermissionDenied
+
+        try:
+            path = stage.rapport.path
+        except Exception:
+            raise Http404("Fichier introuvable.")
+
+        if not os.path.exists(path):
+            raise Http404("Fichier introuvable.")
+
+        return FileResponse(
+            open(path, "rb"),
+            as_attachment=True,
+            filename=os.path.basename(path),
+        )

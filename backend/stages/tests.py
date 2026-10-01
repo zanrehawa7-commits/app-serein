@@ -422,3 +422,220 @@ class ConstituerStageViewTests(TestCase):
         url = reverse("stages:stage_constituer", args=[self.cand.pk])
         response = self.client.get(url)
         self.assertEqual(response.status_code, 403)
+
+
+# ─── Évaluation ───────────────────────────────────────────────────────────────
+
+from .services import evaluer_stage, peut_evaluer
+
+
+def _stage_termine(dept, maitre, sec):
+    """Crée un stage au statut TERMINÉ."""
+    cand = _candidature_accordee(dept)
+    debut = datetime.date(2025, 1, 10)
+    fin = datetime.date(2025, 4, 10)
+    stage = Stage.objects.create(
+        candidature=cand,
+        maitre_stage=maitre,
+        date_debut=debut,
+        date_fin_prevue=fin,
+        date_fin_reelle=fin,
+        statut=StatutStage.TERMINE,
+    )
+    return stage
+
+
+class PeutEvaluerTests(TestCase):
+    def setUp(self):
+        self.dept = _dept("PeutEvalDept")
+        self.maitre = _membre(self.dept, "MaitrePE")
+        self.sec = _secretaire()
+        self.stage = _stage_termine(self.dept, self.maitre, self.sec)
+
+    def test_peut_evaluer_stage_termine_sans_note(self):
+        peut, _ = peut_evaluer(self.stage)
+        self.assertTrue(peut)
+
+    def test_ne_peut_pas_evaluer_stage_non_termine(self):
+        self.stage.statut = StatutStage.EN_COURS
+        self.stage.save(update_fields=["statut"])
+        peut, _ = peut_evaluer(self.stage)
+        self.assertFalse(peut)
+
+    def test_peut_evaluer_dans_30j(self):
+        self.stage.date_evaluation = datetime.date(2025, 4, 1)
+        self.stage.save(update_fields=["date_evaluation"])
+        # 15 jours après = encore dans la fenêtre
+        peut, date_v = peut_evaluer(self.stage, aujourd_hui=datetime.date(2025, 4, 16))
+        self.assertTrue(peut)
+        self.assertIsNotNone(date_v)
+
+    def test_verouille_apres_30j(self):
+        self.stage.date_evaluation = datetime.date(2025, 4, 1)
+        self.stage.save(update_fields=["date_evaluation"])
+        # 31 jours après = verrouillé
+        peut, _ = peut_evaluer(self.stage, aujourd_hui=datetime.date(2025, 5, 2))
+        self.assertFalse(peut)
+
+
+class EvaluerStageTests(TestCase):
+    def setUp(self):
+        self.dept = _dept("EvalDept")
+        self.maitre = _membre(self.dept, "MaitreEV")
+        self.sec = _secretaire()
+        self.resp = _responsable(self.dept)
+        self.stage = _stage_termine(self.dept, self.maitre, self.sec)
+
+    def test_evaluer_note_valide(self):
+        evaluer_stage(self.stage, note=15, vivier=False, utilisateur=self.resp)
+        self.stage.refresh_from_db()
+        self.assertEqual(self.stage.note, 15)
+        self.assertFalse(self.stage.vivier)
+        self.assertIsNotNone(self.stage.date_evaluation)
+
+    def test_evaluer_avec_vivier(self):
+        evaluer_stage(self.stage, note=16, vivier=True, utilisateur=self.resp)
+        self.stage.refresh_from_db()
+        self.assertTrue(self.stage.vivier)
+
+    def test_vivier_interdit_si_note_insuffisante(self):
+        with self.assertRaises(TransitionInterdite):
+            evaluer_stage(self.stage, note=10, vivier=True, utilisateur=self.resp)
+
+    def test_note_hors_plage(self):
+        with self.assertRaises(TransitionInterdite):
+            evaluer_stage(self.stage, note=21, vivier=False, utilisateur=self.resp)
+
+    def test_refuse_si_non_termine(self):
+        self.stage.statut = StatutStage.EN_COURS
+        self.stage.save(update_fields=["statut"])
+        with self.assertRaises(TransitionInterdite):
+            evaluer_stage(self.stage, note=15, vivier=False, utilisateur=self.resp)
+
+    def test_refuse_apres_verrou_30j(self):
+        self.stage.date_evaluation = datetime.date(2025, 3, 1)
+        self.stage.save(update_fields=["date_evaluation"])
+        with self.assertRaises(TransitionInterdite):
+            evaluer_stage(
+                self.stage, note=14, vivier=False, utilisateur=self.resp,
+                aujourd_hui=datetime.date(2025, 4, 10),  # +40j
+            )
+
+    def test_modification_dans_fenetre_30j(self):
+        evaluer_stage(
+            self.stage, note=14, vivier=False, utilisateur=self.resp,
+            aujourd_hui=datetime.date(2025, 4, 15),
+        )
+        # Nouvelle évaluation dans les 30j
+        evaluer_stage(
+            self.stage, note=16, vivier=True, utilisateur=self.resp,
+            aujourd_hui=datetime.date(2025, 4, 20),
+        )
+        self.stage.refresh_from_db()
+        self.assertEqual(self.stage.note, 16)
+
+
+class EvaluerStageViewTests(TestCase):
+    def setUp(self):
+        self.dept = _dept("EvalViewDept")
+        self.maitre = _membre(self.dept, "MaitreView")
+        self.sec = _secretaire()
+        self.resp = _responsable(self.dept)
+        self.stage = _stage_termine(self.dept, self.maitre, self.sec)
+
+    def test_get_form_responsable(self):
+        self.client.force_login(self.resp)
+        url = reverse("stages:stage_evaluer", args=[self.stage.pk])
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 200)
+
+    def test_403_secretaire(self):
+        self.client.force_login(self.sec)
+        url = reverse("stages:stage_evaluer", args=[self.stage.pk])
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 403)
+
+    def test_post_evaluer(self):
+        self.client.force_login(self.resp)
+        url = reverse("stages:stage_evaluer", args=[self.stage.pk])
+        response = self.client.post(url, {"note": 17, "vivier": True})
+        self.assertEqual(response.status_code, 302)
+        self.stage.refresh_from_db()
+        self.assertEqual(self.stage.note, 17)
+        self.assertTrue(self.stage.vivier)
+
+    def test_responsable_autre_dept_403(self):
+        dept2 = _dept("AutreDeptEval")
+        resp2 = _user("resp2eval@test.com", "Responsable")
+        m2 = _membre(dept2, "RespM2Eval")
+        resp2.membre = m2
+        resp2.save(update_fields=["membre"])
+        self.client.force_login(resp2)
+        url = reverse("stages:stage_evaluer", args=[self.stage.pk])
+        # Devrait retourner 404 (statut TERMINE requis OU 403)
+        response = self.client.get(url)
+        self.assertIn(response.status_code, [403, 404])
+
+
+class VivierViewTests(TestCase):
+    def setUp(self):
+        self.dept = _dept("VivierDept")
+        self.maitre = _membre(self.dept, "MaitreVivier")
+        self.sec = _secretaire()
+        self.resp = _responsable(self.dept)
+        stage = _stage_termine(self.dept, self.maitre, self.sec)
+        stage.note = 15
+        stage.vivier = True
+        stage.date_evaluation = datetime.date(2025, 4, 15)
+        stage.save()
+
+    def test_vivier_accessible_responsable(self):
+        self.client.force_login(self.resp)
+        response = self.client.get(reverse("stages:vivier"))
+        self.assertEqual(response.status_code, 200)
+
+    def test_403_secretaire(self):
+        self.client.force_login(self.sec)
+        response = self.client.get(reverse("stages:vivier"))
+        self.assertEqual(response.status_code, 403)
+
+    def test_export_csv(self):
+        self.client.force_login(self.resp)
+        response = self.client.get(reverse("stages:vivier_export_csv"))
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("text/csv", response["Content-Type"])
+
+
+class RappelEvaluationCommandTests(TestCase):
+    def setUp(self):
+        self.dept = _dept("RappelDept")
+        self.maitre = _membre(self.dept, "MaitreRappel")
+        self.sec = _secretaire()
+        self.resp = _responsable(self.dept)
+
+    def test_rappel_envoye_apres_7j(self):
+        from django.core.management import call_command
+        from io import StringIO
+        # Stage terminé il y a 10 jours, sans note
+        stage = _stage_termine(self.dept, self.maitre, self.sec)
+        date_fin = timezone.localdate() - datetime.timedelta(days=10)
+        stage.date_fin_reelle = date_fin
+        stage.save(update_fields=["date_fin_reelle"])
+
+        out = StringIO()
+        call_command("mettre_a_jour_stages", stdout=out)
+        stage.refresh_from_db()
+        self.assertTrue(stage.rappel_evaluation_envoye)
+
+    def test_pas_rappel_avant_7j(self):
+        from django.core.management import call_command
+        from io import StringIO
+        stage = _stage_termine(self.dept, self.maitre, self.sec)
+        date_fin = timezone.localdate() - datetime.timedelta(days=3)
+        stage.date_fin_reelle = date_fin
+        stage.save(update_fields=["date_fin_reelle"])
+
+        out = StringIO()
+        call_command("mettre_a_jour_stages", stdout=out)
+        stage.refresh_from_db()
+        self.assertFalse(stage.rappel_evaluation_envoye)

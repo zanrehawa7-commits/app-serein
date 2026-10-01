@@ -29,6 +29,11 @@
             <i class="bi bi-stop-circle me-1"></i>Interrompre
         </a>
         {% endif %}
+        {% if peut_evaluer %}
+        <a href="{% url 'stages:stage_evaluer' stage.pk %}" class="btn btn-warning btn-sm">
+            <i class="bi bi-star me-1"></i>{% if stage.note %}Modifier l'évaluation{% else %}Évaluer{% endif %}
+        </a>
+        {% endif %}
     </div>
 </div>
 
@@ -104,6 +109,50 @@
         </div>
     </div>
 </div>
+
+<!-- Évaluation (stage terminé) -->
+{% if stage.statut == "TERMINE" %}
+<div class="card border-0 shadow-sm mb-3">
+    <div class="card-header bg-white border-bottom py-2 d-flex justify-content-between align-items-center">
+        <h6 class="mb-0 fw-semibold"><i class="bi bi-star-fill text-warning me-2"></i>Évaluation</h6>
+        {% if stage.vivier %}
+        <span class="badge bg-success"><i class="bi bi-people-fill me-1"></i>Vivier</span>
+        {% endif %}
+    </div>
+    <div class="card-body">
+        {% if stage.note %}
+        <dl class="row mb-0">
+            <dt class="col-sm-4 text-muted small">Note</dt>
+            <dd class="col-sm-8"><strong>{{ stage.note }}/20</strong></dd>
+            <dt class="col-sm-4 text-muted small">Vivier</dt>
+            <dd class="col-sm-8">{% if stage.vivier %}<span class="text-success fw-semibold">Oui</span>{% else %}Non{% endif %}</dd>
+            <dt class="col-sm-4 text-muted small">Date d'évaluation</dt>
+            <dd class="col-sm-8">{{ stage.date_evaluation|date:"d/m/Y" }}</dd>
+            {% if stage.rapport %}
+            <dt class="col-sm-4 text-muted small">Rapport</dt>
+            <dd class="col-sm-8">
+                {% if role != "Secrétaire" %}
+                <a href="{% url 'stages:rapport_telecharger' stage.pk %}" class="btn btn-sm btn-outline-primary">
+                    <i class="bi bi-file-earmark-pdf me-1"></i>Télécharger
+                </a>
+                {% else %}
+                <span class="text-muted small">Document disponible</span>
+                {% endif %}
+            </dd>
+            {% endif %}
+        </dl>
+        {% else %}
+        <p class="text-muted small mb-0">
+            <i class="bi bi-exclamation-triangle text-warning me-1"></i>
+            Ce stage n'a pas encore été évalué.
+            {% if peut_evaluer %}
+            <a href="{% url 'stages:stage_evaluer' stage.pk %}" class="ms-2">Évaluer maintenant</a>
+            {% endif %}
+        </p>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
 
 {% include "commun/_historique.html" with historiques=historiques %}
 {% endblock %}

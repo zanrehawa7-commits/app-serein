@@ -1,5 +1,11 @@
+from django.conf import settings
 from django.core.exceptions import ValidationError
+from django.core.files.storage import FileSystemStorage
 from django.db import models
+
+
+def _get_stockage_rapport():
+    return FileSystemStorage(location=settings.FICHIERS_PRIVES_ROOT, base_url=None)
 
 
 class StatutStage(models.TextChoices):
@@ -35,12 +41,17 @@ class Stage(models.Model):
     note = models.PositiveSmallIntegerField(null=True, blank=True, verbose_name="note /20")
     vivier = models.BooleanField(default=False, verbose_name="vivier")
     rapport = models.FileField(
-        upload_to="rapports/%Y/",
+        storage=_get_stockage_rapport,
+        upload_to="stages/rapports/%Y/",
         null=True,
         blank=True,
         verbose_name="rapport de stage",
     )
     date_evaluation = models.DateField(null=True, blank=True, verbose_name="date d'évaluation")
+    rappel_evaluation_envoye = models.BooleanField(
+        default=False,
+        verbose_name="rappel évaluation envoyé",
+    )
 
     class Meta:
         verbose_name = "Stage"

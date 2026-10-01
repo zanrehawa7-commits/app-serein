@@ -144,9 +144,18 @@ class TableauBordResponsableView(RoleRequisMixin, TemplateView):
                 .select_related("candidat")
                 .order_by("-date_depot")[:5]
             )
+            import datetime
+            from django.utils import timezone
             from stages.models import Stage, StatutStage
             ctx["nb_stages_en_cours"] = Stage.objects.filter(
                 candidature__departement=dept, statut=StatutStage.EN_COURS
+            ).count()
+            seuil = timezone.localdate() - datetime.timedelta(days=7)
+            ctx["nb_a_evaluer"] = Stage.objects.filter(
+                candidature__departement=dept,
+                statut=StatutStage.TERMINE,
+                note__isnull=True,
+                date_fin_reelle__lte=seuil,
             ).count()
         return ctx
 

@@ -1,7 +1,7 @@
 from django import forms
 from django.utils import timezone
 from crispy_forms.helper import FormHelper
-from crispy_forms.layout import Layout, Field, Row, Column, Submit, HTML
+from crispy_forms.layout import Layout, Field, Row, Column, Submit, HTML, Div
 
 from referentiels.models import Membre
 
@@ -157,3 +157,54 @@ class InterrompreStageForm(forms.Form):
         if not motif:
             raise forms.ValidationError("Le motif d'interruption est obligatoire.")
         return motif
+
+
+class EvaluerStageForm(forms.Form):
+    note = forms.IntegerField(
+        label="Note /20",
+        min_value=1,
+        max_value=20,
+        widget=forms.NumberInput(attrs={"min": "1", "max": "20", "id": "id_note"}),
+    )
+    vivier = forms.BooleanField(
+        label="Ajouter au vivier de talents (note ≥ 12 requise)",
+        required=False,
+        widget=forms.CheckboxInput(attrs={"id": "id_vivier"}),
+    )
+    rapport = forms.FileField(
+        label="Rapport de stage (PDF, max 10 Mo)",
+        required=False,
+        widget=forms.ClearableFileInput(attrs={"accept": ".pdf"}),
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.helper = FormHelper()
+        self.helper.layout = Layout(
+            Row(
+                Column(Field("note"), css_class="col-md-4"),
+                Column(
+                    Div(Field("vivier"), css_class="mt-4 pt-2"),
+                    css_class="col-md-8",
+                ),
+            ),
+            Field("rapport"),
+            Submit("submit", "Enregistrer l'évaluation", css_class="btn btn-primary mt-2"),
+        )
+
+    def clean_rapport(self):
+        rapport = self.cleaned_data.get("rapport")
+        if rapport:
+            if not rapport.name.lower().endswith(".pdf"):
+                raise forms.ValidationError("Le rapport doit être un fichier PDF.")
+            if rapport.size > 10 * 1024 * 1024:
+                raise forms.ValidationError("Le rapport ne doit pas dépasser 10 Mo.")
+        return rapport
+
+    def clean(self):
+        cleaned = super().clean()
+        note = cleaned.get("note")
+        vivier = cleaned.get("vivier")
+        if vivier and (note is None or note < 12):
+            self.add_error("vivier", "Le vivier nécessite une note ≥ 12.")
+        return cleaned

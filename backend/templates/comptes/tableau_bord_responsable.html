@@ -148,6 +148,13 @@
                 <a href="{% url 'stages:stage_list' %}?statut=A_VENIR" class="btn btn-outline-secondary w-100 text-start d-flex align-items-center gap-2">
                     <i class="bi bi-clock"></i><span class="small fw-semibold">Stages à venir</span>
                 </a>
+                <a href="{% url 'stages:stages_a_evaluer' %}" class="btn btn-outline-warning w-100 text-start d-flex align-items-center justify-content-between gap-2">
+                    <span class="d-flex align-items-center gap-2"><i class="bi bi-clipboard-check"></i><span class="small fw-semibold">Stages à évaluer</span></span>
+                    {% if nb_a_evaluer %}<span class="badge bg-warning text-dark">{{ nb_a_evaluer }}</span>{% endif %}
+                </a>
+                <a href="{% url 'stages:vivier' %}" class="btn btn-outline-success w-100 text-start d-flex align-items-center gap-2">
+                    <i class="bi bi-people-fill"></i><span class="small fw-semibold">Vivier de talents</span>
+                </a>
             </div>
         </div>
     </div>

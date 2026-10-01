@@ -6,6 +6,15 @@ from stages.models import Stage, StatutStage
 from stages.services import demarrer_stage_auto, cloturer_stage_auto
 
 
+def _responsable_dept(departement):
+    from comptes.models import Utilisateur
+    return Utilisateur.objects.filter(
+        membre__departement=departement,
+        is_active=True,
+        groups__name="Responsable",
+    ).first()
+
+
 class Command(BaseCommand):
     help = "Démarre les stages à venir et clôture les stages en cours dont la date est dépassée."
 
@@ -54,8 +63,35 @@ class Command(BaseCommand):
                     self.style.SUCCESS(f"  [TERMINÉ]  {stage} (fin prévue : {stage.date_fin_prevue})")
                 )
 
+        # 3) Rappels évaluation : TERMINÉ + sans note + fin ≤ today-7j + rappel pas encore envoyé
+        from suivi.services import notifier
+        seuil_rappel = aujourd_hui - datetime.timedelta(days=7)
+        a_rappeler = Stage.objects.filter(
+            statut=StatutStage.TERMINE,
+            note__isnull=True,
+            date_fin_reelle__lte=seuil_rappel,
+            rappel_evaluation_envoye=False,
+        )
+        rappels = 0
+        for stage in a_rappeler:
+            resp = _responsable_dept(stage.candidature.departement)
+            if resp:
+                lien = f"/stages/{stage.pk}/evaluer/"
+                notifier(
+                    [resp],
+                    f"Rappel : le stage de {stage.candidature.candidat} est terminé et n'a pas encore été évalué.",
+                    lien,
+                )
+            stage.rappel_evaluation_envoye = True
+            stage.save(update_fields=["rappel_evaluation_envoye"])
+            rappels += 1
+            self.stdout.write(
+                self.style.WARNING(f"  [RAPPEL]   {stage} — responsable notifié.")
+            )
+
         self.stdout.write(
             self.style.SUCCESS(
-                f"\nTerminé : {demarres} stage(s) démarré(s), {clotures} stage(s) terminé(s)."
+                f"\nTerminé : {demarres} stage(s) démarré(s), {clotures} stage(s) terminé(s), "
+                f"{rappels} rappel(s) envoyé(s)."
             )
         )

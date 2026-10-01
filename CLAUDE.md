@@ -277,6 +277,31 @@ Supprime espaces/points/tirets, retire préfixe `+226`/`00226` → résultat 8 c
 ### Mise à jour `candidature_list.html`
 - Onglet Accordées : badge mortarboard bleu si stage constitué, badge ! orange si à compléter.
 
+## Étape 9 — Évaluation des stagiaires et Vivier de talents (F13)
+
+### Modèle (`stages/models.py`)
+- Champ `rapport` migré vers stockage privé (`_get_stockage_rapport` → `FICHIERS_PRIVES_ROOT`).
+- Champ `rappel_evaluation_envoye = BooleanField(default=False)` : passe à True après envoi du rappel.
+
+### Services (`stages/services.py`)
+- `peut_evaluer(stage, aujourd_hui=None)` → `(bool, date_verrou|None)`.
+- `evaluer_stage(...)` : note [1-20], vivier requiert note ≥ 12, verrouillage 30j après 1ère évaluation.
+
+### Vues (`stages/views.py`)
+- `EvaluerStageView` : Responsable même département uniquement.
+- `StagesAEvaluerListView` : TERMINÉ + sans note + fin ≤ today-7j.
+- `VivierListView` + `VivierExportCsvView` (CSV UTF-8-BOM).
+- `RapportTelechargerView` : Responsable même dept → OK ; autre dept → seulement si `vivier=True` ; Secrétaire → 403.
+
+### URLs ajoutées
+`stages/a-evaluer/`, `stages/vivier/`, `stages/vivier/export/`, `stages/<pk>/evaluer/`, `stages/<pk>/rapport/`
+
+### Commande `mettre_a_jour_stages`
+3e passe : rappel évaluation 7j, idempotent (`rappel_evaluation_envoye`).
+
+### Badge vivier
+Affiché sur la fiche candidat (tous rôles, sans la note). Secrétaire → 403 sur vivier et rapport.
+
 ## Variables d'environnement
 Copier `.env.example` → `.env` et remplir les valeurs. Ne jamais commiter `.env`.
 Le `.env` est à la racine du projet (`app-serein/`), lu par `python-decouple` depuis `backend/`.

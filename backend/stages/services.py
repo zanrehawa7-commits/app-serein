@@ -1,3 +1,4 @@
+import datetime
 from django.db import transaction
 from django.utils import timezone
 
@@ -169,6 +170,67 @@ def interrompre_stage(stage, date_fin_reelle, motif, utilisateur):
     secs = _secretaires_actives()
     if secs:
         notifier(secs, f"Stage de {s.candidature.candidat} interrompu.", lien)
+
+    return s
+
+
+# ─── Évaluation ───────────────────────────────────────────────────────────────
+
+
+def peut_evaluer(stage, aujourd_hui=None):
+    """Retourne (bool: peut_évaluer, date|None: date_verrouillage)."""
+    from .models import StatutStage
+    if aujourd_hui is None:
+        aujourd_hui = timezone.localdate()
+    if stage.statut != StatutStage.TERMINE:
+        return False, None
+    if stage.date_evaluation:
+        date_verrou = stage.date_evaluation + datetime.timedelta(days=30)
+        if aujourd_hui > date_verrou:
+            return False, date_verrou
+        return True, date_verrou
+    return True, None
+
+
+@transaction.atomic
+def evaluer_stage(stage, note, vivier, utilisateur, rapport_file=None, aujourd_hui=None):
+    from suivi.services import enregistrer_historique
+    from .models import Stage as S, StatutStage
+
+    if aujourd_hui is None:
+        aujourd_hui = timezone.localdate()
+
+    s = S.objects.select_for_update().get(pk=stage.pk)
+    if s.statut != StatutStage.TERMINE:
+        raise TransitionInterdite("Seul un stage terminé peut être évalué.")
+
+    if s.date_evaluation:
+        date_verrou = s.date_evaluation + datetime.timedelta(days=30)
+        if aujourd_hui > date_verrou:
+            raise TransitionInterdite(
+                f"L'évaluation est verrouillée depuis le {date_verrou.strftime('%d/%m/%Y')}."
+            )
+
+    if not (1 <= note <= 20):
+        raise TransitionInterdite("La note doit être comprise entre 1 et 20.")
+    if vivier and note < 12:
+        raise TransitionInterdite("Le vivier ne peut être activé que si la note est ≥ 12.")
+
+    s.note = note
+    s.vivier = vivier
+
+    if rapport_file:
+        s.rapport = rapport_file
+
+    if not s.date_evaluation:
+        s.date_evaluation = aujourd_hui
+
+    s.save()
+
+    enregistrer_historique(
+        s, utilisateur, StatutStage.TERMINE, StatutStage.TERMINE,
+        f"Évaluation : note {note}/20, vivier {'oui' if vivier else 'non'}.",
+    )
 
     return s
 

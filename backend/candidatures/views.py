@@ -98,11 +98,17 @@ class CandidatDetailView(RoleRequisMixin, View):
     template_name = "candidatures/candidat_detail.html"
 
     def get(self, request, pk):
+        from stages.models import Stage
         candidat = get_object_or_404(Candidat, pk=pk)
         candidatures = candidat.candidatures.select_related("departement", "type_stage").order_by("-date_depot")
+        dans_vivier = Stage.objects.filter(
+            candidature__candidat=candidat,
+            vivier=True,
+        ).exists()
         return render(request, self.template_name, {
             "candidat": candidat,
             "candidatures": candidatures,
+            "candidat_dans_vivier": dans_vivier,
         })
 
 
