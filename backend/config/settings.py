@@ -121,6 +121,9 @@ MEDIA_ROOT = BASE_DIR / "media"
 # Ne jamais servir ce dossier via Nginx directement ; utiliser X-Accel-Redirect.
 FICHIERS_PRIVES_ROOT = BASE_DIR / "fichiers_prives"
 
+# Nom de l'application affiché dans l'interface
+APP_NAME = "Stage Track"
+
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 # Django REST Framework & JWT

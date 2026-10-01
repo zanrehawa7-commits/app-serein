@@ -1,3 +1,4 @@
+from django.conf import settings
 from comptes.permissions import _role_utilisateur
 
 
@@ -40,4 +41,5 @@ def contexte_utilisateur(request):
         "nb_notifications": nb_notifications,
         "dernieres_notifications": dernieres_notifications,
         "nb_a_informer": nb_a_informer,
+        "APP_NAME": getattr(settings, "APP_NAME", "Stage Track"),
     }

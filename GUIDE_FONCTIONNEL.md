@@ -1,4 +1,4 @@
-# Guide fonctionnel — Serein-GE
+# Guide fonctionnel — Stage Track (Serein-GE)
 
 Ce document explique la logique de l'application, le rôle de chaque acteur, et comment vérifier que chaque fonctionnalité marche correctement.
 

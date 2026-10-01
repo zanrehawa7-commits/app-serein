@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}Stage_App{% endblock %} — Serein-GE</title>
+    <title>{% block title %}Accueil{% endblock %} — {{ APP_NAME }}</title>
     {% load static %}
     <link rel="stylesheet" href="{% static 'vendor/bootstrap/bootstrap.min.css' %}">
     <link rel="stylesheet" href="{% static 'vendor/bootstrap-icons/bootstrap-icons.css' %}">
@@ -14,7 +14,7 @@
 <nav class="navbar navbar-expand-lg navbar-dark sticky-top" style="background-color:#1B4F72;">
     <div class="container-fluid px-3">
         <a class="navbar-brand fw-bold" href="{% url 'comptes:tableau_de_bord' %}">
-            <i class="bi bi-briefcase-fill me-1"></i>Gestion de Stage
+            <i class="bi bi-briefcase-fill me-1"></i>{{ APP_NAME }}
         </a>
         <div class="ms-auto d-flex align-items-center gap-3">
 
