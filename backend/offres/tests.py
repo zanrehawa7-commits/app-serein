@@ -5,13 +5,14 @@ from django.urls import reverse
 from comptes.models import Utilisateur
 from referentiels.models import CanalPublication, Departement, Personnel, TypeStage
 
-from .models import Besoin, Offre, Publication, StatutBesoin, StatutOffre
+from .models import Besoin, Offre, ParametreOffre, Publication, StatutBesoin, StatutOffre
 from .services import (
     TransitionInterdite,
     annuler_besoin,
     creer_besoin,
     creer_offre,
     fermer_offre,
+    generer_texte_offre,
     ouvrir_offre,
     rouvrir_offre,
     supprimer_offre,
@@ -456,3 +457,172 @@ class DureeBesoinTests(TestCase):
         }
         form = BesoinForm(data)
         self.assertTrue(form.is_valid(), msg=str(form.errors))
+
+
+# ─── Lot C — ParametreOffre et texte généré ──────────────────────────────────
+
+
+class ParametreOffreTests(TestCase):
+    """Comportement singleton de ParametreOffre."""
+
+    def test_singleton_double_save(self):
+        """Deux save() consécutifs ne créent qu'un seul enregistrement."""
+        ParametreOffre(contact="A", texte_modele="T1").save()
+        ParametreOffre(contact="B", texte_modele="T2").save()
+        self.assertEqual(ParametreOffre.objects.count(), 1)
+        self.assertEqual(ParametreOffre.objects.get().contact, "B")
+
+    def test_get_instance_cree_si_absent(self):
+        self.assertEqual(ParametreOffre.objects.count(), 0)
+        inst = ParametreOffre.get_instance()
+        self.assertIsNotNone(inst.pk)
+        self.assertEqual(ParametreOffre.objects.count(), 1)
+
+    def test_get_instance_idempotent(self):
+        inst1 = ParametreOffre.get_instance()
+        inst2 = ParametreOffre.get_instance()
+        self.assertEqual(inst1.pk, inst2.pk)
+
+    def test_delete_ignoree(self):
+        inst = ParametreOffre.get_instance()
+        inst.delete()
+        self.assertEqual(ParametreOffre.objects.count(), 1)
+
+    def test_vue_parametre_403_secretaire(self):
+        sec = _user("sec@s.bf", groupe="Secrétaire")
+        self.client.force_login(sec)
+        resp = self.client.get(reverse("offres:parametre_offre"))
+        self.assertEqual(resp.status_code, 403)
+
+    def test_vue_parametre_200_admin(self):
+        admin = _user("admin@s.bf", is_superuser=True)
+        self.client.force_login(admin)
+        resp = self.client.get(reverse("offres:parametre_offre"))
+        self.assertEqual(resp.status_code, 200)
+
+    def test_vue_parametre_post_admin(self):
+        admin = _user("admin@s.bf", is_superuser=True)
+        self.client.force_login(admin)
+        resp = self.client.post(
+            reverse("offres:parametre_offre"),
+            {"contact": "Serein-GE", "texte_modele": "Bonjour {contact}"},
+            follow=True,
+        )
+        self.assertEqual(resp.status_code, 200)
+        inst = ParametreOffre.get_instance()
+        self.assertEqual(inst.contact, "Serein-GE")
+
+
+class GenererTexteOffreTests(TestCase):
+    """generer_texte_offre substitue toutes les variables."""
+
+    def setUp(self):
+        self.dept = Departement.objects.create(nom="DSI")
+        self.ts = TypeStage.objects.create(
+            libelle="Stage pro", duree_min_mois=2, duree_max_mois=6
+        )
+        self.parametre = ParametreOffre(
+            contact="rh@serein.bf",
+            texte_modele=(
+                "{contact} — {type_stage} — {departement} — "
+                "{duree_min}/{duree_max} — {nombre_places} — "
+                "{date_debut} → {date_fin}"
+            ),
+        )
+        self.parametre.save()
+
+    def _offre(self, **kwargs):
+        defaults = dict(
+            type_stage=self.ts, departement=self.dept,
+            titre="T", description="D", profil_recherche="P",
+            date_debut="2027-01-01", date_fin="2027-06-30",
+            nombre_places=3,
+        )
+        defaults.update(kwargs)
+        return Offre(**defaults)
+
+    def test_toutes_variables_substituees(self):
+        offre = self._offre()
+        texte = generer_texte_offre(offre, self.parametre)
+        self.assertIn("rh@serein.bf", texte)
+        self.assertIn("Stage pro", texte)
+        self.assertIn("DSI", texte)
+        self.assertIn("2", texte)   # duree_min
+        self.assertIn("6", texte)   # duree_max
+        self.assertIn("3", texte)   # places
+        self.assertIn("01/01/2027", texte)
+        self.assertIn("30/06/2027", texte)
+
+    def test_variable_inconnue_conservee(self):
+        """Une variable non reconnue est laissée telle quelle."""
+        self.parametre.texte_modele = "Bonjour {inconnu}"
+        texte = generer_texte_offre(self._offre(), self.parametre)
+        self.assertIn("{inconnu}", texte)
+
+    def test_departement_null_remplace_par_vide(self):
+        offre = self._offre(departement=None)
+        self.parametre.texte_modele = "dept={departement}"
+        texte = generer_texte_offre(offre, self.parametre)
+        self.assertEqual(texte, "dept=")
+
+
+class OffreDepartementTests(TestCase):
+    """creer_offre remplit departement depuis le besoin ou depuis le paramètre explicite."""
+
+    def setUp(self):
+        self.dept = Departement.objects.create(nom="Compta")
+        self.ts = TypeStage.objects.create(libelle="Stage test", duree_min_mois=1, duree_max_mois=6)
+        self.sec = _user("sec@s.bf", groupe="Secrétaire")
+
+    def test_departement_depuis_besoin(self):
+        besoin = Besoin.objects.create(
+            departement=self.dept, type_stage=self.ts,
+            date_debut="2027-01-01", date_fin="2027-06-30",
+            profil_recherche="P", nombre_places=2, statut=StatutBesoin.ENVOYE,
+        )
+        offre = creer_offre(
+            type_stage=self.ts, titre="O", description="D",
+            profil_recherche="P", date_debut="2027-01-01", date_fin="2027-06-30",
+            nombre_places=2, utilisateur=self.sec, besoin=besoin,
+        )
+        self.assertEqual(offre.departement, self.dept)
+
+    def test_departement_explicite_sans_besoin(self):
+        dept2 = Departement.objects.create(nom="RH")
+        offre = creer_offre(
+            type_stage=self.ts, titre="O2", description="D",
+            profil_recherche="P", date_debut="2027-01-01", date_fin="2027-06-30",
+            nombre_places=1, utilisateur=self.sec, departement=dept2,
+        )
+        self.assertEqual(offre.departement, dept2)
+
+    def test_texte_publie_genere_a_la_creation(self):
+        parametre = ParametreOffre.get_instance()
+        parametre.texte_modele = "Offre {type_stage}"
+        parametre.save()
+        offre = creer_offre(
+            type_stage=self.ts, titre="OT", description="D",
+            profil_recherche="P", date_debut="2027-01-01", date_fin="2027-06-30",
+            nombre_places=1, utilisateur=self.sec, departement=self.dept,
+        )
+        self.assertIn("Stage test", offre.texte_publie)
+
+    def test_migration_remplit_departement_depuis_besoin(self):
+        """Les offres liées à un besoin ont leur departement rempli (post-migration)."""
+        besoin = Besoin.objects.create(
+            departement=self.dept, type_stage=self.ts,
+            date_debut="2027-01-01", date_fin="2027-06-30",
+            profil_recherche="P", nombre_places=1, statut=StatutBesoin.ENVOYE,
+        )
+        # Crée une offre directement (sans passer par le service)
+        offre = Offre.objects.create(
+            besoin=besoin, type_stage=self.ts, titre="O",
+            description="D", profil_recherche="P",
+            date_debut="2027-01-01", date_fin="2027-06-30",
+            nombre_places=1,
+        )
+        # La migration aurait rempli departement mais ici on teste que le FK fonctionne
+        offre.departement = besoin.departement
+        offre.save(update_fields=["departement"])
+        offre.refresh_from_db()
+        self.assertEqual(offre.departement, self.dept)

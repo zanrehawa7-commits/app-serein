@@ -120,8 +120,10 @@
             <li class="mt-2"><small class="text-white-50 ps-2 text-uppercase fw-bold" style="font-size:.65rem;letter-spacing:.05em;">Gestion</small></li>
             <li><a href="{% url 'offres:besoin_list' %}" class="nav-link text-white {% if request.resolver_match.namespace == 'offres' and 'besoin' in request.resolver_match.url_name %}active{% endif %}">
                 <i class="bi bi-inbox me-2"></i>Besoins</a></li>
-            <li><a href="{% url 'offres:offre_list' %}" class="nav-link text-white {% if request.resolver_match.namespace == 'offres' and 'offre' in request.resolver_match.url_name %}active{% endif %}">
+            <li><a href="{% url 'offres:offre_list' %}" class="nav-link text-white {% if request.resolver_match.namespace == 'offres' and 'offre' in request.resolver_match.url_name and request.resolver_match.url_name != 'parametre_offre' %}active{% endif %}">
                 <i class="bi bi-file-earmark-text me-2"></i>Offres</a></li>
+            <li><a href="{% url 'offres:parametre_offre' %}" class="nav-link text-white {% if request.resolver_match.url_name == 'parametre_offre' %}active{% endif %}">
+                <i class="bi bi-file-text me-2"></i>Modèle d'offre</a></li>
             <li class="mt-2"><small class="text-white-50 ps-2 text-uppercase fw-bold" style="font-size:.65rem;letter-spacing:.05em;">Stages</small></li>
             <li><a href="{% url 'stages:stage_list' %}" class="nav-link text-white {% if request.resolver_match.namespace == 'stages' and request.resolver_match.url_name == 'stage_list' %}active{% endif %}">
                 <i class="bi bi-mortarboard me-2"></i>Stages</a></li>

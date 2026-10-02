@@ -26,4 +26,6 @@ urlpatterns = [
     path("offres/<int:offre_pk>/publications/ajouter/", views.PublicationCreateView.as_view(), name="publication_creer"),
     path("publications/<int:pk>/modifier/", views.PublicationModifierView.as_view(), name="publication_modifier"),
     path("publications/<int:pk>/supprimer/", views.PublicationSupprimerView.as_view(), name="publication_supprimer"),
+    # Paramètre du modèle de texte d'offre
+    path("offres/parametres/", views.ParametreOffreView.as_view(), name="parametre_offre"),
 ]

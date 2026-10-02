@@ -75,12 +75,19 @@
                     <dd class="col-7">{{ offre.nombre_places }}</dd>
                     <dt class="col-5 text-muted">Places restantes</dt>
                     <dd class="col-7">{{ places_restantes }}</dd>
-                    {% if offre.besoin %}
+                    {% if offre.departement %}
                     <dt class="col-5 text-muted">Département</dt>
                     <dd class="col-7">
-                        <a href="{% url 'offres:besoin_detail' offre.besoin.pk %}" class="text-decoration-none">
-                            {{ offre.besoin.departement }}
-                        </a>
+                        {% if offre.besoin %}
+                        <a href="{% url 'offres:besoin_detail' offre.besoin.pk %}" class="text-decoration-none">{{ offre.departement }}</a>
+                        {% else %}
+                        {{ offre.departement }}
+                        {% endif %}
+                    </dd>
+                    {% elif offre.besoin %}
+                    <dt class="col-5 text-muted">Département</dt>
+                    <dd class="col-7">
+                        <a href="{% url 'offres:besoin_detail' offre.besoin.pk %}" class="text-decoration-none">{{ offre.besoin.departement }}</a>
                     </dd>
                     {% endif %}
                     <dt class="col-5 text-muted">Créée le</dt>
@@ -103,13 +110,17 @@
     </div>
 </div>
 
-<!-- Bouton copier le texte -->
-{% if role == "Secrétaire" %}
+<!-- Texte de l'offre -->
+{% if role == "Secrétaire" or role == "Administrateur" %}
 <div class="mt-3">
-    <pre id="texte-offre-cache" class="d-none">{{ texte_publication }}</pre>
+    {% if offre.texte_publie %}
+    <pre id="texte-offre-cache" class="d-none">{{ offre.texte_publie }}</pre>
     <button id="btn-copier" type="button" class="btn btn-outline-secondary btn-sm" onclick="copierTexteOffre()">
         <i class="bi bi-clipboard me-1"></i>Copier le texte de l'offre
     </button>
+    {% else %}
+    <span class="text-muted small"><i class="bi bi-info-circle me-1"></i>Aucun texte généré pour cette offre.</span>
+    {% endif %}
 </div>
 {% endif %}
 

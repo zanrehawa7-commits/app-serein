@@ -5,11 +5,41 @@ from django.urls import reverse
 from commun.utils import ajouter_mois
 from suivi.services import enregistrer_historique, notifier
 
-from .models import Besoin, Offre, StatutBesoin, StatutOffre
+from .models import Besoin, Offre, ParametreOffre, StatutBesoin, StatutOffre
 
 
 class TransitionInterdite(Exception):
     pass
+
+
+def generer_texte_offre(offre, parametre):
+    """Remplace les variables du modèle de texte par les valeurs de l'offre."""
+    from datetime import date as date_type
+    from django.utils.dateparse import parse_date
+
+    def _to_date(val):
+        if isinstance(val, str):
+            return parse_date(val)
+        return val
+
+    ts = offre.type_stage
+    dept = offre.departement
+    date_debut = _to_date(offre.date_debut)
+    date_fin = _to_date(offre.date_fin)
+    variables = {
+        "{contact}": parametre.contact or "",
+        "{type_stage}": str(ts) if ts else "",
+        "{departement}": str(dept) if dept else "",
+        "{duree_min}": str(ts.duree_min_mois) if ts else "",
+        "{duree_max}": str(ts.duree_max_mois) if ts else "",
+        "{nombre_places}": str(offre.nombre_places) if offre.nombre_places is not None else "",
+        "{date_debut}": date_debut.strftime("%d/%m/%Y") if date_debut else "",
+        "{date_fin}": date_fin.strftime("%d/%m/%Y") if date_fin else "",
+    }
+    texte = parametre.texte_modele
+    for var, val in variables.items():
+        texte = texte.replace(var, val)
+    return texte
 
 
 def _valider_duree(type_stage, date_debut, date_fin):
@@ -85,7 +115,7 @@ def annuler_besoin(besoin, utilisateur):
 
 
 @transaction.atomic
-def creer_offre(type_stage, titre, description, profil_recherche, date_debut, date_fin, nombre_places, utilisateur, besoin=None):
+def creer_offre(type_stage, titre, description, profil_recherche, date_debut, date_fin, nombre_places, utilisateur, besoin=None, departement=None):
     if besoin is not None:
         # Verrou contre les créations concurrentes sur le même besoin (RG atomique)
         besoin = Besoin.objects.select_for_update().get(pk=besoin.pk)
@@ -108,10 +138,13 @@ def creer_offre(type_stage, titre, description, profil_recherche, date_debut, da
             nouveau_statut=StatutBesoin.PRIS_EN_CHARGE,
             commentaire="Besoin pris en charge — offre créée.",
         )
+        if departement is None:
+            departement = besoin.departement
 
     _valider_duree(type_stage, date_debut, date_fin)
     offre = Offre.objects.create(
         besoin=besoin,
+        departement=departement,
         type_stage=type_stage,
         titre=titre,
         description=description,
@@ -121,6 +154,9 @@ def creer_offre(type_stage, titre, description, profil_recherche, date_debut, da
         nombre_places=nombre_places,
         statut=StatutOffre.BROUILLON,
     )
+    parametre = ParametreOffre.get_instance()
+    offre.texte_publie = generer_texte_offre(offre, parametre)
+    offre.save(update_fields=["texte_publie"])
     enregistrer_historique(offre, utilisateur, nouveau_statut=StatutOffre.BROUILLON, commentaire="Offre créée.")
     return offre
 
