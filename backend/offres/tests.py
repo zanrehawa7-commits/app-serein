@@ -46,7 +46,7 @@ def _besoin(departement, type_stage):
 class TransitionsBesoinTests(TestCase):
     def setUp(self):
         self.dept = Departement.objects.create(nom="Dept Test")
-        self.ts = TypeStage.objects.create(libelle="Stage test")
+        self.ts = TypeStage.objects.create(libelle="Stage test", duree_min_mois=1, duree_max_mois=6)
         self.secretaire = _user("sec@serein.bf", groupe="Secrétaire")
         self.responsable = _user("resp@serein.bf", groupe="Responsable")
         membre = Personnel.objects.create(nom="Doe", prenom="Jane", departement=self.dept)
@@ -118,7 +118,7 @@ class TransitionsBesoinTests(TestCase):
 class TransitionsOffreTests(TestCase):
     def setUp(self):
         self.dept = Departement.objects.create(nom="Dept Test")
-        self.ts = TypeStage.objects.create(libelle="Stage test")
+        self.ts = TypeStage.objects.create(libelle="Stage test", duree_min_mois=1, duree_max_mois=6)
         self.secretaire = _user("sec@serein.bf", groupe="Secrétaire")
         self.offre = Offre.objects.create(
             type_stage=self.ts,
@@ -203,7 +203,7 @@ class CreerOffreDepuisBesoinTests(TestCase):
 
     def setUp(self):
         self.dept = Departement.objects.create(nom="Dept Test")
-        self.ts = TypeStage.objects.create(libelle="Stage test")
+        self.ts = TypeStage.objects.create(libelle="Stage test", duree_min_mois=1, duree_max_mois=6)
         self.secretaire = _user("sec@serein.bf", groupe="Secrétaire")
 
     def test_creer_offre_depuis_besoin_pris_en_charge(self):
@@ -253,7 +253,7 @@ class AccesVuesBesoinTests(TestCase):
     def setUp(self):
         self.dept = Departement.objects.create(nom="Dept A")
         self.dept_b = Departement.objects.create(nom="Dept B")
-        self.ts = TypeStage.objects.create(libelle="Stage test")
+        self.ts = TypeStage.objects.create(libelle="Stage test", duree_min_mois=1, duree_max_mois=6)
         self.admin = _user("admin@serein.bf", is_superuser=True)
         self.secretaire = _user("sec@serein.bf", groupe="Secrétaire")
         membre = Personnel.objects.create(nom="Doe", prenom="Jane", departement=self.dept)
@@ -305,7 +305,7 @@ class AccesVuesOffreTests(TestCase):
 
     def setUp(self):
         self.dept = Departement.objects.create(nom="Dept A")
-        self.ts = TypeStage.objects.create(libelle="Stage test")
+        self.ts = TypeStage.objects.create(libelle="Stage test", duree_min_mois=1, duree_max_mois=6)
         self.admin = _user("admin@serein.bf", is_superuser=True)
         self.secretaire = _user("sec@serein.bf", groupe="Secrétaire")
         self.responsable = _user("resp@serein.bf", groupe="Responsable")
@@ -369,3 +369,90 @@ class AccesVuesOffreTests(TestCase):
         self.assertTrue(Offre.objects.filter(pk=self.offre.pk).exists())
         msgs = [str(m) for m in resp.context["messages"]]
         self.assertTrue(any("brouillon" in m.lower() for m in msgs))
+
+
+# ─── Lot B — Validation durée Besoin/Offre ────────────────────────────────────
+
+
+class DureeBesoinTests(TestCase):
+    """creer_besoin et BesoinForm valident la durée selon duree_min/max du TypeStage."""
+
+    def setUp(self):
+        self.dept = Departement.objects.create(nom="Dept Test")
+        self.ts = TypeStage.objects.create(
+            libelle="Stage pro", duree_min_mois=2, duree_max_mois=5
+        )
+        self.secretaire = _user("sec@serein.bf", groupe="Secrétaire")
+        self.responsable = _user("resp@serein.bf", groupe="Responsable")
+        membre = Personnel.objects.create(nom="Doe", prenom="J", departement=self.dept)
+        self.responsable.personnel = membre
+        self.responsable.save()
+
+    def test_duree_valide_service(self):
+        """3 mois avec min=2, max=5 → OK."""
+        from commun.utils import ajouter_mois
+        from datetime import date
+        debut = date(2027, 1, 1)
+        fin = ajouter_mois(debut, 3)
+        besoin = creer_besoin(
+            departement=self.dept, type_stage=self.ts,
+            date_debut=debut, date_fin=fin,
+            profil_recherche="Profil", nombre_places=1,
+            utilisateur=self.responsable,
+        )
+        self.assertIsNotNone(besoin.pk)
+
+    def test_duree_trop_courte_service(self):
+        """1 mois avec min=2 → TransitionInterdite."""
+        from commun.utils import ajouter_mois
+        from datetime import date
+        debut = date(2027, 1, 1)
+        fin = ajouter_mois(debut, 1)
+        with self.assertRaises(TransitionInterdite):
+            creer_besoin(
+                departement=self.dept, type_stage=self.ts,
+                date_debut=debut, date_fin=fin,
+                profil_recherche="Profil", nombre_places=1,
+                utilisateur=self.responsable,
+            )
+
+    def test_duree_trop_longue_service(self):
+        """6 mois avec max=5 → TransitionInterdite."""
+        from commun.utils import ajouter_mois
+        from datetime import date
+        debut = date(2027, 1, 1)
+        fin = ajouter_mois(debut, 6)
+        with self.assertRaises(TransitionInterdite):
+            creer_besoin(
+                departement=self.dept, type_stage=self.ts,
+                date_debut=debut, date_fin=fin,
+                profil_recherche="Profil", nombre_places=1,
+                utilisateur=self.responsable,
+            )
+
+    def test_duree_trop_courte_formulaire(self):
+        from offres.forms import BesoinForm
+        data = {
+            "departement": self.dept.pk,
+            "type_stage": self.ts.pk,
+            "date_debut": "2027-01-01",
+            "date_fin": "2027-01-31",  # < 2 mois
+            "profil_recherche": "Profil",
+            "nombre_places": 1,
+        }
+        form = BesoinForm(data)
+        self.assertFalse(form.is_valid())
+        self.assertTrue(form.non_field_errors())
+
+    def test_duree_valide_formulaire(self):
+        from offres.forms import BesoinForm
+        data = {
+            "departement": self.dept.pk,
+            "type_stage": self.ts.pk,
+            "date_debut": "2027-01-01",
+            "date_fin": "2027-04-01",  # 3 mois ✓
+            "profil_recherche": "Profil",
+            "nombre_places": 1,
+        }
+        form = BesoinForm(data)
+        self.assertTrue(form.is_valid(), msg=str(form.errors))

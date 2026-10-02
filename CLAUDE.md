@@ -305,3 +305,40 @@ Affiché sur la fiche candidat (tous rôles, sans la note). Secrétaire → 403 
 ## Variables d'environnement
 Copier `.env.example` → `.env` et remplir les valeurs. Ne jamais commiter `.env`.
 Le `.env` est à la racine du projet (`app-serein/`), lu par `python-decouple` depuis `backend/`.
+
+
+## Règles de revue (à vérifier AVANT chaque commit)
+
+### Données et migrations
+- Ne jamais réécrire un modèle existant : uniquement des ajouts/modifications par migration.
+- Ne jamais modifier une migration déjà appliquée : créer une nouvelle migration.
+- Renommages : RenameModel / RenameField (jamais suppression + recréation). Après un RenameModel,
+  mettre à jour GROUPES_PERMISSIONS, supprimer les permissions orphelines, relancer init_donnees.
+- Avant une contrainte d'unicité ou un CHECK : vérifier que les données existantes la respectent.
+- Après chaque lot : `makemigrations --check --dry-run` doit répondre "No changes detected".
+- Ne jamais inventer de données métier (durées, motifs, listes de choix, textes officiels) :
+  reprendre le cahier des charges ; sinon proposer une valeur marquée "À VALIDER PAR SEREIN-GE".
+- Une seule source de vérité : ne pas créer de champ qui duplique une information existante
+  (ex. pas de booléen est_responsable : Departement.responsable fait foi).
+
+### Logique métier
+- Toute règle métier vit dans services.py ET est contrôlée dans le formulaire (les deux).
+- Services : transaction.atomic + select_for_update sur l'objet modifié.
+- Vérifier TOUTES les préconditions AVANT la moindre écriture en base (pas d'exception levée
+  après un changement partiel).
+- Chaque transition de statut : contrôle de la transition, historique, notifications prévues.
+- Dates : utiliser commun.utils.ajouter_mois() ; jamais de calcul de mois approximatif.
+- Penser aux cas limites : désactivation d'un élément encore utilisé (responsable, maître de
+  stage…), double clic / accès concurrent, données anciennes qui ne respectent pas une nouvelle règle.
+
+### Sécurité et accès
+- Administrateur : TOUTES permissions sur comptes et referentiels, LECTURE SEULE partout ailleurs.
+- Les contrôles d'accès se font côté serveur (rôle + permission + département dans get_queryset
+  et dans les vues d'action), jamais seulement en masquant un bouton.
+- Actions en POST uniquement, schéma Post/Redirect/Get, messages en français.
+- Fichiers : stockage privé, jamais de fichier.url dans un template, téléchargement via vue protégée.
+- Aucune valeur affichée codée en dur dans les tableaux de bord : vraies requêtes.
+
+### Tests
+- Un test par règle métier ajoutée + un test 403 pour chaque rôle non autorisé.
+- Lancer TOUTE la suite de tests avant chaque commit ; 0 échec.

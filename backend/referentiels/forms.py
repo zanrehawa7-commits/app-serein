@@ -108,12 +108,25 @@ class EtablissementForm(forms.ModelForm):
 class TypeStageForm(forms.ModelForm):
     class Meta:
         model = TypeStage
-        fields = ["libelle", "description", "remunere", "actif"]
+        fields = ["libelle", "description", "remunere", "actif", "duree_min_mois", "duree_max_mois"]
         widgets = {"description": forms.Textarea(attrs={"rows": 3})}
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.helper = _helper()
+        self.fields["duree_min_mois"].help_text = "Durée minimale en mois entiers (≥ 1)."
+        self.fields["duree_max_mois"].help_text = "Durée maximale en mois entiers (≥ durée minimale)."
+
+    def clean(self):
+        cleaned = super().clean()
+        min_m = cleaned.get("duree_min_mois")
+        max_m = cleaned.get("duree_max_mois")
+        if min_m is not None and max_m is not None and max_m < min_m:
+            self.add_error(
+                "duree_max_mois",
+                "La durée maximale doit être supérieure ou égale à la durée minimale.",
+            )
+        return cleaned
 
 
 class CanalPublicationForm(forms.ModelForm):

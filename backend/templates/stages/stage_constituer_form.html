@@ -58,8 +58,9 @@
 {% endblock %}
 
 {% block extra_js %}
+{{ membres_dispos|default:"{}"|json_script:"dispos-data" }}
 <script>
-const DISPOS = {{ membres_dispos|default:"{}" }};
+const DISPOS = JSON.parse(document.getElementById('dispos-data').textContent);
 
 // Afficher les disponibilités dans la liste
 Object.entries(DISPOS).forEach(([pk, d]) => {

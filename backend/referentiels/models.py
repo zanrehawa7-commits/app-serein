@@ -1,4 +1,5 @@
 from django.core.exceptions import ValidationError
+from django.core.validators import MinValueValidator
 from django.db import models
 
 
@@ -87,14 +88,40 @@ class TypeStage(models.Model):
     description = models.TextField(blank=True, verbose_name="description")
     remunere = models.BooleanField(default=False, verbose_name="rémunéré")
     actif = models.BooleanField(default=True, verbose_name="actif")
+    duree_min_mois = models.PositiveSmallIntegerField(
+        validators=[MinValueValidator(1)],
+        verbose_name="durée minimale (mois)",
+        help_text="Durée minimale du stage en mois entiers.",
+    )
+    duree_max_mois = models.PositiveSmallIntegerField(
+        validators=[MinValueValidator(1)],
+        verbose_name="durée maximale (mois)",
+        help_text="Durée maximale du stage en mois entiers.",
+    )
 
     class Meta:
         verbose_name = "Type de stage"
         verbose_name_plural = "Types de stage"
         ordering = ["libelle"]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(duree_max_mois__gte=models.F("duree_min_mois")),
+                name="typestage_max_gte_min",
+            ),
+        ]
 
     def __str__(self):
         return self.libelle
+
+    def clean(self):
+        if (
+            self.duree_min_mois is not None
+            and self.duree_max_mois is not None
+            and self.duree_max_mois < self.duree_min_mois
+        ):
+            raise ValidationError(
+                {"duree_max_mois": "La durée maximale doit être supérieure ou égale à la durée minimale."}
+            )
 
 
 class CanalPublication(models.Model):

@@ -2,6 +2,7 @@ from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.urls import reverse
 
+from commun.utils import ajouter_mois
 from suivi.services import enregistrer_historique, notifier
 
 from .models import Besoin, Offre, StatutBesoin, StatutOffre
@@ -11,6 +12,27 @@ class TransitionInterdite(Exception):
     pass
 
 
+def _valider_duree(type_stage, date_debut, date_fin):
+    """Lève TransitionInterdite si la durée sort des bornes du type de stage."""
+    from django.utils.dateparse import parse_date
+    if isinstance(date_debut, str):
+        date_debut = parse_date(date_debut)
+    if isinstance(date_fin, str):
+        date_fin = parse_date(date_fin)
+    date_min_fin = ajouter_mois(date_debut, type_stage.duree_min_mois)
+    date_max_fin = ajouter_mois(date_debut, type_stage.duree_max_mois)
+    if date_fin < date_min_fin:
+        raise TransitionInterdite(
+            f"Durée trop courte pour « {type_stage} » "
+            f"(min {type_stage.duree_min_mois} mois — fin au plus tôt le {date_min_fin.strftime('%d/%m/%Y')})."
+        )
+    if date_fin > date_max_fin:
+        raise TransitionInterdite(
+            f"Durée trop longue pour « {type_stage} » "
+            f"(max {type_stage.duree_max_mois} mois — fin au plus tard le {date_max_fin.strftime('%d/%m/%Y')})."
+        )
+
+
 def _secretaires_actives():
     Utilisateur = get_user_model()
     return list(Utilisateur.objects.filter(groups__name="Secrétaire", is_active=True))
@@ -18,6 +40,7 @@ def _secretaires_actives():
 
 @transaction.atomic
 def creer_besoin(departement, type_stage, date_debut, date_fin, profil_recherche, nombre_places, utilisateur):
+    _valider_duree(type_stage, date_debut, date_fin)
     besoin = Besoin.objects.create(
         departement=departement,
         type_stage=type_stage,
@@ -86,6 +109,7 @@ def creer_offre(type_stage, titre, description, profil_recherche, date_debut, da
             commentaire="Besoin pris en charge — offre créée.",
         )
 
+    _valider_duree(type_stage, date_debut, date_fin)
     offre = Offre.objects.create(
         besoin=besoin,
         type_stage=type_stage,

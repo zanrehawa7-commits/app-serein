@@ -49,7 +49,10 @@ def _membre(dept, nom="Traoré"):
 
 
 def _type_stage():
-    ts, _ = TypeStage.objects.get_or_create(libelle="Professionnel")
+    ts, _ = TypeStage.objects.get_or_create(
+        libelle="Professionnel",
+        defaults={"duree_min_mois": 1, "duree_max_mois": 6},
+    )
     return ts
 
 

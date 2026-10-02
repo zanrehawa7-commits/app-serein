@@ -40,7 +40,7 @@ class AccesRolesTests(TestCase):
         self.secretaire = _creer_utilisateur("sec@serein.bf", groupe="Secrétaire")
         self.responsable = _creer_utilisateur("resp@serein.bf", groupe="Responsable")
         self.dept = Departement.objects.create(nom="Dept Test")
-        self.ts = TypeStage.objects.create(libelle="Stage test")
+        self.ts = TypeStage.objects.create(libelle="Stage test", duree_min_mois=1, duree_max_mois=6)
         self.etab = Etablissement.objects.create(nom="Ecole A", ville="Ouaga")
         self.personnel = Personnel.objects.create(nom="Doe", prenom="John", departement=self.dept)
 
@@ -101,7 +101,7 @@ class TypeStageSuppressionTests(TestCase):
 
     def setUp(self):
         self.admin = _creer_utilisateur("admin@serein.bf", is_superuser=True)
-        self.ts = TypeStage.objects.create(libelle="Stage utilisé", actif=True)
+        self.ts = TypeStage.objects.create(libelle="Stage utilisé", actif=True, duree_min_mois=1, duree_max_mois=6)
 
     def test_suppression_non_utilise(self):
         self.client.force_login(self.admin)
@@ -405,3 +405,69 @@ class PermissionsTypestageTests(TestCase):
         resp = self.client.get(reverse("referentiels:typestage_list"))
         self.assertEqual(resp.status_code, 200)
         self.assertNotContains(resp, reverse("referentiels:typestage_creer"))
+
+
+# ─── Lot B — TypeStage duree_min/max ─────────────────────────────────────────
+
+
+class TypeStageDureeModelTests(TestCase):
+    """TypeStage.clean() et contrainte max >= min."""
+
+    def _admin(self):
+        return _creer_utilisateur("admin@serein.bf", is_superuser=True)
+
+    def test_duree_valide(self):
+        from django.core.exceptions import ValidationError
+        ts = TypeStage(libelle="X", duree_min_mois=2, duree_max_mois=4)
+        ts.clean()  # ne doit pas lever
+
+    def test_max_inferieur_min_leve_erreur(self):
+        from django.core.exceptions import ValidationError
+        ts = TypeStage(libelle="Y", duree_min_mois=4, duree_max_mois=2)
+        with self.assertRaises(ValidationError):
+            ts.clean()
+
+    def test_min_egal_max_valide(self):
+        from django.core.exceptions import ValidationError
+        ts = TypeStage(libelle="Z", duree_min_mois=3, duree_max_mois=3)
+        ts.clean()  # ne doit pas lever
+
+
+class TypeStageFormDureeTests(TestCase):
+    """TypeStageForm valide les bornes de durée."""
+
+    def setUp(self):
+        self.admin = _creer_utilisateur("admin@serein.bf", is_superuser=True)
+
+    def _data(self, **kwargs):
+        d = {"libelle": "Test Stage", "description": "", "remunere": False, "actif": True,
+             "duree_min_mois": 1, "duree_max_mois": 6}
+        d.update(kwargs)
+        return d
+
+    def test_formulaire_valide(self):
+        from referentiels.forms import TypeStageForm
+        form = TypeStageForm(self._data())
+        self.assertTrue(form.is_valid(), msg=form.errors)
+
+    def test_max_inferieur_min_invalide(self):
+        from referentiels.forms import TypeStageForm
+        form = TypeStageForm(self._data(duree_min_mois=5, duree_max_mois=2))
+        self.assertFalse(form.is_valid())
+        self.assertIn("duree_max_mois", form.errors)
+
+    def test_creation_typestage_via_vue(self):
+        self.client.force_login(self.admin)
+        url = reverse("referentiels:typestage_creer")
+        response = self.client.post(url, {
+            "libelle": "Nouveau Type",
+            "description": "",
+            "remunere": False,
+            "actif": True,
+            "duree_min_mois": 2,
+            "duree_max_mois": 4,
+        })
+        self.assertEqual(TypeStage.objects.filter(libelle="Nouveau Type").count(), 1)
+        ts = TypeStage.objects.get(libelle="Nouveau Type")
+        self.assertEqual(ts.duree_min_mois, 2)
+        self.assertEqual(ts.duree_max_mois, 4)

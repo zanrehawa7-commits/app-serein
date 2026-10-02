@@ -3,9 +3,14 @@
 {% block title %}Rechercher un candidat{% endblock %}
 
 {% block content %}
-<div class="mb-4">
-    <h4 class="mb-0 fw-semibold"><i class="bi bi-search me-2"></i>Rechercher un candidat</h4>
-    <p class="text-muted small mb-0">Cherchez d'abord avant de créer un nouveau candidat.</p>
+<div class="d-flex align-items-center justify-content-between mb-4">
+    <div>
+        <h4 class="mb-0 fw-semibold"><i class="bi bi-search me-2"></i>Rechercher un candidat</h4>
+        <p class="text-muted small mb-0">Cherchez si le candidat existe avant d'en créer un nouveau.</p>
+    </div>
+    <a href="{% url 'candidatures:candidat_creer' %}" class="btn btn-success">
+        <i class="bi bi-person-plus-fill me-1"></i>Nouveau candidat
+    </a>
 </div>
 
 <div class="card border-0 shadow-sm mb-4">

@@ -16,7 +16,8 @@ from .forms import (
     AccorderForm,
     CandidatForm,
     CandidatRechercheForm,
-    CandidatureForm,
+    CandidatureCreerForm,
+    CandidatureModifierForm,
     EntretienForm,
     PieceJointeFormSet,
     PreselectionnerForm,
@@ -29,6 +30,7 @@ from .services import (
     CandidatureActiveExistante,
     QuotaAtteint,
     TransitionInterdite,
+    ValidationCandidature,
     accorder,
     creer_candidature,
     marquer_informe,
@@ -164,16 +166,17 @@ class CandidatureCreateView(RoleRequisMixin, View):
 
     def get(self, request, candidat_pk):
         candidat = self._get_candidat(candidat_pk)
-        form = CandidatureForm()
+        form = CandidatureCreerForm()
         formset = PieceJointeFormSet(prefix="pieces")
         return render(request, self.template_name, {
             "form": form, "formset": formset, "candidat": candidat,
             "titre": "Nouvelle candidature",
+            "type_stage_bornes": form._type_stage_bornes,
         })
 
     def post(self, request, candidat_pk):
         candidat = self._get_candidat(candidat_pk)
-        form = CandidatureForm(request.POST)
+        form = CandidatureCreerForm(request.POST)
         formset = PieceJointeFormSet(request.POST, request.FILES, prefix="pieces")
 
         if form.is_valid() and formset.is_valid():
@@ -203,12 +206,13 @@ class CandidatureCreateView(RoleRequisMixin, View):
                 )
                 messages.success(request, f"Candidature {candidature.reference} enregistrée.")
                 return redirect("candidatures:candidature_detail", pk=candidature.pk)
-            except CandidatureActiveExistante as e:
+            except (CandidatureActiveExistante, ValidationCandidature) as e:
                 messages.error(request, str(e))
 
         return render(request, self.template_name, {
             "form": form, "formset": formset, "candidat": candidat,
             "titre": "Nouvelle candidature",
+            "type_stage_bornes": form._type_stage_bornes,
         })
 
 
@@ -306,7 +310,7 @@ class CandidatureModifierView(RoleRequisMixin, View):
         if candidature.statut != StatutCandidature.RECUE:
             messages.error(request, "Seules les candidatures au statut REÇUE peuvent être modifiées.")
             return redirect("candidatures:candidature_detail", pk=pk)
-        form = CandidatureForm(instance=candidature)
+        form = CandidatureModifierForm(instance=candidature)
         formset = PieceJointeFormSet(prefix="pieces")
         return render(request, self.template_name, {
             "form": form, "formset": formset,
@@ -314,6 +318,7 @@ class CandidatureModifierView(RoleRequisMixin, View):
             "candidature": candidature,
             "pieces_existantes": candidature.pieces.order_by("type_piece"),
             "titre": f"Modifier — {candidature.reference}",
+            "type_stage_bornes": form._type_stage_bornes,
         })
 
     def post(self, request, pk):
@@ -322,7 +327,7 @@ class CandidatureModifierView(RoleRequisMixin, View):
             messages.error(request, "Seules les candidatures au statut REÇUE peuvent être modifiées.")
             return redirect("candidatures:candidature_detail", pk=pk)
 
-        form = CandidatureForm(request.POST, instance=candidature)
+        form = CandidatureModifierForm(request.POST, instance=candidature)
         formset = PieceJointeFormSet(request.POST, request.FILES, prefix="pieces")
         pieces_existantes = candidature.pieces.order_by("type_piece")
 
@@ -358,22 +363,25 @@ class CandidatureModifierView(RoleRequisMixin, View):
                 })
 
             cd = form.cleaned_data
-            modifier_candidature(
-                candidature=candidature,
-                departement=cd["departement"],
-                type_stage=cd["type_stage"],
-                type_demande=cd["type_demande"],
-                debut_disponibilite=cd["debut_disponibilite"],
-                fin_disponibilite=cd["fin_disponibilite"],
-                duree_souhaitee=cd["duree_souhaitee"],
-                commentaire=cd.get("commentaire", ""),
-                offre=cd.get("offre"),
-                nouvelles_pieces=nouvelles_pieces,
-                pieces_a_supprimer=pieces_a_supprimer,
-                utilisateur=request.user,
-            )
-            messages.success(request, "Candidature mise à jour.")
-            return redirect("candidatures:candidature_detail", pk=pk)
+            try:
+                modifier_candidature(
+                    candidature=candidature,
+                    departement=cd["departement"],
+                    type_stage=cd["type_stage"],
+                    type_demande=cd["type_demande"],
+                    debut_disponibilite=cd["debut_disponibilite"],
+                    fin_disponibilite=cd["fin_disponibilite"],
+                    duree_souhaitee=cd["duree_souhaitee"],
+                    commentaire=cd.get("commentaire", ""),
+                    offre=cd.get("offre"),
+                    nouvelles_pieces=nouvelles_pieces,
+                    pieces_a_supprimer=pieces_a_supprimer,
+                    utilisateur=request.user,
+                )
+                messages.success(request, "Candidature mise à jour.")
+                return redirect("candidatures:candidature_detail", pk=pk)
+            except ValidationCandidature as e:
+                messages.error(request, str(e))
 
         return render(request, self.template_name, {
             "form": form, "formset": formset,
@@ -381,6 +389,7 @@ class CandidatureModifierView(RoleRequisMixin, View):
             "candidature": candidature,
             "pieces_existantes": pieces_existantes,
             "titre": f"Modifier — {candidature.reference}",
+            "type_stage_bornes": form._type_stage_bornes,
         })
 
 

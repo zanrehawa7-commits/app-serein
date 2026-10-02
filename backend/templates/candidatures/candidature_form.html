@@ -116,7 +116,7 @@
                     </div>
 
                     <p class="text-muted small mt-2 mb-0">
-                        <i class="bi bi-info-circle me-1"></i>Formats acceptés : PDF, JPG, PNG — 5 Mo max.
+                        <i class="bi bi-info-circle me-1"></i>Seul le format <strong>PDF</strong> est accepté — 3 Mo max.
                     </p>
                 </div>
             </div>
@@ -131,7 +131,35 @@
     </div>
 </form>
 
+{{ type_stage_bornes|json_script:"type-stage-bornes-data" }}
+
 <script>
+// ── Bornes durée selon type de stage ──
+document.addEventListener("DOMContentLoaded", function () {
+    var bornesData = JSON.parse(document.getElementById("type-stage-bornes-data").textContent);
+    var typeStageSelect = document.getElementById("id_type_stage");
+    var dureeSouhaiteeInput = document.getElementById("id_duree_souhaitee");
+    var dureeHelpEl = dureeSouhaiteeInput && dureeSouhaiteeInput.closest(".mb-3") && dureeSouhaiteeInput.closest(".mb-3").querySelector(".form-text");
+
+    function mettreAJourBornes() {
+        var pk = typeStageSelect ? typeStageSelect.value : null;
+        if (!pk || !bornesData[pk]) return;
+        var bornes = bornesData[pk];
+        if (dureeSouhaiteeInput) {
+            dureeSouhaiteeInput.min = bornes[0];
+            dureeSouhaiteeInput.max = bornes[1];
+        }
+        if (dureeHelpEl) {
+            dureeHelpEl.textContent = "Durée souhaitée en mois entiers (min " + bornes[0] + " — max " + bornes[1] + " mois).";
+        }
+    }
+
+    if (typeStageSelect) {
+        typeStageSelect.addEventListener("change", mettreAJourBornes);
+        mettreAJourBornes();
+    }
+});
+
 // ── Champ offre : visible uniquement si type_demande = SUITE_OFFRE ──
 document.addEventListener("DOMContentLoaded", function () {
     var typeDemande = document.querySelector("[name$='type_demande']");
@@ -221,6 +249,53 @@ document.addEventListener("DOMContentLoaded", function () {
     });
 
     btnAjouter.addEventListener("click", ajouterLigne);
+})();
+
+// ── Exclusion des types de pièces déjà utilisés (sauf AUTRE) ──
+(function () {
+    var AUTRE = "AUTRE";
+
+    function getTypesSelectionnes(excludeSelect) {
+        var types = [];
+        document.querySelectorAll(".piece-row select[name$='type_piece']").forEach(function (sel) {
+            if (sel !== excludeSelect && sel.value && sel.value !== AUTRE) {
+                types.push(sel.value);
+            }
+        });
+        return types;
+    }
+
+    function mettreAJourOptions(sel) {
+        var selectionnes = getTypesSelectionnes(sel);
+        Array.from(sel.options).forEach(function (opt) {
+            if (opt.value === AUTRE || opt.value === "") return;
+            opt.disabled = selectionnes.includes(opt.value);
+        });
+    }
+
+    function mettreAJourTous() {
+        document.querySelectorAll(".piece-row select[name$='type_piece']").forEach(function (sel) {
+            mettreAJourOptions(sel);
+        });
+    }
+
+    // Observer les changements futurs (MutationObserver sur la liste)
+    var liste2 = document.getElementById("pieces-liste");
+    if (liste2) {
+        liste2.addEventListener("change", function (e) {
+            if (e.target && e.target.name && e.target.name.endsWith("type_piece")) {
+                mettreAJourTous();
+            }
+        });
+        mettreAJourTous();
+        // Remettre à jour après ajout d'une ligne
+        var btnAjouterRef = document.getElementById("btn-ajouter-piece");
+        if (btnAjouterRef) {
+            btnAjouterRef.addEventListener("click", function () {
+                setTimeout(mettreAJourTous, 50);
+            });
+        }
+    }
 })();
 </script>
 {% endblock %}

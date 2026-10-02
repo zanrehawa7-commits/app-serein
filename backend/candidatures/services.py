@@ -2,12 +2,18 @@ import re
 from django.db import transaction
 from django.utils import timezone
 
+from commun.utils import ajouter_mois
+
 
 class CandidatExistant(Exception):
     pass
 
 
 class CandidatureActiveExistante(Exception):
+    pass
+
+
+class ValidationCandidature(Exception):
     pass
 
 
@@ -93,6 +99,64 @@ def _generer_reference():
     return f"CAND-{annee}-{numero:04d}"
 
 
+def _valider_candidature(
+    type_stage, debut_disponibilite, fin_disponibilite, duree_souhaitee,
+    type_demande, offre, pieces_data, creation=True, debut_original=None,
+):
+    from .models import TypeDemande
+    from django.utils.dateparse import parse_date
+
+    # Normaliser les dates (str → date) pour accepter les deux formes
+    if isinstance(debut_disponibilite, str):
+        debut_disponibilite = parse_date(debut_disponibilite)
+    if isinstance(fin_disponibilite, str):
+        fin_disponibilite = parse_date(fin_disponibilite)
+    if isinstance(debut_original, str):
+        debut_original = parse_date(debut_original)
+
+    # début >= aujourd'hui (création, ou modification si la date a changé)
+    if debut_disponibilite:
+        doit_valider_debut = creation or (debut_original and debut_disponibilite != debut_original)
+        if doit_valider_debut and debut_disponibilite < timezone.localdate():
+            raise ValidationCandidature(
+                "La date de début de disponibilité doit être aujourd'hui ou dans le futur."
+            )
+
+    # fin_disponibilite <= début + 12 mois
+    if debut_disponibilite and fin_disponibilite:
+        limite_12 = ajouter_mois(debut_disponibilite, 12)
+        if fin_disponibilite > limite_12:
+            raise ValidationCandidature(
+                f"La fin de disponibilité ne peut pas dépasser 12 mois après le début "
+                f"(au plus tard le {limite_12.strftime('%d/%m/%Y')})."
+            )
+
+    # duree_souhaitee dans les bornes du type de stage
+    if type_stage and duree_souhaitee is not None:
+        if duree_souhaitee < type_stage.duree_min_mois:
+            raise ValidationCandidature(
+                f"La durée souhaitée est inférieure au minimum autorisé "
+                f"pour « {type_stage} » ({type_stage.duree_min_mois} mois)."
+            )
+        if duree_souhaitee > type_stage.duree_max_mois:
+            raise ValidationCandidature(
+                f"La durée souhaitée dépasse le maximum autorisé "
+                f"pour « {type_stage} » ({type_stage.duree_max_mois} mois)."
+            )
+
+    # RG09 : cohérence type_demande / offre
+    if type_demande == TypeDemande.SUITE_OFFRE and not offre:
+        raise ValidationCandidature("Une offre est obligatoire pour une candidature suite à une offre.")
+    if type_demande in (TypeDemande.SPONTANEE, TypeDemande.AUTRE) and offre:
+        raise ValidationCandidature("Ce type de demande ne doit pas être lié à une offre.")
+
+    # CV obligatoire (création uniquement)
+    if creation and pieces_data is not None:
+        has_cv = any(pd.get("type_piece") == "CV" for pd in pieces_data)
+        if not has_cv:
+            raise ValidationCandidature("Au moins un CV est obligatoire.")
+
+
 def _responsable_departement(departement):
     from comptes.models import Utilisateur
     return Utilisateur.objects.filter(
@@ -117,6 +181,17 @@ def creer_candidature(
 ):
     from suivi.services import enregistrer_historique, notifier
     from .models import Candidature, PieceJointe, StatutCandidature
+
+    _valider_candidature(
+        type_stage=type_stage,
+        debut_disponibilite=debut_disponibilite,
+        fin_disponibilite=fin_disponibilite,
+        duree_souhaitee=duree_souhaitee,
+        type_demande=type_demande,
+        offre=offre,
+        pieces_data=pieces_data,
+        creation=True,
+    )
 
     # RG07
     if Candidature.objects.filter(
@@ -174,6 +249,18 @@ def modifier_candidature(
 ):
     from suivi.services import enregistrer_historique
     from .models import PieceJointe, StatutCandidature
+
+    _valider_candidature(
+        type_stage=type_stage,
+        debut_disponibilite=debut_disponibilite,
+        fin_disponibilite=fin_disponibilite,
+        duree_souhaitee=duree_souhaitee,
+        type_demande=type_demande,
+        offre=offre,
+        pieces_data=None,  # pas de contrôle CV à la modification
+        creation=False,
+        debut_original=candidature.debut_disponibilite,
+    )
 
     candidature.departement = departement
     candidature.type_stage = type_stage
