@@ -935,3 +935,139 @@ class FormsetUnicitePiecesTests(TestCase):
         }
         fs = PieceJointeFormSet(data, files, prefix="pieces")
         self.assertTrue(fs.is_valid(), msg=str(fs.errors) + str(fs.non_form_errors()))
+
+
+# ─── Lot D — D1 : règle 72 h avant entretien ─────────────────────────────────
+
+
+@override_settings(FICHIERS_PRIVES_ROOT=tempfile.mkdtemp())
+class Entretien72hTests(TestCase):
+    def setUp(self):
+        self.sec, self.adm, self.res, self.dept, self.ts, self.candidat = _setup_base()
+        cand = _candidature_factory(self.dept, self.ts, self.candidat, self.sec)
+        preselectionner(cand, self.res)
+        self.cand = cand
+
+    def test_entretien_moins_72h_interdit(self):
+        from django.utils import timezone
+        dt = timezone.now() + timezone.timedelta(hours=24)
+        with self.assertRaises(TransitionInterdite):
+            planifier_entretien(self.cand, dt, self.res)
+
+    def test_entretien_plus_72h_accepte(self):
+        from django.utils import timezone
+        from suivi.models import Notification
+        dt = timezone.now() + timezone.timedelta(hours=73)
+        planifier_entretien(self.cand, dt, self.res)
+        self.cand.refresh_from_db()
+        self.assertEqual(self.cand.date_entretien, dt)
+
+    def test_form_entretien_moins_72h_invalide(self):
+        from .forms import EntretienForm
+        from django.utils import timezone
+        dt = timezone.now() + timezone.timedelta(hours=24)
+        form = EntretienForm(
+            {"date_entretien": dt.strftime("%Y-%m-%dT%H:%M")},
+        )
+        self.assertFalse(form.is_valid())
+        self.assertIn("date_entretien", form.errors)
+
+    def test_form_entretien_73h_valide(self):
+        from .forms import EntretienForm
+        from django.utils import timezone
+        dt = timezone.now() + timezone.timedelta(hours=73)
+        form = EntretienForm(
+            {"date_entretien": dt.strftime("%Y-%m-%dT%H:%M")},
+        )
+        self.assertTrue(form.is_valid(), msg=str(form.errors))
+
+
+# ─── Lot D — D2 : alerte secrétariat entretien < 48 h ────────────────────────
+
+
+@override_settings(FICHIERS_PRIVES_ROOT=tempfile.mkdtemp())
+class AlerterEntretiensCommandTests(TestCase):
+    def setUp(self):
+        self.sec, self.adm, self.res, self.dept, self.ts, self.candidat = _setup_base()
+
+    def _cand_avec_entretien(self, delta_heures):
+        from django.utils import timezone
+        cand = _candidature_factory(self.dept, self.ts, self.candidat, self.sec)
+        preselectionner(cand, self.res)
+        cand.date_entretien = timezone.now() + timezone.timedelta(hours=delta_heures)
+        cand.candidat_informe = False
+        cand.alerte_entretien_envoyee = False
+        cand.save(update_fields=["date_entretien", "candidat_informe", "alerte_entretien_envoyee"])
+        return cand
+
+    def test_alerte_envoyee_entretien_dans_24h(self):
+        from django.core.management import call_command
+        from io import StringIO
+        cand = self._cand_avec_entretien(24)
+        out = StringIO()
+        call_command("alerter_entretiens", stdout=out)
+        cand.refresh_from_db()
+        self.assertTrue(cand.alerte_entretien_envoyee)
+        self.assertIn("1 alerte", out.getvalue())
+
+    def test_pas_alerte_si_deja_envoyee(self):
+        from django.core.management import call_command
+        from io import StringIO
+        cand = self._cand_avec_entretien(24)
+        cand.alerte_entretien_envoyee = True
+        cand.save(update_fields=["alerte_entretien_envoyee"])
+        out = StringIO()
+        call_command("alerter_entretiens", stdout=out)
+        self.assertIn("0 alerte", out.getvalue())
+
+    def test_pas_alerte_si_candidat_informe(self):
+        from django.core.management import call_command
+        from io import StringIO
+        cand = self._cand_avec_entretien(24)
+        cand.candidat_informe = True
+        cand.save(update_fields=["candidat_informe"])
+        out = StringIO()
+        call_command("alerter_entretiens", stdout=out)
+        self.assertIn("0 alerte", out.getvalue())
+
+    def test_pas_alerte_si_entretien_lointain(self):
+        from django.core.management import call_command
+        from io import StringIO
+        cand = self._cand_avec_entretien(96)  # 4 jours — hors < 48 h
+        out = StringIO()
+        call_command("alerter_entretiens", stdout=out)
+        cand.refresh_from_db()
+        self.assertFalse(cand.alerte_entretien_envoyee)
+
+
+# ─── Lot D — D3 : TransfertCandidature ───────────────────────────────────────
+
+
+@override_settings(FICHIERS_PRIVES_ROOT=tempfile.mkdtemp())
+class TransfertCandidatureTests(TestCase):
+    def setUp(self):
+        self.sec, self.adm, self.res, self.dept, self.ts, self.candidat = _setup_base()
+        self.dept2 = Departement.objects.create(nom="RH", actif=True)
+        self.cand = _candidature_factory(self.dept, self.ts, self.candidat, self.sec)
+
+    def test_rediriger_cree_transfert(self):
+        from .models import TransfertCandidature
+        rediriger(self.cand, self.dept2, "Mieux adapté", self.res)
+        self.assertEqual(TransfertCandidature.objects.filter(candidature=self.cand).count(), 1)
+
+    def test_transfert_source_et_cible_corrects(self):
+        from .models import TransfertCandidature
+        rediriger(self.cand, self.dept2, "Test", self.res)
+        t = TransfertCandidature.objects.get(candidature=self.cand)
+        self.assertEqual(t.departement_source, self.dept)
+        self.assertEqual(t.departement_cible, self.dept2)
+        self.assertEqual(t.motif, "Test")
+        self.assertEqual(t.realise_par, self.res)
+
+    def test_deux_redirections_deux_transferts(self):
+        from .models import TransfertCandidature
+        dept3 = Departement.objects.create(nom="Comptabilité", actif=True)
+        rediriger(self.cand, self.dept2, "Premier", self.res)
+        self.cand.refresh_from_db()
+        rediriger(self.cand, dept3, "Deuxième", self.res)
+        self.assertEqual(TransfertCandidature.objects.filter(candidature=self.cand).count(), 2)

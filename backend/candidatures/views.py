@@ -245,18 +245,29 @@ class CandidatureListView(RoleRequisMixin, ListeMixin, ListView):
         if type_demande:
             qs = qs.filter(type_demande=type_demande)
 
+        etablissement_id = self.request.GET.get("etablissement")
+        if etablissement_id:
+            qs = qs.filter(candidat__etablissement_id=etablissement_id)
+
+        partenaire = self.request.GET.get("partenaire")
+        if partenaire == "1":
+            qs = qs.filter(candidat__etablissement__partenaire=True)
+
         return qs
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
-        from referentiels.models import Departement
+        from referentiels.models import Departement, Etablissement
         from .models import TypeDemande
         ctx["statuts"] = StatutCandidature.choices
         ctx["types_demande"] = TypeDemande.choices
         ctx["departements"] = Departement.objects.filter(actif=True)
+        ctx["etablissements"] = Etablissement.objects.filter(actif=True).order_by("nom")
         ctx["statut_filtre"] = self.request.GET.get("statut", "")
         ctx["departement_filtre"] = self.request.GET.get("departement", "")
         ctx["type_demande_filtre"] = self.request.GET.get("type_demande", "")
+        ctx["etablissement_filtre"] = self.request.GET.get("etablissement", "")
+        ctx["partenaire_filtre"] = self.request.GET.get("partenaire", "")
 
         if _est_responsable(self.request.user) and self.request.user.personnel:
             dept = self.request.user.personnel.departement
@@ -285,11 +296,15 @@ class CandidatureDetailView(RoleRequisMixin, View):
 
         pieces = candidature.pieces.order_by("type_piece")
         historiques = _get_historique(candidature).order_by("-date_action")
+        transferts = candidature.transferts.select_related(
+            "departement_source", "departement_cible", "realise_par"
+        ).order_by("-date_transfert")
 
         ctx = {
             "candidature": candidature,
             "pieces": pieces,
             "historiques": historiques,
+            "transferts": transferts,
             "est_responsable": est_resp,
         }
         if est_resp:

@@ -171,6 +171,9 @@ class Candidature(models.Model):
     commentaire = models.TextField(blank=True, verbose_name="commentaire")
     candidat_informe = models.BooleanField(default=False, verbose_name="candidat informé")
     date_information = models.DateTimeField(null=True, blank=True, verbose_name="date d'information")
+    alerte_entretien_envoyee = models.BooleanField(
+        default=False, verbose_name="alerte entretien envoyée"
+    )
     date_depot = models.DateTimeField(auto_now_add=True, verbose_name="date de dépôt")
 
     class Meta:
@@ -233,6 +236,45 @@ class Candidature(models.Model):
         else:
             numero = 1
         return f"CAND-{annee}-{numero:04d}"
+
+
+class TransfertCandidature(models.Model):
+    candidature = models.ForeignKey(
+        Candidature,
+        on_delete=models.CASCADE,
+        related_name="transferts",
+        verbose_name="candidature",
+    )
+    departement_source = models.ForeignKey(
+        "referentiels.Departement",
+        on_delete=models.PROTECT,
+        related_name="+",
+        verbose_name="département source",
+    )
+    departement_cible = models.ForeignKey(
+        "referentiels.Departement",
+        on_delete=models.PROTECT,
+        related_name="+",
+        verbose_name="département cible",
+    )
+    motif = models.TextField(verbose_name="motif")
+    realise_par = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        verbose_name="réalisé par",
+    )
+    date_transfert = models.DateTimeField(auto_now_add=True, verbose_name="date de transfert")
+
+    class Meta:
+        verbose_name = "Transfert de candidature"
+        verbose_name_plural = "Transferts de candidature"
+        ordering = ["-date_transfert"]
+
+    def __str__(self):
+        return f"Transfert {self.candidature.reference} → {self.departement_cible}"
 
 
 class PieceJointe(models.Model):

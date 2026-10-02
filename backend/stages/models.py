@@ -4,6 +4,7 @@ from django.core.files.storage import FileSystemStorage
 from django.db import models
 
 
+
 def _get_stockage_rapport():
     return FileSystemStorage(location=settings.FICHIERS_PRIVES_ROOT, base_url=None)
 
@@ -93,3 +94,35 @@ class Stage(models.Model):
                 raise ValidationError(
                     {"maitre_stage": "Le maître de stage doit appartenir au département de la candidature."}
                 )
+
+
+class AffectationMaitreStage(models.Model):
+    stage = models.ForeignKey(
+        Stage,
+        on_delete=models.CASCADE,
+        related_name="affectations_maitre",
+        verbose_name="stage",
+    )
+    maitre_stage = models.ForeignKey(
+        "referentiels.Personnel",
+        on_delete=models.PROTECT,
+        related_name="+",
+        verbose_name="maître de stage",
+    )
+    affecte_par = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        verbose_name="affecté par",
+    )
+    date_affectation = models.DateTimeField(auto_now_add=True, verbose_name="date d'affectation")
+
+    class Meta:
+        verbose_name = "Affectation de maître de stage"
+        verbose_name_plural = "Affectations de maître de stage"
+        ordering = ["-date_affectation"]
+
+    def __str__(self):
+        return f"Maître {self.maitre_stage} → {self.stage}"

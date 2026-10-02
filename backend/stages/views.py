@@ -131,6 +131,9 @@ class StageDetailView(RoleRequisMixin, View):
             pk=pk,
         )
         historiques = _get_historique(stage)
+        affectations_maitre = stage.affectations_maitre.select_related(
+            "maitre_stage", "affecte_par"
+        ).order_by("-date_affectation")
         role = _role_utilisateur(request.user)
         _peut_eval, _ = peut_evaluer(stage) if stage.statut == StatutStage.TERMINE and role == "Responsable" else (False, None)
         dept = _get_departement_utilisateur(request.user)
@@ -138,6 +141,7 @@ class StageDetailView(RoleRequisMixin, View):
         return render(request, "stages/stage_detail.html", {
             "stage": stage,
             "historiques": historiques,
+            "affectations_maitre": affectations_maitre,
             "role": role,
             "peut_modifier": (
                 role == "Secrétaire" and

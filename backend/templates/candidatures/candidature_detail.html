@@ -205,6 +205,39 @@
 </div>
 {% endif %}
 
+<!-- Historique des redirections -->
+{% if transferts %}
+<div class="card border-0 shadow-sm mb-3">
+    <div class="card-header bg-white border-bottom py-2">
+        <h6 class="mb-0 fw-semibold"><i class="bi bi-arrow-left-right me-1"></i>Historique des redirections</h6>
+    </div>
+    <div class="table-responsive">
+        <table class="table table-sm table-hover mb-0 small">
+            <thead class="table-light">
+                <tr>
+                    <th>Date</th>
+                    <th>De</th>
+                    <th>Vers</th>
+                    <th>Motif</th>
+                    <th>Par</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for t in transferts %}
+                <tr>
+                    <td class="text-nowrap">{{ t.date_transfert|date:"d/m/Y H:i" }}</td>
+                    <td>{{ t.departement_source }}</td>
+                    <td>{{ t.departement_cible }}</td>
+                    <td>{{ t.motif }}</td>
+                    <td>{{ t.realise_par|default:"—" }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
 <!-- Historique -->
 {% include "commun/_historique.html" with historiques=historiques %}
 {% endblock %}

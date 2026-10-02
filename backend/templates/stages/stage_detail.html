@@ -154,5 +154,34 @@
 </div>
 {% endif %}
 
+<!-- Historique des maîtres de stage -->
+{% if role != "Administrateur" and affectations_maitre %}
+<div class="card border-0 shadow-sm mb-3">
+    <div class="card-header bg-white border-bottom py-2">
+        <h6 class="mb-0 fw-semibold"><i class="bi bi-person-badge me-1"></i>Historique des maîtres de stage</h6>
+    </div>
+    <div class="table-responsive">
+        <table class="table table-sm table-hover mb-0 small">
+            <thead class="table-light">
+                <tr>
+                    <th>Date</th>
+                    <th>Maître de stage</th>
+                    <th>Affecté par</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for a in affectations_maitre %}
+                <tr>
+                    <td class="text-nowrap">{{ a.date_affectation|date:"d/m/Y H:i" }}</td>
+                    <td>{{ a.maitre_stage }}</td>
+                    <td>{{ a.affecte_par|default:"—" }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
 {% include "commun/_historique.html" with historiques=historiques %}
 {% endblock %}

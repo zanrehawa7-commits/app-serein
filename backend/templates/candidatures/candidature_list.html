@@ -87,6 +87,21 @@
                 </select>
             </div>
             {% endif %}
+            <div class="col-md-2">
+                <select name="etablissement" class="form-select form-select-sm">
+                    <option value="">Tous établissements</option>
+                    {% for etab in etablissements %}
+                    <option value="{{ etab.pk }}" {% if etablissement_filtre == etab.pk|stringformat:"s" %}selected{% endif %}>{{ etab.nom }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-auto d-flex align-items-end">
+                <div class="form-check form-check-inline mb-0">
+                    <input class="form-check-input" type="checkbox" name="partenaire" value="1" id="filtre-partenaire"
+                           {% if partenaire_filtre == "1" %}checked{% endif %}>
+                    <label class="form-check-label small" for="filtre-partenaire">Partenaires</label>
+                </div>
+            </div>
             <div class="col-auto">
                 <button type="submit" class="btn btn-primary btn-sm">Filtrer</button>
                 <a href="{% url 'candidatures:candidature_list' %}" class="btn btn-outline-secondary btn-sm ms-1">Réinitialiser</a>

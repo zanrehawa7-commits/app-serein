@@ -46,12 +46,19 @@ def constituer_stage(candidature, date_debut, date_fin_prevue, maitre_stage, uti
     today = timezone.localdate()
     statut = StatutStage.EN_COURS if date_debut <= today else StatutStage.A_VENIR
 
+    from .models import AffectationMaitreStage
     stage = Stage.objects.create(
         candidature=cand,
         maitre_stage=maitre_stage,
         date_debut=date_debut,
         date_fin_prevue=date_fin_prevue,
         statut=statut,
+    )
+
+    AffectationMaitreStage.objects.create(
+        stage=stage,
+        maitre_stage=maitre_stage,
+        affecte_par=utilisateur,
     )
 
     enregistrer_historique(stage, utilisateur, "", statut, "Stage constitué.")
@@ -99,7 +106,8 @@ def modifier_stage(stage, date_fin_prevue, maitre_stage, utilisateur, date_debut
         changements.append(f"fin prévue : {s.date_fin_prevue} → {date_fin_prevue}")
         s.date_fin_prevue = date_fin_prevue
 
-    if maitre_stage.pk != s.maitre_stage_id:
+    maitre_change = maitre_stage.pk != s.maitre_stage_id
+    if maitre_change:
         changements.append(f"maître de stage : {s.maitre_stage} → {maitre_stage}")
         s.maitre_stage = maitre_stage
 
@@ -109,6 +117,15 @@ def modifier_stage(stage, date_fin_prevue, maitre_stage, utilisateur, date_debut
     s.save()
     commentaire = "Stage modifié — " + " ; ".join(changements)
     enregistrer_historique(s, utilisateur, s.statut, s.statut, commentaire)
+
+    if maitre_change:
+        from .models import AffectationMaitreStage
+        AffectationMaitreStage.objects.create(
+            stage=s,
+            maitre_stage=maitre_stage,
+            affecte_par=utilisateur,
+        )
+
     return s
 
 

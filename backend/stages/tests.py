@@ -10,7 +10,7 @@ from offres.models import Offre, StatutOffre
 from candidatures.models import Candidat, Candidature, StatutCandidature, TypeDemande
 from referentiels.models import TypeStage
 
-from .models import Stage, StatutStage
+from .models import Stage, StatutStage, AffectationMaitreStage
 from .services import (
     TransitionInterdite,
     constituer_stage,
@@ -642,3 +642,47 @@ class RappelEvaluationCommandTests(TestCase):
         call_command("mettre_a_jour_stages", stdout=out)
         stage.refresh_from_db()
         self.assertFalse(stage.rappel_evaluation_envoye)
+
+
+# ─── Lot D — D4 : AffectationMaitreStage ─────────────────────────────────────
+
+
+class AffectationMaitreStageTests(TestCase):
+    def setUp(self):
+        self.dept = _dept("AffectDept")
+        self.maitre = _membre(self.dept, "MaitreAffect")
+        self.sec = _secretaire()
+        self.cand = _candidature_accordee(self.dept)
+
+    def test_constituer_stage_cree_affectation(self):
+        debut = timezone.localdate() + datetime.timedelta(days=5)
+        fin = debut + datetime.timedelta(days=60)
+        stage = constituer_stage(self.cand, debut, fin, self.maitre, self.sec)
+        self.assertEqual(
+            AffectationMaitreStage.objects.filter(stage=stage).count(), 1
+        )
+        a = AffectationMaitreStage.objects.get(stage=stage)
+        self.assertEqual(a.maitre_stage, self.maitre)
+        self.assertEqual(a.affecte_par, self.sec)
+
+    def test_modifier_stage_meme_maitre_pas_nouvelle_affectation(self):
+        debut = timezone.localdate() + datetime.timedelta(days=5)
+        fin = debut + datetime.timedelta(days=60)
+        stage = constituer_stage(self.cand, debut, fin, self.maitre, self.sec)
+        nb_avant = AffectationMaitreStage.objects.filter(stage=stage).count()
+        nouvelle_fin = fin + datetime.timedelta(days=10)
+        modifier_stage(stage, nouvelle_fin, self.maitre, self.sec)
+        self.assertEqual(
+            AffectationMaitreStage.objects.filter(stage=stage).count(), nb_avant
+        )
+
+    def test_modifier_stage_nouveau_maitre_cree_affectation(self):
+        debut = timezone.localdate() + datetime.timedelta(days=5)
+        fin = debut + datetime.timedelta(days=60)
+        stage = constituer_stage(self.cand, debut, fin, self.maitre, self.sec)
+        nouveau_maitre = _membre(self.dept, "NouveauMaitre")
+        modifier_stage(stage, fin, nouveau_maitre, self.sec)
+        affectations = AffectationMaitreStage.objects.filter(stage=stage).order_by("date_affectation")
+        self.assertEqual(affectations.count(), 2)
+        self.assertEqual(affectations.last().maitre_stage, nouveau_maitre)
+

@@ -281,13 +281,16 @@ class EntretienForm(forms.Form):
             format="%Y-%m-%dT%H:%M",
         ),
         input_formats=["%Y-%m-%dT%H:%M"],
-        help_text="L'entretien doit être planifié dans le futur.",
+        help_text="L'entretien doit être planifié au moins 72 h à l'avance.",
     )
 
     def clean_date_entretien(self):
+        from datetime import timedelta
         dt = self.cleaned_data.get("date_entretien")
-        if dt and dt <= timezone.now():
-            raise forms.ValidationError("La date de l'entretien doit être dans le futur.")
+        if dt and dt < timezone.now() + timedelta(hours=72):
+            raise forms.ValidationError(
+                "L'entretien doit être planifié au moins 72 h à l'avance."
+            )
         return dt
 
 
