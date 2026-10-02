@@ -16,27 +16,51 @@
 <div class="card border-0 shadow-sm mb-4">
     <div class="card-body">
         <form method="get" action="" class="row g-2 align-items-end">
-            <div class="col-md-8 col-lg-6">
+            <div class="col-md-6 col-lg-5">
                 <label class="form-label fw-semibold">Nom, prénom, téléphone ou email</label>
-                <input type="text" name="q" value="{{ request.GET.q }}"
+                <input type="text" name="q" value="{{ q }}"
                        class="form-control form-control-lg"
                        placeholder="Ex : Ouedraogo, 70123456, fatou@..."
-                       autofocus required>
+                       autofocus>
+            </div>
+            <div class="col-md-3 col-lg-3">
+                <label class="form-label fw-semibold">Établissement</label>
+                <select name="etablissement" class="form-select form-select-lg">
+                    <option value="">Tous établissements</option>
+                    {% for etab in etablissements %}
+                    <option value="{{ etab.pk }}" {% if etablissement_filtre == etab.pk|stringformat:"s" %}selected{% endif %}>
+                        {{ etab.nom }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2 col-lg-2 d-flex align-items-end pb-1">
+                <div class="form-check">
+                    <input type="checkbox" name="partenaire" value="1" id="filtre-partenaire"
+                           class="form-check-input"
+                           {% if partenaire_filtre == "1" %}checked{% endif %}>
+                    <label class="form-check-label fw-semibold" for="filtre-partenaire">Partenaires</label>
+                </div>
             </div>
             <div class="col-auto">
                 <button type="submit" class="btn btn-primary btn-lg">
                     <i class="bi bi-search me-1"></i>Rechercher
                 </button>
+                {% if has_filter %}
+                <a href="{% url 'candidatures:candidat_recherche' %}" class="btn btn-outline-secondary btn-lg ms-1" title="Réinitialiser">
+                    <i class="bi bi-x-lg"></i>
+                </a>
+                {% endif %}
             </div>
         </form>
     </div>
 </div>
 
-{% if request.GET.q %}
+{% if has_filter %}
 <div class="card border-0 shadow-sm">
     <div class="card-header bg-white border-bottom py-3">
         <h6 class="mb-0 fw-semibold">
-            Résultats pour « {{ request.GET.q }} »
+            {% if q %}Résultats pour « {{ q }} »{% else %}Résultats{% endif %}
             <span class="badge bg-secondary ms-1">{{ candidats|length }}</span>
         </h6>
     </div>
@@ -60,7 +84,11 @@
                         <td class="ps-3 fw-semibold">{{ candidat }}</td>
                         <td>{{ candidat.telephone }}</td>
                         <td>{{ candidat.email|default:"—" }}</td>
-                        <td>{{ candidat.etablissement|default:candidat.etablissement_autre|default:"—" }}</td>
+                        <td>{{ candidat.etablissement|default:candidat.etablissement_autre|default:"—" }}
+                            {% if candidat.etablissement and candidat.etablissement.partenaire %}
+                            <span class="badge bg-success-subtle text-success ms-1" style="font-size:.65rem;">Partenaire</span>
+                            {% endif %}
+                        </td>
                         <td class="text-center">
                             <span class="badge bg-secondary">{{ candidat.candidatures.count }}</span>
                         </td>
@@ -84,7 +112,7 @@
         {% else %}
         <div class="text-center py-5 text-muted">
             <i class="bi bi-person-x fs-1 d-block mb-2" style="opacity:.3;"></i>
-            <p class="mb-2">Aucun candidat trouvé pour « {{ request.GET.q }} ».</p>
+            <p class="mb-2">Aucun candidat trouvé{% if q %} pour « {{ q }} »{% endif %}.</p>
             <a href="{% url 'candidatures:candidat_creer' %}" class="btn btn-success">
                 <i class="bi bi-person-plus-fill me-1"></i>Créer ce candidat
             </a>

@@ -9,6 +9,7 @@
         <p class="text-muted small mb-0">
             Candidat : <a href="{% url 'candidatures:candidat_detail' candidature.candidat.pk %}" class="fw-semibold">{{ candidature.candidat }}</a>
             &nbsp;·&nbsp;Déposée le {{ candidature.date_depot|date:"d/m/Y" }}
+            {% if depose_par %}&nbsp;par <strong>{{ depose_par.get_full_name|default:depose_par.email }}</strong>{% endif %}
         </p>
     </div>
     <div class="d-flex gap-2">

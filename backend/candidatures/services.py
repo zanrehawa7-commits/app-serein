@@ -226,7 +226,7 @@ def creer_candidature(
             nom_original=pd.get("nom_original", ""),
         )
 
-    enregistrer_historique(candidature, utilisateur, "", StatutCandidature.RECUE, "Candidature reçue.")
+    enregistrer_historique(candidature, utilisateur, "", StatutCandidature.RECUE, "Dépôt initial.")
 
     lien = f"/candidatures/{candidature.pk}/"
     responsable = _responsable_departement(departement)
