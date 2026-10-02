@@ -160,6 +160,30 @@ python manage.py init_donnees
 python manage.py createsuperuser
 ```
 
+## Tests — stratégie de vitesse
+
+### Réglage de test rapide (`config/settings_test.py`)
+Utilise `MD5PasswordHasher` (au lieu de PBKDF2 × 870 000 itérations) → `create_user()` ×1000 plus rapide.
+
+```bash
+# Premier run (ou après migration) — recrée la base de test
+python manage.py test --settings=config.settings_test --parallel=auto \
+  commun referentiels offres candidatures suivi stages comptes
+
+# Runs suivants — conserve la base (plus rapide)
+python manage.py test --settings=config.settings_test --keepdb --parallel=auto \
+  commun referentiels offres candidatures suivi stages comptes
+
+# Tests d'un seul lot (pendant le développement)
+python manage.py test --settings=config.settings_test --keepdb --parallel=auto \
+  candidatures stages
+```
+
+### Règle de développement par lot
+- **Pendant le développement** : ne lancer que les tests des apps modifiées (ex. `candidatures stages`).
+- **Suite complète** (`commun referentiels offres candidatures suivi stages comptes`) : une seule fois, juste avant le commit final du lot.
+- Ne jamais commiter avec des tests qui échouent, même partiels.
+
 ## Étape 6 — Candidatures (F10)
 
 ### Workflow de saisie
@@ -341,4 +365,7 @@ Le `.env` est à la racine du projet (`app-serein/`), lu par `python-decouple` d
 
 ### Tests
 - Un test par règle métier ajoutée + un test 403 pour chaque rôle non autorisé.
-- Lancer TOUTE la suite de tests avant chaque commit ; 0 échec.
+- **Pendant le développement d'un lot** : ne lancer que les apps modifiées (`--settings=config.settings_test --keepdb --parallel <apps>`).
+- **Juste avant le commit** : lancer la suite complète une seule fois (`commun referentiels offres candidatures suivi stages comptes`).
+- Toujours utiliser `--settings=config.settings_test` (MD5PasswordHasher) ; jamais les settings de prod pour les tests.
+- 0 échec obligatoire avant tout commit.
