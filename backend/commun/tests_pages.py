@@ -391,12 +391,14 @@ class CloisonnementDepartementTests(_DonneesPagesMixin, TestCase):
         ("candidatures:candidature_accorder", {"pk": "cand_b"}),
         ("candidatures:candidature_refuser", {"pk": "cand_b"}),
         ("candidatures:candidature_rediriger", {"pk": "cand_b"}),
+        ("stages:stage_detail", {"pk": "stage_b"}),
         ("stages:stage_terminer", {"pk": "stage_b"}),
         ("stages:stage_interrompre", {"pk": "stage_b"}),
         ("stages:stage_evaluer", {"pk": "stage_b_fini"}),
         ("stages:rapport_telecharger", {"pk": "stage_b_fini"}),
-        # À TRANCHER (docs/rapports/etape_10_pages_rapport.md) — volontairement absents :
-        #   stages:stage_detail d'un autre département : affiché en lecture (200).
+        # Exception voulue : fiche (lecture seule) et rapport d'un stage AU VIVIER d'un autre
+        # département restent accessibles — testé dans stages.tests.
+        # À TRANCHER (docs/rapports/etape_10_pages_rapport.md) — volontairement absent :
         #   stages:rapport_telecharger d'un autre département : autorisé si stage au vivier.
     ]
 

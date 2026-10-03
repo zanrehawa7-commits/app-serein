@@ -128,6 +128,7 @@
 | RG-E4 | Rapport de stage : non verrouillé, uploadable ou remplaçable à tout moment après le premier enregistrement de l'évaluation. | `stages/services.py` |
 | RG-E5 | Rapport téléchargeable par le Responsable du même département. Un autre département y accède seulement si `vivier=True`. Secrétaire → 403. | `stages/views.py` |
 | RG-E6 | Vivier consultable par tous les Responsables et l'Administrateur (export CSV inclus). | `stages/views.py` |
+| RG-E7 | Fiche stage : un Responsable ne voit que les stages de son département (sans département → 403). Exception : un stage **au vivier** d'un autre département est consultable **en lecture seule** — aucun bouton d'action, pas de lien vers la candidature. Secrétaire et Administrateur : non cloisonnés. | `stages/views.py` (`StageDetailView`) |
 
 ---
 
