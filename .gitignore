@@ -33,3 +33,5 @@ Thumbs.db
 
 # Claude (données locales de session — ne pas commiter)
 .claude/
+# Guide Claude Code : local uniquement, jamais commité
+CLAUDE.md
