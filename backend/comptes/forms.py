@@ -148,7 +148,7 @@ class UtilisateurModifierForm(forms.ModelForm):
         model = Utilisateur
         fields = ["first_name", "last_name", "email", "telephone", "personnel", "is_active"]
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, utilisateur_connecte=None, **kwargs):
         super().__init__(*args, **kwargs)
         from django.db.models import Q
         from referentiels.models import Personnel
@@ -167,6 +167,16 @@ class UtilisateurModifierForm(forms.ModelForm):
         self.fields["last_name"].required = True
         if instance and instance.pk:
             self.fields["role"].initial = instance.role or ""
+        # RG33 : on ne se désactive pas et on ne change pas son propre rôle (sinon perte d'accès).
+        # Champs « disabled » : Django ignore la valeur envoyée et garde celle de la base.
+        self.est_soi_meme = bool(utilisateur_connecte and instance.pk and instance.pk == utilisateur_connecte.pk)
+        if self.est_soi_meme:
+            for champ in ("is_active", "role"):
+                self.fields[champ].disabled = True
+                self.fields[champ].help_text = (
+                    "Vous ne pouvez pas désactiver votre propre compte ni changer votre propre rôle."
+                )
+            self.fields["role"].required = False
         self.helper = _helper()
 
     def clean(self):
@@ -181,8 +191,9 @@ class UtilisateurModifierForm(forms.ModelForm):
         user = super().save(commit=False)
         if commit:
             user.save()
-            groupe = Group.objects.get(name=self.cleaned_data["role"])
-            user.groups.set([groupe])
+            if not self.est_soi_meme:
+                groupe = Group.objects.get(name=self.cleaned_data["role"])
+                user.groups.set([groupe])
         return user
 
 

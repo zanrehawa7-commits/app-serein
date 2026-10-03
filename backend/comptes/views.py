@@ -333,7 +333,7 @@ class UtilisateurUpdateView(RolePermMixin, View):
 
     def get(self, request, pk):
         utilisateur = self._get_user(pk)
-        form = UtilisateurModifierForm(instance=utilisateur)
+        form = UtilisateurModifierForm(instance=utilisateur, utilisateur_connecte=request.user)
         return render(request, _FORM_TPL, {
             "form": form,
             "titre": f"Modifier — {utilisateur.get_full_name() or utilisateur.email}",
@@ -343,7 +343,7 @@ class UtilisateurUpdateView(RolePermMixin, View):
     def post(self, request, pk):
         utilisateur = self._get_user(pk)
         ancien_role = utilisateur.role
-        form = UtilisateurModifierForm(request.POST, instance=utilisateur)
+        form = UtilisateurModifierForm(request.POST, instance=utilisateur, utilisateur_connecte=request.user)
         if form.is_valid():
             user = form.save()
             nouveau_role = form.cleaned_data.get("role")

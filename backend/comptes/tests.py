@@ -510,3 +510,48 @@ class RolesConsultationEcranTests(TestCase):
             "role": "Auditeur", "password1": "MotDePasse!2026", "password2": "MotDePasse!2026",
         })
         self.assertEqual(Utilisateur.objects.get(email="awa@serein.bf").role, "Auditeur")
+
+
+# ─── RG33 : pas d'auto-désactivation ni de changement de son propre rôle ───────
+
+
+class AutoModificationCompteTests(TestCase):
+    """Le formulaire « Modifier » ne doit pas contourner RG33 (bug trouvé en recette)."""
+
+    def setUp(self):
+        from io import StringIO
+        from django.core.management import call_command
+        call_command("init_donnees", stdout=StringIO())
+        self.admin = _creer_utilisateur("admin@serein.bf", "pass", groupe="Administrateur")
+        self.sec = _creer_utilisateur("sec@serein.bf", "pass", groupe="Secrétaire")
+        self.client.force_login(self.admin)
+
+    def _modifier(self, cible, **valeurs):
+        donnees = {"first_name": "Nouveau", "last_name": cible.last_name, "email": cible.email,
+                   "telephone": "", "role": "Administrateur"}
+        donnees.update(valeurs)
+        return self.client.post(reverse("comptes:utilisateur_modifier", args=[cible.pk]), donnees)
+
+    def test_se_desactiver_par_le_formulaire_est_ignore(self):
+        self._modifier(self.admin)  # case « actif » décochée : absente du POST
+        self.admin.refresh_from_db()
+        self.assertTrue(self.admin.is_active)
+        self.assertEqual(self.admin.first_name, "Nouveau")
+
+    def test_changer_son_propre_role_est_ignore(self):
+        self._modifier(self.admin, role="Secrétaire", is_active="on")
+        self.admin.refresh_from_db()
+        self.assertEqual(self.admin.role, "Administrateur")
+
+    def test_champs_grises_sur_son_propre_compte(self):
+        form = self.client.get(reverse("comptes:utilisateur_modifier", args=[self.admin.pk])).context["form"]
+        self.assertTrue(form.fields["is_active"].disabled)
+        self.assertTrue(form.fields["role"].disabled)
+
+    def test_modifier_un_autre_compte_reste_possible(self):
+        self._modifier(self.sec, role="Secrétaire")  # case « actif » décochée
+        self.sec.refresh_from_db()
+        self.assertFalse(self.sec.is_active)
+        self._modifier(self.sec, role="Administrateur", is_active="on")
+        self.sec.refresh_from_db()
+        self.assertEqual((self.sec.is_active, self.sec.role), (True, "Administrateur"))
