@@ -208,6 +208,11 @@ Les deux commandes sont **idempotentes**. `mettre_a_jour_stages` accepte `--date
 
 Matrice complète et idempotente : `referentiels/management/commands/init_donnees.py` → `GROUPES_PERMISSIONS`.
 
+**Lecture seule de l'Administrateur — ne jamais lui redonner add/change/delete** sur ces apps.
+Source unique : `comptes.permissions.APPS_LECTURE_SEULE_ADMINISTRATEUR`, utilisée par `init_donnees` ET par
+l'écran F02 (cases grisées + filtrage serveur au POST). La liste exacte de ses 36 permissions est figée par
+`referentiels.tests.InitDonneesCommandeTests.test_permissions_exactes_du_groupe_administrateur`.
+
 ### Contrôle d'accès
 
 - `comptes/permissions.py` → `RoleRequisMixin(roles=[...])` (CBV) ; `@role_requis(...)` (FBV).
@@ -317,7 +322,7 @@ Règles structurantes à mémoriser :
 | Étape 10 (pages) | Test de toutes les pages × rôles + cloisonnement département (`commun/tests_pages.py`) | ✅ | — |
 
 **Branche active** : `etape-10-constats` (contient `fix-fichiers-tests` ; à fusionner dans `main` après validation)
-**Tests** : **281 / 281** ✅ — 0 echec
+**Tests** : **285 / 285** ✅ — 0 echec
 
 > Toute nouvelle route doit être déclarée dans `MATRICE` (`commun/tests_pages.py`), sinon la suite échoue.
 
@@ -379,3 +384,4 @@ E-R1 (CRUD groupes), E-R2 (permissions sur groupes perso), E-R5 (audit trail per
 | Stockage fichiers dans fichiers_prives/ (hors media/) | Pas d'URL publique, contrôle via vues Django | Étape 6 |
 | designer_responsable vérifie compte AVANT toute modif | Correction directeur de mémoire | Lot A |
 | TransfertCandidature + AffectationMaitreStage | Traçabilité demandée | Lot D |
+| Administrateur en lecture seule sur offres, candidatures, stages, suivi (view uniquement) | Régression introduite à l'Étape 4 (`a3643ee`, `_CRUD`) puis réimposée à chaque `init_donnees` (`permissions.set`) ; l'écran F02 permettait aussi de recocher les droits. Corrigé par une source unique + test de la liste exacte | Étape 10 |
