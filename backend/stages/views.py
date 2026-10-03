@@ -546,10 +546,11 @@ class RapportTelechargerView(RoleRequisMixin, View):
         if not stage.rapport:
             raise Http404("Aucun rapport pour ce stage.")
 
+        # RG-E5 : rapport d'un autre département lisible uniquement si le stage est au vivier.
         role = _role_utilisateur(request.user)
         if role == "Responsable":
             dept = _get_departement_utilisateur(request.user)
-            if dept and stage.candidature.departement != dept:
+            if dept is None or stage.candidature.departement != dept:
                 if not stage.vivier:
                     raise PermissionDenied
 

@@ -396,10 +396,8 @@ class CloisonnementDepartementTests(_DonneesPagesMixin, TestCase):
         ("stages:stage_interrompre", {"pk": "stage_b"}),
         ("stages:stage_evaluer", {"pk": "stage_b_fini"}),
         ("stages:rapport_telecharger", {"pk": "stage_b_fini"}),
-        # Exception voulue : fiche (lecture seule) et rapport d'un stage AU VIVIER d'un autre
-        # département restent accessibles — testé dans stages.tests.
-        # À TRANCHER (docs/rapports/etape_10_pages_rapport.md) — volontairement absent :
-        #   stages:rapport_telecharger d'un autre département : autorisé si stage au vivier.
+        # Exception voulue : fiche (lecture seule, RG-E7) et rapport (RG-E5) d'un stage AU VIVIER
+        # d'un autre département restent accessibles — testé dans stages.tests.
     ]
 
     def test_routes_autre_departement_refusees(self):
