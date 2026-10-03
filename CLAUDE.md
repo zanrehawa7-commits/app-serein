@@ -308,9 +308,13 @@ Règles structurantes à mémoriser :
 | Lot B | Durées TypeStage, dates candidature, PDF-only, 3 Mo | ✅ | b338348 |
 | Lot C | ParametreOffre singleton, Offre.departement, texte_publie | ✅ | a0b2fd6 |
 | Lot D | 72 h entretiens, alerter_entretiens, TransfertCandidature, AffectationMaitreStage | ✅ | bcd2999 |
+| Fix | init_donnees sur base neuve + liste personnels (commun_tags) | ✅ | cae763e |
+| Étape 10 (pages) | Test de toutes les pages × rôles + cloisonnement département (`commun/tests_pages.py`) | ✅ | — |
 
-**Branche active** : `lot-d` (à fusionner dans `main` après validation)
-**Tests** : **268 / 268** ✅ — 0 echec
+**Branche active** : `etape-10-pages` (à fusionner dans `main` après validation)
+**Tests** : **278 / 278** ✅ — 0 echec
+
+> Toute nouvelle route doit être déclarée dans `MATRICE` (`commun/tests_pages.py`), sinon la suite échoue.
 
 ---
 
@@ -339,13 +343,15 @@ E-R1 (CRUD groupes), E-R2 (permissions sur groupes perso), E-R5 (audit trail per
 | Sujet | Situation |
 |---|---|
 | TypeDemande AUTRE : cas d'usage exact ? | Implémenté sans offre, sans définition précise |
-| Durées des 5 types de stage (duree_min/max) | Créés sans valeur → à renseigner via l'Admin |
+| Durées des 5 types de stage (duree_min/max) | Valeurs initiales de la migration 0004 (reprises par init_donnees) → à confirmer |
 | Filtre "partenaire" sur listes : tous rôles ou Admin seul ? | Tous rôles (provisoire) |
 | Fréquence cron `alerter_entretiens` | Toutes les 2 h (provisoire) |
 | Fréquence cron `mettre_a_jour_stages` | 1×/nuit (provisoire) |
 | **Lot E — architecture E-R3 : Option A ou B ?** | **Bloquant** |
 | AffectationMaitreStage visible aux Administrateurs ? | Masqué (provisoire) |
 | Notifications email SMTP en production | Non implémentées (in-app uniquement) |
+| Constats 1 à 5 de l'étape 10 (droits Admin, fiche stage autre département, rapport vivier, accès Référentiels, GET notification_lire) | À trancher — voir [`docs/rapports/etape_10_pages_rapport.md`](docs/rapports/etape_10_pages_rapport.md) |
+| Constat 6 : les tests écrivent dans le vrai `fichiers_prives/` | Correction proposée (petit lot séparé) |
 
 ---
 
