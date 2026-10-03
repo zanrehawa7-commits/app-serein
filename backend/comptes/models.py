@@ -52,3 +52,28 @@ class Utilisateur(AbstractUser):
     def role(self):
         groupe = self.groups.first()
         return groupe.name if groupe else None
+
+
+class ProfilRole(models.Model):
+    """
+    Complète un Group Django. Les 3 rôles de base sont « système » (est_systeme) ; les autres
+    sont des rôles de consultation, en lecture seule (RG-U8).
+    """
+
+    groupe = models.OneToOneField(
+        "auth.Group",
+        on_delete=models.CASCADE,
+        related_name="profil",
+        verbose_name="groupe",
+    )
+    description = models.TextField(blank=True, verbose_name="description")
+    actif = models.BooleanField(default=True, verbose_name="actif")
+    est_systeme = models.BooleanField(default=False, verbose_name="rôle système")
+
+    class Meta:
+        verbose_name = "Profil de rôle"
+        verbose_name_plural = "Profils de rôle"
+        ordering = ["-est_systeme", "groupe__name"]
+
+    def __str__(self):
+        return self.groupe.name

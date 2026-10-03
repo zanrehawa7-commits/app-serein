@@ -301,3 +301,85 @@ class PermissionsAdministrateurLectureSeuleTests(TestCase):
         self.assertFalse(ajout_offre["checked"])
         voir_offre = actions[("Offres & besoins", "Offre", "Voir")]
         self.assertFalse(voir_offre["disabled"])
+
+
+# ─── Lot E1 : profils de rôle et droits de consultation ───────────────────────
+
+
+def _role_consultation(nom, codes=(), actif=True):
+    """Groupe + profil de consultation, avec les permissions « app.codename » données."""
+    from django.contrib.auth.models import Permission
+    from comptes.models import ProfilRole
+    groupe = Group.objects.create(name=nom)
+    ProfilRole.objects.create(groupe=groupe, description="Test", actif=actif)
+    for code in codes:
+        app, codename = code.split(".")
+        groupe.permissions.add(Permission.objects.get(content_type__app_label=app, codename=codename))
+    return groupe
+
+
+class ProfilRoleTests(TestCase):
+
+    def _init_donnees(self):
+        from io import StringIO
+        from django.core.management import call_command
+        call_command("init_donnees", stdout=StringIO())
+
+    def test_init_donnees_cree_les_profils_systeme_idempotent(self):
+        from comptes.models import ProfilRole
+        self._init_donnees()
+        self._init_donnees()
+        profils = ProfilRole.objects.filter(est_systeme=True)
+        self.assertEqual(
+            sorted(profils.values_list("groupe__name", flat=True)), ["Administrateur", "Responsable", "Secrétaire"]
+        )
+        self.assertTrue(all(p.actif for p in profils))
+
+    def test_init_donnees_ne_touche_pas_aux_roles_de_consultation(self):
+        groupe = _role_consultation("Auditeur", ["offres.view_offre"], actif=False)
+        self._init_donnees()
+        groupe.profil.refresh_from_db()
+        self.assertEqual((groupe.profil.est_systeme, groupe.profil.actif), (False, False))
+        self.assertEqual(list(groupe.permissions.values_list("codename", flat=True)), ["view_offre"])
+
+    def test_migration_0005_marque_les_groupes_existants(self):
+        import importlib
+        from django.apps import apps
+        from comptes.models import ProfilRole
+        Group.objects.create(name="Secrétaire")
+        Group.objects.create(name="Autre")
+        migration = importlib.import_module("comptes.migrations.0005_profils_roles_systeme")
+        migration.creer_profils_systeme(apps, None)
+        self.assertEqual(list(ProfilRole.objects.values_list("groupe__name", "est_systeme")), [("Secrétaire", True)])
+
+    def test_permissions_personnalisees_creees(self):
+        from django.contrib.auth.models import Permission
+        for app, codename in [("candidatures", "telecharger_pieces_jointes"), ("stages", "consulter_vivier"),
+                              ("stages", "exporter_vivier"), ("stages", "telecharger_rapports")]:
+            with self.subTest(codename=codename):
+                self.assertTrue(Permission.objects.filter(content_type__app_label=app, codename=codename).exists())
+
+    def test_liste_blanche_onze_droits_de_consultation_uniquement(self):
+        from comptes.permissions import CODES_DROITS_CONSULTATION
+        self.assertEqual(len(CODES_DROITS_CONSULTATION), 11)
+        for code in CODES_DROITS_CONSULTATION:
+            with self.subTest(code=code):
+                self.assertFalse(code.split(".")[1].startswith(("add_", "change_", "delete_")))
+
+    def test_est_role_consultation_et_a_acces(self):
+        from comptes.permissions import a_acces, est_role_consultation
+        _role_consultation("Auditeur", ["offres.view_offre"])
+        _role_consultation("Ancien", ["offres.view_offre"], actif=False)
+        auditeur = _creer_utilisateur("aud@serein.bf", "pass", groupe="Auditeur")
+        ancien = _creer_utilisateur("anc@serein.bf", "pass", groupe="Ancien")
+        sec = _creer_utilisateur("sec@serein.bf", "pass", groupe="Secrétaire")
+        sans_role = _creer_utilisateur("x@serein.bf", "pass")
+        self.assertEqual(
+            [est_role_consultation(u) for u in (auditeur, ancien, sec, sans_role)], [True, False, False, False]
+        )
+        self.assertTrue(a_acces(auditeur, ["Administrateur"], "offres.view_offre"))
+        self.assertFalse(a_acces(auditeur, ["Administrateur"], "offres.view_besoin"))
+        self.assertTrue(a_acces(auditeur, ["Administrateur"]))
+        self.assertFalse(a_acces(ancien, ["Administrateur"], "offres.view_offre"))
+        self.assertTrue(a_acces(sec, ["Secrétaire"], "offres.view_besoin"))
+        self.assertFalse(a_acces(sec, ["Administrateur"], "offres.view_offre"))

@@ -303,6 +303,8 @@ class PieceJointe(models.Model):
         verbose_name = "Pièce jointe"
         verbose_name_plural = "Pièces jointes"
         ordering = ["type_piece"]
+        # Données personnelles : droit distinct pour les rôles de consultation (RG-U10).
+        permissions = [("telecharger_pieces_jointes", "Télécharger les pièces jointes des candidats")]
         constraints = [
             # Un seul exemplaire de chaque type par candidature (sauf AUTRE, illimité)
             models.UniqueConstraint(

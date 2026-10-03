@@ -2,6 +2,7 @@ from django.contrib.auth.models import Group, Permission
 from django.contrib.contenttypes.models import ContentType
 from django.core.management.base import BaseCommand
 
+from comptes.models import ProfilRole
 from comptes.permissions import APPS_LECTURE_SEULE_ADMINISTRATEUR
 from referentiels.models import TypeStage
 
@@ -59,6 +60,7 @@ class Command(BaseCommand):
             groupe, cree = Group.objects.get_or_create(name=nom_groupe)
             action = "créé" if cree else "déjà existant"
             self.stdout.write(f"  Groupe '{nom_groupe}' {action}.")
+            ProfilRole.objects.update_or_create(groupe=groupe, defaults={"est_systeme": True, "actif": True})
 
             perms_a_ajouter = []
             for cle, actions in apps_perms.items():
