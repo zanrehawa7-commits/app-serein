@@ -310,7 +310,7 @@ Règles structurantes à mémoriser :
 | Lot D | 72 h entretiens, alerter_entretiens, TransfertCandidature, AffectationMaitreStage | ✅ | bcd2999 |
 
 **Branche active** : `lot-d` (à fusionner dans `main` après validation)
-**Tests** : **265 / 265** ✅ — 0 echec
+**Tests** : **268 / 268** ✅ — 0 echec
 
 ---
 

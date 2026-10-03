@@ -1,7 +1,9 @@
+from io import StringIO
 from unittest.mock import patch
 
 from django.contrib.auth.models import Group, Permission
 from django.contrib.contenttypes.models import ContentType
+from django.core.management import call_command
 from django.db.models import ProtectedError
 from django.test import Client, TestCase
 from django.urls import reverse
@@ -92,6 +94,28 @@ class AccesRolesTests(TestCase):
 
     def test_personnel_modifier_interdit(self):
         self._assert_403("referentiels:personnel_modifier", {"pk": self.personnel.pk})
+
+
+class AffichageListesAdministrateurTests(TestCase):
+    """Les listes s'affichent réellement (200) : détecte les erreurs de template."""
+
+    def setUp(self):
+        dept = Departement.objects.create(nom="Dept Test")
+        personnel = Personnel.objects.create(nom="Doe", prenom="John", departement=dept)
+        _creer_utilisateur("perso@serein.bf", groupe="Secrétaire", personnel=personnel)
+        Personnel.objects.create(nom="Sans", prenom="Compte")
+        self.client.force_login(_creer_utilisateur("admin@serein.bf", is_superuser=True))
+
+    def test_listes_referentiels_200(self):
+        for url_name in [
+            "referentiels:departement_list",
+            "referentiels:etablissement_list",
+            "referentiels:typestage_list",
+            "referentiels:canalpublication_list",
+            "referentiels:personnel_list",
+        ]:
+            with self.subTest(url=url_name):
+                self.assertEqual(self.client.get(reverse(url_name)).status_code, 200)
 
 
 # ─── Tests TypeStage suppression ──────────────────────────────────────────────
@@ -376,6 +400,32 @@ class PermissionsPersonnelGroupesTests(TestCase):
         groupe = Group.objects.get(name="Responsable")
         codenames = set(groupe.permissions.values_list("codename", flat=True))
         self.assertIn("view_personnel", codenames)
+
+
+# ─── Tests commande init_donnees (base neuve) ─────────────────────────────────
+
+class InitDonneesCommandeTests(TestCase):
+
+    def _lancer(self):
+        call_command("init_donnees", stdout=StringIO())
+
+    def test_cree_les_types_de_stage_avec_durees_sur_base_vide(self):
+        from referentiels.management.commands.init_donnees import TYPES_STAGE
+        TypeStage.objects.all().delete()
+        self._lancer()
+        for libelle, (duree_min, duree_max) in TYPES_STAGE.items():
+            with self.subTest(libelle=libelle):
+                ts = TypeStage.objects.get(libelle=libelle)
+                self.assertEqual((ts.duree_min_mois, ts.duree_max_mois), (duree_min, duree_max))
+
+    def test_idempotente_et_ne_modifie_pas_les_durees_existantes(self):
+        TypeStage.objects.all().delete()
+        self._lancer()
+        TypeStage.objects.filter(libelle="Stage professionnel").update(duree_min_mois=2, duree_max_mois=4)
+        self._lancer()
+        self.assertEqual(TypeStage.objects.count(), 5)
+        ts = TypeStage.objects.get(libelle="Stage professionnel")
+        self.assertEqual((ts.duree_min_mois, ts.duree_max_mois), (2, 4))
 
 
 # ─── Tests permissions TypeStage ──────────────────────────────────────────────
