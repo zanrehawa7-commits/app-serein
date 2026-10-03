@@ -57,6 +57,7 @@ MATRICE = {
     "comptes:tableau_bord_admin": ((ADMIN,), 200, {}),
     "comptes:tableau_bord_secretaire": ((SEC,), 200, {}),
     "comptes:tableau_bord_responsable": ((RESP,), 200, {}),
+    "comptes:tableau_bord_consultation": ((), 200, {}),
     "comptes:en_developpement": (TOUS, 200, {}),
     "comptes:utilisateur_list": ((ADMIN,), 200, {}),
     "comptes:utilisateur_creer": ((ADMIN,), 200, {}),
@@ -116,6 +117,7 @@ MATRICE = {
     "suivi:notification_list": (TOUS, 200, {}),
     "suivi:notification_tout_lire": (TOUS, 302, {}),
     "suivi:notification_lire": (TOUS, 302, {"pk": "@notif"}),
+    "suivi:historique_list": ((ADMIN,), 200, {}),
     # ── candidatures ─────────────────────────────────────────────────────────
     "candidatures:candidat_recherche": ((SEC,), 200, {}),
     "candidatures:candidat_creer": ((SEC,), 200, {}),
@@ -631,6 +633,78 @@ class RoleConsultationAccesTests(_DonneesPagesMixin, TestCase):
     def test_notifications_ouvertes_sans_droit(self):
         self._client(_utilisateur_consultation("n@test.bf", "Aucun", []))
         self.assertEqual(self.client.get(reverse("suivi:notification_list")).status_code, 200)
+
+
+class InterfaceConsultationTests(_DonneesPagesMixin, TestCase):
+    """RG-U10 / RG-U12 : menu et tableau de bord d'après les droits ; page Historique."""
+
+    def _connecter(self, codes, actif=True, nom="Lecteur"):
+        u = _utilisateur_consultation(f"{nom.lower()}@test.bf", nom, codes, actif=actif)
+        self.client.logout()
+        self.client.force_login(u)
+        return u
+
+    def test_redirection_et_menu_d_apres_les_droits(self):
+        self._connecter(["candidatures.view_candidature"])
+        reponse = self.client.get(reverse("comptes:tableau_de_bord"), follow=True)
+        self.assertRedirects(reponse, reverse("comptes:tableau_bord_consultation"))
+        self.assertContains(reponse, reverse("candidatures:candidature_list"))
+        for absent in ["offres:offre_list", "offres:besoin_list", "stages:stage_list", "stages:vivier",
+                       "suivi:historique_list", "comptes:utilisateur_list", "candidatures:candidat_recherche"]:
+            with self.subTest(absent=absent):
+                self.assertNotContains(reponse, reverse(absent))
+
+    def test_tableau_de_bord_seulement_les_modules_consultables(self):
+        self._connecter(["stages.view_stage"])
+        reponse = self.client.get(reverse("comptes:tableau_bord_consultation"))
+        self.assertEqual([c[0] for c in reponse.context["compteurs"]], ["Stages en cours"])
+        self.assertFalse(reponse.context["voit_historique"])
+
+    def test_role_desactive_message_sur_le_tableau_de_bord(self):
+        self._connecter(["stages.view_stage"], actif=False)
+        reponse = self.client.get(reverse("comptes:tableau_de_bord"), follow=True)
+        self.assertEqual(reponse.status_code, 200)
+        self.assertContains(reponse, "Rôle désactivé")
+        self.assertNotIn("compteurs", reponse.context)
+
+    def test_tableau_de_bord_consultation_refuse_aux_roles_de_base(self):
+        for role in TOUS:
+            with self.subTest(role=role):
+                self.assertEqual(self._get(reverse("comptes:tableau_bord_consultation"), role), 403)
+
+    def test_menus_des_roles_de_base(self):
+        historique = reverse("suivi:historique_list")
+        for role, present in [(ADMIN, True), (SEC, False), (RESP, False)]:
+            with self.subTest(role=role):
+                self.client.logout()
+                self.client.force_login(self.utilisateurs[role])
+                reponse = self.client.get(reverse("comptes:tableau_de_bord"), follow=True)
+                self.assertEqual(historique in reponse.content.decode(), present)
+
+    def test_historique_administrateur_avec_liens(self):
+        self.client.force_login(self.utilisateurs[ADMIN])
+        reponse = self.client.get(reverse("suivi:historique_list"))
+        self.assertEqual(reponse.status_code, 200)
+        self.assertContains(reponse, reverse("candidatures:candidature_detail", args=[self.cand_recue.pk]))
+        self.assertContains(reponse, reverse("stages:stage_detail", args=[self.stage_cours.pk]))
+
+    def test_historique_liens_seulement_vers_les_objets_consultables(self):
+        self._connecter(["suivi.view_historique", "stages.view_stage"])
+        reponse = self.client.get(reverse("suivi:historique_list"))
+        self.assertEqual(reponse.status_code, 200)
+        self.assertContains(reponse, reverse("stages:stage_detail", args=[self.stage_cours.pk]))
+        self.assertNotContains(reponse, reverse("candidatures:candidature_detail", args=[self.cand_recue.pk]))
+        self.assertContains(reponse, str(self.cand_recue))
+
+    def test_historique_refuse_sans_le_droit(self):
+        self._connecter(["stages.view_stage"])
+        self.assertEqual(self.client.get(reverse("suivi:historique_list")).status_code, 403)
+
+    def test_historique_filtre_par_type(self):
+        self.client.force_login(self.utilisateurs[ADMIN])
+        reponse = self.client.get(reverse("suivi:historique_list"), {"type": "stages.stage"})
+        types = {h.content_type.model for h in reponse.context["historiques"]}
+        self.assertEqual(types, {"stage"})
 
 
 class TelechargementsTests(_DonneesPagesMixin, TestCase):

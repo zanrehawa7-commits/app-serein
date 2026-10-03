@@ -3,6 +3,7 @@ from django.contrib.auth import views as auth_views
 from django.contrib.auth.decorators import login_not_required
 from django.contrib.auth.models import Group, Permission
 from django.contrib.contenttypes.models import ContentType
+from django.core.exceptions import PermissionDenied
 from django.db.models import Count, Q
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse_lazy
@@ -88,7 +89,61 @@ def tableau_de_bord(request):
         "Secrétaire": "comptes:tableau_bord_secretaire",
         "Responsable": "comptes:tableau_bord_responsable",
     }
+    if role not in destinations and _profil_consultation(request.user):
+        return redirect("comptes:tableau_bord_consultation")
     return redirect(destinations.get(role, "comptes:tableau_bord_admin"))
+
+
+def _profil_consultation(user):
+    """Profil du rôle de consultation de l'utilisateur, actif ou non ; None pour un rôle de base."""
+    groupe = user.groups.select_related("profil").first()
+    profil = getattr(groupe, "profil", None) if groupe else None
+    return profil if profil and not profil.est_systeme else None
+
+
+class TableauBordConsultationView(TemplateView):
+    """
+    Tableau de bord générique des rôles de consultation : seulement les compteurs des modules
+    consultables. Rôle désactivé : message, et 403 sur toutes les autres pages (RG-U11).
+    """
+    template_name = "comptes/tableau_bord_consultation.html"
+
+    def dispatch(self, request, *args, **kwargs):
+        self.profil = _profil_consultation(request.user)
+        if self.profil is None:
+            raise PermissionDenied
+        return super().dispatch(request, *args, **kwargs)
+
+    def get_context_data(self, **kwargs):
+        from candidatures.models import Candidature, StatutCandidature
+        from offres.models import Besoin, Offre, StatutBesoin, StatutOffre
+        from stages.models import Stage, StatutStage
+
+        ctx = super().get_context_data(**kwargs)
+        ctx["role_actif"] = self.profil.actif
+        if not self.profil.actif:
+            return ctx
+        peut = self.request.user.has_perm
+        compteurs = []
+        if peut("offres.view_besoin"):
+            compteurs.append(("Besoins en attente", Besoin.objects.filter(statut=StatutBesoin.ENVOYE).count(),
+                              "offres:besoin_list", "bi-inbox"))
+        if peut("offres.view_offre"):
+            compteurs.append(("Offres ouvertes", Offre.objects.filter(statut=StatutOffre.OUVERTE).count(),
+                              "offres:offre_list", "bi-file-earmark-text"))
+        if peut("candidatures.view_candidature"):
+            actives = [StatutCandidature.RECUE, StatutCandidature.EN_TRAITEMENT]
+            compteurs.append(("Candidatures en cours", Candidature.objects.filter(statut__in=actives).count(),
+                              "candidatures:candidature_list", "bi-folder2-open"))
+        if peut("stages.view_stage"):
+            compteurs.append(("Stages en cours", Stage.objects.filter(statut=StatutStage.EN_COURS).count(),
+                              "stages:stage_list", "bi-mortarboard"))
+        if peut("stages.consulter_vivier"):
+            compteurs.append(("Profils au vivier", Stage.objects.filter(vivier=True).count(),
+                              "stages:vivier", "bi-people-fill"))
+        ctx["compteurs"] = compteurs
+        ctx["voit_historique"] = peut("suivi.view_historique")
+        return ctx
 
 
 class TableauBordAdminView(RoleRequisMixin, TemplateView):
@@ -313,12 +368,11 @@ class UtilisateurActiverView(RoleRequisMixin, View):
         if utilisateur == request.user:
             messages.error(request, "Vous ne pouvez pas désactiver votre propre compte.")
             return redirect("comptes:utilisateur_list")
-        groupe = utilisateur.groups.select_related("profil").first()
-        profil = getattr(groupe, "profil", None) if groupe else None
+        profil = _profil_consultation(utilisateur)
         if not utilisateur.is_active and profil and not profil.actif:
             messages.error(
                 request,
-                f"Le rôle « {groupe.name} » est désactivé : changez d'abord le rôle de cet utilisateur.",
+                f"Le rôle « {profil.groupe.name} » est désactivé : changez d'abord le rôle de cet utilisateur.",
             )
             return redirect("comptes:utilisateur_list")
         utilisateur.is_active = not utilisateur.is_active

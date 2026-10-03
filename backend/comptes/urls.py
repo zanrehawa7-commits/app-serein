@@ -15,6 +15,7 @@ urlpatterns = [
     path("tableau-de-bord/admin/", views.TableauBordAdminView.as_view(), name="tableau_bord_admin"),
     path("tableau-de-bord/secretaire/", views.TableauBordSecretaireView.as_view(), name="tableau_bord_secretaire"),
     path("tableau-de-bord/responsable/", views.TableauBordResponsableView.as_view(), name="tableau_bord_responsable"),
+    path("tableau-de-bord/consultation/", views.TableauBordConsultationView.as_view(), name="tableau_bord_consultation"),
     path("en-developpement/", views.EnDeveloppementView.as_view(), name="en_developpement"),
 
     # ── F03 — Utilisateurs (Administrateur) ───────────────────────────────────

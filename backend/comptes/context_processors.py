@@ -1,11 +1,11 @@
 from django.conf import settings
-from comptes.permissions import _role_utilisateur
+from comptes.permissions import _role_utilisateur, est_role_consultation
 
 
 def contexte_utilisateur(request):
     """Injecte le rôle et le nombre de notifications non lues dans tous les templates."""
     if not request.user.is_authenticated:
-        return {"role_utilisateur": None, "nb_notifications": 0}
+        return {"role_utilisateur": None, "nb_notifications": 0, "est_consultation": False}
 
     role = _role_utilisateur(request.user)
 
@@ -38,6 +38,7 @@ def contexte_utilisateur(request):
 
     return {
         "role_utilisateur": role,
+        "est_consultation": est_role_consultation(request.user),
         "nb_notifications": nb_notifications,
         "dernieres_notifications": dernieres_notifications,
         "nb_a_informer": nb_a_informer,
