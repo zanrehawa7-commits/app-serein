@@ -140,6 +140,7 @@
 | RG-N1 | Toutes les notifications passent par `suivi.services.notifier(destinataires, message, lien)`. Bulk create. | `suivi/services.py` |
 | RG-N2 | Dropdown base.html : 5 dernières non lues (context processor). | `comptes/context_processors.py` |
 | RG-N3 | Marquage individuel (`NotificationLireView`) ou tout marquer (`NotificationToutLireView`). | `suivi/views.py` |
+| RG-N4 | **Exception assumée** à « actions en POST uniquement » : ouvrir `/notifications/<pk>/lire/` en GET marque la notification comme lue puis redirige vers son lien. Raison : le menu utilise de simples liens ; l'opération n'altère aucune donnée métier et se limite aux notifications de l'utilisateur connecté (autre utilisateur → 404). « Tout marquer comme lu » reste en POST. | `suivi/views.py` |
 
 ---
 

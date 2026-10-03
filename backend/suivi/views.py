@@ -39,6 +39,9 @@ class NotificationLireView(RoleRequisMixin, View):
             return redirect(notif.lien)
         return redirect("suivi:notification_list")
 
+    # Exception assumée à « actions en POST uniquement » (RG-N4) : le menu des notifications
+    # utilise de simples liens. Marquer comme lue n'altère aucune donnée métier et ne
+    # concerne que les notifications de l'utilisateur connecté.
     def get(self, request, pk):
         return self._marquer_et_rediriger(request, pk)
 

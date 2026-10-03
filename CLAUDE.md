@@ -283,6 +283,7 @@ Règles structurantes à mémoriser :
 
 - Contrôles côté serveur (rôle + permission + département). Jamais uniquement côté template.
 - Actions en POST uniquement. Pattern Post/Redirect/Get. Messages en français.
+  Seule exception assumée : `notification_lire` accepte le GET (lien du menu ; marquer comme lue n'altère aucune donnée métier — RG-N4).
 - Fichiers privés : jamais de `.url` dans les templates ; téléchargement via vue protégée.
 
 ### Tests
