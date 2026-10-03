@@ -326,7 +326,8 @@ Règles structurantes à mémoriser :
 | Lot C | ParametreOffre singleton, Offre.departement, texte_publie | ✅ | a0b2fd6 |
 | Lot D | 72 h entretiens, alerter_entretiens, TransfertCandidature, AffectationMaitreStage | ✅ | bcd2999 |
 | Fix | init_donnees sur base neuve + liste personnels (commun_tags) | ✅ | cae763e |
-| Étape 10 (pages) | Test de toutes les pages × rôles + cloisonnement département (`commun/tests_pages.py`) | ✅ | — |
+| Étape 10 (pages) | Test de toutes les pages × rôles + cloisonnement département (`commun/tests_pages.py`) | ✅ | b1224d5 |
+| Étape 10 (constats) | Fichiers de test hors `fichiers_prives/`, Admin lecture seule, RG-E5, RG-E7, RG-R3, RG-N4 | ✅ (branche) | d6dfdfb |
 
 **Branche active** : `etape-10-constats` (contient `fix-fichiers-tests` ; à fusionner dans `main` après validation)
 **Tests** : **295 / 295** ✅ — 0 echec
@@ -367,8 +368,8 @@ E-R1 (CRUD groupes), E-R2 (permissions sur groupes perso), E-R5 (audit trail per
 | **Lot E — architecture E-R3 : Option A ou B ?** | **Bloquant** |
 | AffectationMaitreStage visible aux Administrateurs ? | Masqué (provisoire) |
 | Notifications email SMTP en production | Non implémentées (in-app uniquement) |
-| Constats 1 à 5 de l'étape 10 (droits Admin, fiche stage autre département, rapport vivier, accès Référentiels, GET notification_lire) | À trancher — voir [`docs/rapports/etape_10_pages_rapport.md`](docs/rapports/etape_10_pages_rapport.md) |
-| Constat 6 : les tests écrivent dans le vrai `fichiers_prives/` | Correction proposée (petit lot séparé) |
+| Responsable **sans département** : terminer / interrompre / évaluer un stage de n'importe quel département (`if dept and ...`) | **À trancher** — correction proposée dans [`docs/rapports/etape_10_pages_rapport.md`](docs/rapports/etape_10_pages_rapport.md) |
+| Nettoyage des fichiers de test dans `fichiers_prives/` (non référencés en base) | En attente d'accord |
 
 ---
 

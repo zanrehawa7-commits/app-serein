@@ -68,9 +68,31 @@ Tous les refus d'accès par rôle sont conformes au code.
 
 ---
 
-## Constats — à trancher
+## Décisions et corrections (2026-10-03)
 
-Aucun de ces points n'a été modifié : ils demandent une décision.
+Branche `etape-10-constats` (contient `fix-fichiers-tests`) — un commit par point, suite complète à chaque fois.
+
+| # | Décision | Commit | Tests |
+|---|---|---|---|
+| 6 | Les tests n'écrivent **jamais** dans `fichiers_prives/` : `StockagePrive` relit le réglage à chaque accès, dossier temporaire dans `settings_test`, runner qui fait échouer la suite en cas d'écriture dans le vrai dossier. | `885795d` | 271 |
+| 1 | Administrateur **en lecture seule** sur offres, candidatures, stages, suivi. Cause : `_CRUD` introduit à l'Étape 4 (`a3643ee`), réimposé à chaque `init_donnees` (`permissions.set`), et recochable dans l'écran F02. Source unique `APPS_LECTURE_SEULE_ADMINISTRATEUR` + test de la liste exacte (36 permissions). | `6351bcf` | 285 |
+| 2 | Fiche stage d'un autre département → 403 pour un Responsable, sauf stage au vivier (lecture seule, aucun bouton) — **RG-E7**. | `d68ec7d` | 290 |
+| 3 | Rapport d'un autre département lisible seulement si vivier — **RG-E5** voulue, documentée ; trou corrigé pour le Responsable sans département. | `042ec93` | 295 |
+| 4 | Doc corrigée : écrans Référentiels réservés à l'Administrateur — **RG-R3**. | `dd82a99` | 295 |
+| 5 | GET sur `notification_lire` gardé, documenté comme exception assumée — **RG-N4**. | `d6dfdfb` | 295 |
+
+### Nouveau constat (non traité, à trancher)
+
+`TerminerStageView`, `InterrompreStageView` et `EvaluerStageView` contrôlent le département par
+`if dept and stage.candidature.departement != dept` : un Responsable **sans département** passe le contrôle
+et peut terminer, interrompre ou évaluer le stage de **n'importe quel** département. Même trou que celui
+corrigé au point 3 sur le rapport. Correction proposée : `if dept is None or ...` → 403, avec un test par vue.
+
+---
+
+## Constats initiaux (avant décision)
+
+Texte d'origine conservé pour la traçabilité ; voir les décisions ci-dessus.
 
 ### 1. Droits Django de l'Administrateur ≠ CLAUDE.md
 
