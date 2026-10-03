@@ -125,6 +125,7 @@
 {% endif %}
 
 <!-- Publications -->
+{% if peut_voir_publications %}
 <div class="card border-0 shadow-sm mt-4">
     <div class="card-header bg-white border-bottom py-3">
         <h6 class="mb-0 fw-semibold"><i class="bi bi-megaphone me-2 text-primary"></i>Publications</h6>
@@ -185,6 +186,7 @@
         {% endif %}
     </div>
 </div>
+{% endif %}
 
 {% include "commun/_historique.html" %}
 {% include "commun/_modal_confirmer.html" %}

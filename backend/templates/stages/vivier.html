@@ -8,9 +8,11 @@
         <h4 class="mb-0 fw-semibold"><i class="bi bi-people-fill text-success me-2"></i>Vivier de talents</h4>
         <p class="text-muted small mb-0">Stagiaires recommandés pour un futur recrutement</p>
     </div>
+{% if peut_exporter %}
     <a href="{% url 'stages:vivier_export_csv' %}" class="btn btn-outline-success btn-sm">
         <i class="bi bi-download me-1"></i>Exporter CSV
     </a>
+{% endif %}
 </div>
 
 {% if object_list %}
@@ -25,7 +27,7 @@
                         <th>Formation</th>
                         <th>Établissement</th>
                         <th>Type de stage</th>
-                        {% if role == "Administrateur" %}<th>Département</th>{% endif %}
+                        {% if afficher_departement %}<th>Département</th>{% endif %}
                         <th>Période</th>
                         <th class="text-center">Note</th>
                         <th>Maître de stage</th>
@@ -45,17 +47,19 @@
                         </td>
                         <td class="small">{{ s.candidature.candidat.etablissement|default:s.candidature.candidat.etablissement_autre|default:"—" }}</td>
                         <td class="small">{{ s.candidature.type_stage.libelle }}</td>
-                        {% if role == "Administrateur" %}<td>{{ s.candidature.departement.nom }}</td>{% endif %}
+                        {% if afficher_departement %}<td>{{ s.candidature.departement.nom }}</td>{% endif %}
                         <td class="small">{{ s.date_debut|date:"d/m/Y" }} – {{ s.date_fin_reelle|default:s.date_fin_prevue|date:"d/m/Y" }}</td>
                         <td class="text-center">
                             <span class="badge bg-success">{{ s.note }}/20</span>
                         </td>
                         <td class="small">{{ s.maitre_stage }}</td>
                         <td class="text-end pe-3 d-flex gap-1 justify-content-end">
+{% if peut_voir_stage %}
                             <a href="{% url 'stages:stage_detail' s.pk %}" class="btn btn-sm btn-outline-secondary" title="Voir le stage">
                                 <i class="bi bi-eye"></i>
                             </a>
-                            {% if s.rapport %}
+{% endif %}
+                            {% if s.rapport and peut_telecharger_rapport %}
                             <a href="{% url 'stages:rapport_telecharger' s.pk %}" class="btn btn-sm btn-outline-primary" title="Télécharger le rapport">
                                 <i class="bi bi-file-earmark-pdf"></i>
                             </a>

@@ -59,6 +59,12 @@ class Stage(models.Model):
         verbose_name = "Stage"
         verbose_name_plural = "Stages"
         ordering = ["-date_debut"]
+        # Droits des rôles de consultation (RG-U9) ; les rôles de base passent par leur rôle.
+        permissions = [
+            ("consulter_vivier", "Consulter le vivier de talents"),
+            ("exporter_vivier", "Exporter le vivier (CSV)"),
+            ("telecharger_rapports", "Télécharger les rapports de stage"),
+        ]
         constraints = [
             models.CheckConstraint(
                 condition=models.Q(date_fin_prevue__gt=models.F("date_debut")),

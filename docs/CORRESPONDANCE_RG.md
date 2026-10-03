@@ -77,6 +77,7 @@ pendant le développement).
 | RG-R1, RG-R2 | Suppression → désactivation si utilisé ; durée min ≤ max. | Étapes 4 / lot B |
 | RG-P1 à RG-P7 | Règles sur le personnel et les responsables de département. | Lot A |
 | RG-U1 à RG-U4, RG-U6 | Connexion par email, rôle = groupe, superuser, session 30 min, changement de rôle. | Étapes 3–4 |
+| RG-U8 à RG-U12 | Rôles de consultation (lecture seule) : création, 11 droits en liste blanche, accès par droit, désactivation, page Historique. | Lot E (version réduite, option C) |
 | RG-N1 à RG-N3 | Notifications in-app. | Étape 5 |
 
 Liste complète et à jour : [`REGLES_GESTION.md`](REGLES_GESTION.md).

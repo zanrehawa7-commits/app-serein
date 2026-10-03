@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+
+{% block title %}Historique{% endblock %}
+
+{% block content %}
+<div class="mb-4">
+    <h5 class="mb-0 fw-semibold"><i class="bi bi-clock-history me-2 text-primary"></i>Historique</h5>
+    <p class="text-muted small mb-0">Journal des actions sur les besoins, offres, candidatures et stages — lecture seule.</p>
+</div>
+
+<div class="card border-0 shadow-sm mb-3">
+    <div class="card-body py-2">
+        <form method="get" class="row g-2 align-items-end">
+            <div class="col-md-4">
+                <label class="form-label small mb-0" for="filtre-type">Type d'objet</label>
+                <select name="type" id="filtre-type" class="form-select form-select-sm">
+                    <option value="">Tous</option>
+                    {% for valeur, libelle in types_objet %}
+                    <option value="{{ valeur }}" {% if filtres.type == valeur %}selected{% endif %}>{{ libelle|capfirst }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label small mb-0" for="filtre-du">Du</label>
+                <input type="date" name="du" id="filtre-du" value="{{ filtres.du }}" class="form-control form-control-sm">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label small mb-0" for="filtre-au">Au</label>
+                <input type="date" name="au" id="filtre-au" value="{{ filtres.au }}" class="form-control form-control-sm">
+            </div>
+            <div class="col-auto">
+                <button type="submit" class="btn btn-outline-primary btn-sm">Filtrer</button>
+                <a href="{% url 'suivi:historique_list' %}" class="btn btn-outline-secondary btn-sm ms-1">Réinitialiser</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="card border-0 shadow-sm">
+    <div class="card-body p-0">
+        {% if historiques %}
+        <div class="table-responsive">
+            <table class="table table-hover table-sm mb-0 small">
+                <thead class="table-light">
+                    <tr>
+                        <th class="ps-3">Date</th>
+                        <th>Objet</th>
+                        <th>Changement</th>
+                        <th>Commentaire</th>
+                        <th>Par</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for h in historiques %}
+                    <tr>
+                        <td class="ps-3 text-nowrap">{{ h.date_action|date:"d/m/Y H:i" }}</td>
+                        <td>
+                            <span class="badge bg-light text-dark me-1">{{ h.type_libelle|capfirst }}</span>
+                            {% if h.lien %}<a href="{{ h.lien }}">{{ h.objet }}</a>{% else %}{{ h.objet|default:"(supprimé)" }}{% endif %}
+                        </td>
+                        <td class="text-nowrap">
+                            {% if h.ancien_statut %}{{ h.ancien_statut }} → {% endif %}{{ h.nouveau_statut|default:"—" }}
+                        </td>
+                        <td>{{ h.commentaire|default:"—" }}</td>
+                        <td>{% if h.utilisateur %}{{ h.utilisateur.get_full_name|default:h.utilisateur.email }}{% else %}Système{% endif %}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% include "commun/_pagination.html" %}
+        {% else %}
+        <div class="text-center py-5 text-muted small">Aucune entrée.</div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

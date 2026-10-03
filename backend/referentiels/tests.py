@@ -421,7 +421,7 @@ class InitDonneesCommandeTests(TestCase):
     def test_permissions_exactes_du_groupe_administrateur(self):
         """CRUD sur comptes et référentiels ; lecture seule sur offres, candidatures, stages, suivi."""
         crud = ["add", "change", "delete", "view"]
-        attendues = {f"comptes.{a}_utilisateur" for a in crud}
+        attendues = {f"comptes.{a}_{m}" for m in ["utilisateur", "profilrole"] for a in crud}
         attendues |= {
             f"referentiels.{a}_{m}"
             for m in ["canalpublication", "departement", "etablissement", "personnel", "typestage"]

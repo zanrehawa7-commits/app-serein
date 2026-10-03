@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
-from .models import Utilisateur
+from .models import ProfilRole, Utilisateur
 
 
 @admin.register(Utilisateur)
@@ -29,3 +29,9 @@ class UtilisateurAdmin(BaseUserAdmin):
         if obj and obj == request.user:
             return False
         return super().has_delete_permission(request, obj)
+
+
+@admin.register(ProfilRole)
+class ProfilRoleAdmin(admin.ModelAdmin):
+    list_display = ["groupe", "est_systeme", "actif"]
+    list_filter = ["est_systeme", "actif"]

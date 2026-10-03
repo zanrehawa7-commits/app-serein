@@ -10,7 +10,13 @@ from django.utils import timezone
 from django.views.generic import ListView
 
 from commun.mixins import ListeMixin
-from comptes.permissions import RoleRequisMixin, _role_utilisateur
+from comptes.permissions import (
+    ConsultationMixin,
+    RoleRequisMixin,
+    _role_utilisateur,
+    a_acces,
+    est_role_consultation,
+)
 from suivi.models import Historique
 
 from .forms import (
@@ -49,10 +55,11 @@ def _get_departement_utilisateur(user):
         return None
 
 
-class StageListView(RoleRequisMixin, ListeMixin, ListView):
+class StageListView(ConsultationMixin, ListeMixin, ListView):
     model = Stage
     template_name = "stages/stage_list.html"
     roles = _ROLES_LECTURE
+    permission_consultation = "stages.view_stage"
     champs_recherche = []
 
     def get_queryset(self):
@@ -86,7 +93,7 @@ class StageListView(RoleRequisMixin, ListeMixin, ListView):
             qs = qs.filter(candidature__type_stage__pk=type_stage)
 
         dept_filter = self.request.GET.get("departement")
-        if dept_filter and role in ["Secrétaire", "Administrateur"]:
+        if dept_filter and (role in ["Secrétaire", "Administrateur"] or est_role_consultation(self.request.user)):
             qs = qs.filter(candidature__departement__pk=dept_filter)
 
         q = self.request.GET.get("q", "").strip()
@@ -106,7 +113,7 @@ class StageListView(RoleRequisMixin, ListeMixin, ListView):
         ctx["statuts"] = StatutStage.choices
         ctx["types_stage"] = TypeStage.objects.filter(actif=True)
         ctx["role"] = _role_utilisateur(self.request.user)
-        if ctx["role"] in ["Secrétaire", "Administrateur"]:
+        if ctx["role"] in ["Secrétaire", "Administrateur"] or est_role_consultation(self.request.user):
             ctx["departements"] = Departement.objects.filter(actif=True).order_by("nom")
         base = self.get_queryset()
         ctx["nb_a_venir"] = base.filter(statut=StatutStage.A_VENIR).count()
@@ -116,8 +123,9 @@ class StageListView(RoleRequisMixin, ListeMixin, ListView):
         return ctx
 
 
-class StageDetailView(RoleRequisMixin, View):
+class StageDetailView(ConsultationMixin, View):
     roles = _ROLES_LECTURE
+    permission_consultation = "stages.view_stage"
 
     def get(self, request, pk):
         stage = get_object_or_404(
@@ -148,12 +156,19 @@ class StageDetailView(RoleRequisMixin, View):
             "maitre_stage", "affecte_par"
         ).order_by("-date_affectation")
         _peut_eval, _ = peut_evaluer(stage) if stage.statut == StatutStage.TERMINE and role == "Responsable" else (False, None)
+        peut_pieces = a_acces(request.user, _ROLES_LECTURE, "candidatures.telecharger_pieces_jointes")
         return render(request, "stages/stage_detail.html", {
             "stage": stage,
             "historiques": historiques,
             "affectations_maitre": affectations_maitre,
             "role": role,
-            "pieces": stage.candidature.pieces.order_by("type_piece", "date_ajout"),
+            # RG-U10 : pièces jointes jamais chargées sans le droit ; lien et rapport selon les droits.
+            "peut_telecharger_pieces": peut_pieces,
+            "pieces": stage.candidature.pieces.order_by("type_piece", "date_ajout") if peut_pieces else None,
+            "peut_voir_candidature": a_acces(request.user, _ROLES_LECTURE, "candidatures.view_candidature"),
+            "peut_telecharger_rapport": a_acces(
+                request.user, ["Responsable", "Administrateur"], "stages.telecharger_rapports"
+            ),
             "peut_modifier": (
                 role == "Secrétaire" and
                 stage.statut in [StatutStage.A_VENIR, StatutStage.EN_COURS]
@@ -529,10 +544,11 @@ class StagesAEvaluerListView(RoleRequisMixin, View):
         })
 
 
-class VivierListView(RoleRequisMixin, ListView):
+class VivierListView(ConsultationMixin, ListView):
     model = Stage
     template_name = "stages/vivier.html"
     roles = ["Responsable", "Administrateur"]
+    permission_consultation = "stages.consulter_vivier"
     paginate_by = 20
 
     def get_queryset(self):
@@ -547,11 +563,16 @@ class VivierListView(RoleRequisMixin, ListView):
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
         ctx["role"] = _role_utilisateur(self.request.user)
+        ctx["afficher_departement"] = ctx["role"] == "Administrateur" or est_role_consultation(self.request.user)
+        ctx["peut_exporter"] = a_acces(self.request.user, self.roles, "stages.exporter_vivier")
+        ctx["peut_voir_stage"] = a_acces(self.request.user, _ROLES_LECTURE, "stages.view_stage")
+        ctx["peut_telecharger_rapport"] = a_acces(self.request.user, self.roles, "stages.telecharger_rapports")
         return ctx
 
 
-class VivierExportCsvView(RoleRequisMixin, View):
+class VivierExportCsvView(ConsultationMixin, View):
     roles = ["Responsable", "Administrateur"]
+    permission_consultation = "stages.exporter_vivier"
 
     def get(self, request):
         response = HttpResponse(content_type="text/csv; charset=utf-8-sig")
@@ -592,8 +613,9 @@ class VivierExportCsvView(RoleRequisMixin, View):
         return response
 
 
-class RapportTelechargerView(RoleRequisMixin, View):
+class RapportTelechargerView(ConsultationMixin, View):
     roles = ["Responsable", "Administrateur"]
+    permission_consultation = "stages.telecharger_rapports"
 
     def get(self, request, pk):
         stage = get_object_or_404(
