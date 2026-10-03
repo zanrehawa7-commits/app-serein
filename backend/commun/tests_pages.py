@@ -486,6 +486,25 @@ class PagesParRoleTests(_DonneesPagesMixin, TestCase):
                         ecarts.append(f"{role} — {nom} {params} → {cible} ({nom_route})")
         self.assertFalse(ecarts, "\n" + "\n".join(sorted(set(ecarts))))
 
+    def test_chaque_formulaire_a_un_bouton_d_envoi(self):
+        """Un formulaire POST sans bouton est inutilisable ({{ form|crispy }} n'affiche pas les boutons du helper)."""
+        import re
+        ecarts = []
+        for nom, (autorises, code_ok, params) in MATRICE.items():
+            if code_ok != 200 or not autorises:
+                continue
+            role = autorises[0]
+            self.client.logout()
+            self.client.force_login(self.utilisateurs[role])
+            reponse = self.client.get(self._url(nom, params, role))
+            if reponse.streaming or "text/html" not in reponse.get("Content-Type", ""):
+                continue
+            html = reponse.content.decode()
+            for formulaire in re.findall(r'<form[^>]*method="post"[^>]*>(.*?)</form>', html, re.S | re.I):
+                if not re.search(r'<button(?![^>]*type="button")|<input[^>]*type="submit"', formulaire, re.I):
+                    ecarts.append(f"{nom} ({role})")
+        self.assertFalse(ecarts, "Formulaire sans bouton d'envoi :\n" + "\n".join(sorted(set(ecarts))))
+
     def test_get_ne_modifie_aucune_donnee(self):
         actions = [n for n, (_, code, _) in MATRICE.items() if code in (302, 405)]
         actions.remove("suivi:notification_lire")
