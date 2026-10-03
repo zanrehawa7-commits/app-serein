@@ -298,7 +298,7 @@ class TerminerStageView(RoleRequisMixin, View):
             pk=pk,
         )
         dept = _get_departement_utilisateur(request.user)
-        if dept and stage.candidature.departement != dept:
+        if dept is None or stage.candidature.departement != dept:
             raise PermissionDenied
         return stage
 
@@ -342,7 +342,7 @@ class InterrompreStageView(RoleRequisMixin, View):
             pk=pk,
         )
         dept = _get_departement_utilisateur(request.user)
-        if dept and stage.candidature.departement != dept:
+        if dept is None or stage.candidature.departement != dept:
             raise PermissionDenied
         return stage
 
@@ -388,7 +388,7 @@ class EvaluerStageView(RoleRequisMixin, View):
             statut=StatutStage.TERMINE,
         )
         dept = _get_departement_utilisateur(request.user)
-        if dept and stage.candidature.departement != dept:
+        if dept is None or stage.candidature.departement != dept:
             raise PermissionDenied
         return stage
 

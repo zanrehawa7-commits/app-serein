@@ -81,12 +81,24 @@ Branche `etape-10-constats` (contient `fix-fichiers-tests`) — un commit par po
 | 4 | Doc corrigée : écrans Référentiels réservés à l'Administrateur — **RG-R3**. | `dd82a99` | 295 |
 | 5 | GET sur `notification_lire` gardé, documenté comme exception assumée — **RG-N4**. | `d6dfdfb` | 295 |
 
-### Nouveau constat (non traité, à trancher)
+### Constat complémentaire — corrigé
 
-`TerminerStageView`, `InterrompreStageView` et `EvaluerStageView` contrôlent le département par
-`if dept and stage.candidature.departement != dept` : un Responsable **sans département** passe le contrôle
-et peut terminer, interrompre ou évaluer le stage de **n'importe quel** département. Même trou que celui
-corrigé au point 3 sur le rapport. Correction proposée : `if dept is None or ...` → 403, avec un test par vue.
+`TerminerStageView`, `InterrompreStageView` et `EvaluerStageView` contrôlaient le département par
+`if dept and stage.candidature.departement != dept` : un Responsable **sans département** obtenait 200 en GET
+et en POST sur les stages de **n'importe quel** département. Corrigé (`if dept is None or ...` → 403).
+
+Audit de toutes les vues d'action du Responsable :
+
+| Vue | Résultat |
+|---|---|
+| Terminer / interrompre / évaluer un stage | **Trou corrigé** |
+| Créer un besoin | **Bug corrigé** : sans département → erreur 500 (`dept.__class__`), désormais 403 |
+| Modifier / annuler un besoin, décisions sur candidature (5 vues) | Déjà correct (`not personnel or dept != ...` dans chaque méthode) |
+| Constituer / modifier un stage, changer le maître de stage | Réservées à la Secrétaire → 403 par rôle |
+
+Tests (`commun/tests_pages.py`) : 10 actions × GET/POST pour un Responsable sans département, et en POST
+pour un Responsable d'un autre département, avec vérification qu'aucune donnée n'est modifiée. Sans les
+correctifs : 8 écarts détectés (6 × 200 sur les stages, 2 × 500 sur la création de besoin).
 
 ---
 

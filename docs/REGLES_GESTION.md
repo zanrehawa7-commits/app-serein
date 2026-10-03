@@ -27,7 +27,7 @@
 | RG-U2 | Rôle = premier groupe Django de l'utilisateur (`user.role = groups.first().name`). Un utilisateur = un groupe. | `comptes/models.py` |
 | RG-U3 | Superutilisateur sans groupe → traité comme Administrateur dans `_role_utilisateur()`. | `comptes/permissions.py` |
 | RG-U4 | Déconnexion automatique après 30 min d'inactivité (`SESSION_COOKIE_AGE = 1800`). | `config/settings.py` |
-| RG-U5 | Un Responsable doit avoir `user.personnel` renseigné pour accéder aux vues filtrées par département. Sans personnel → 403 ou redirect. | `candidatures/views.py` |
+| RG-U5 | Un Responsable n'agit que sur les objets **de son département** (besoins, candidatures, stages). Sans personnel, sans département, ou objet d'un autre département → **403**, en GET comme en POST. Seules exceptions en lecture : stage au vivier (RG-E5, RG-E7). Les listes d'un Responsable sans département sont vides. | `offres/views.py`, `candidatures/views.py`, `stages/views.py` |
 | RG-U6 | Si rôle change DE Responsable → autre rôle : `user.personnel = None ; user.save()`. | `comptes/views.py` (CLAUDE.md §F03) |
 | RG-U7 | Auto-désactivation refusée (RG33 dans le code). | `comptes/views.py` |
 

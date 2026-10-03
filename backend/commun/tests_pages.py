@@ -144,6 +144,26 @@ MATRICE = {
     "stages:rapport_telecharger": ((RESP, ADMIN), 200, {"pk": "stage_fini"}),
 }
 
+# Toutes les actions réservées au Responsable et liées à un département (besoin, candidature, stage).
+# Constituer / modifier un stage (dont le maître de stage) sont réservés à la Secrétaire : 403 par rôle.
+def _actions_responsable(besoin, candidature, stage, stage_termine):
+    return [
+        ("offres:besoin_modifier", {"pk": besoin}),
+        ("offres:besoin_annuler", {"pk": besoin}),
+        ("candidatures:candidature_preselectionner", {"pk": candidature}),
+        ("candidatures:candidature_planifier_entretien", {"pk": candidature}),
+        ("candidatures:candidature_accorder", {"pk": candidature}),
+        ("candidatures:candidature_refuser", {"pk": candidature}),
+        ("candidatures:candidature_rediriger", {"pk": candidature}),
+        ("stages:stage_terminer", {"pk": stage}),
+        ("stages:stage_interrompre", {"pk": stage}),
+        ("stages:stage_evaluer", {"pk": stage_termine}),
+    ]
+
+
+ACTIONS_RESPONSABLE_DEPT_A = _actions_responsable("besoin_libre", "cand_recue", "stage_cours", "stage_fini")
+ACTIONS_RESPONSABLE_DEPT_B = _actions_responsable("besoin_b", "cand_b", "stage_b", "stage_b_fini")
+
 _PDF = b"%PDF-1.4 test etape 10"
 
 
@@ -311,6 +331,15 @@ class _DonneesPagesMixin:
                 kwargs[cle] = getattr(self, ref).pk
         return reverse(nom, kwargs=kwargs)
 
+    def _post(self, url, role):
+        """Comme _get, en POST sans données : le contrôle d'accès doit précéder la validation."""
+        self.client.logout()
+        self.client.force_login(self.utilisateurs[role])
+        try:
+            return self.client.post(url, {}).status_code
+        except Exception as exc:  # noqa: BLE001
+            return f"500 {type(exc).__name__}: {str(exc).splitlines()[0][:120]}"
+
     def _get(self, url, role=None):
         """Code HTTP de la réponse, ou « 500 Exception » si la vue lève une erreur."""
         self.client.logout()
@@ -408,6 +437,18 @@ class CloisonnementDepartementTests(_DonneesPagesMixin, TestCase):
                 ecarts.append(f"{nom:50} obtenu {obtenu}")
         self.assertFalse(ecarts, "\n" + "\n".join(ecarts))
 
+    def test_post_autre_departement_refuse_sans_modification(self):
+        ecarts = []
+        for nom, params in ACTIONS_RESPONSABLE_DEPT_B:
+            obtenu = self._post(self._url(nom, params), RESP)
+            if obtenu != 403:
+                ecarts.append(f"{nom:50} obtenu {obtenu}")
+        self.assertFalse(ecarts, "\n" + "\n".join(ecarts))
+        self.assertEqual(Stage.objects.get(pk=self.stage_b.pk).statut, StatutStage.EN_COURS)
+        self.assertEqual(Stage.objects.get(pk=self.stage_b_fini.pk).note, 10)
+        self.assertEqual(Candidature.objects.get(pk=self.cand_b.pk).statut, StatutCandidature.EN_TRAITEMENT)
+        self.assertEqual(Besoin.objects.get(pk=self.besoin_b.pk).statut, StatutBesoin.PRIS_EN_CHARGE)
+
     def test_listes_filtrees_sur_le_departement(self):
         self.client.force_login(self.utilisateurs[RESP])
         candidatures = self.client.get(reverse("candidatures:candidature_list")).context["object_list"]
@@ -416,6 +457,29 @@ class CloisonnementDepartementTests(_DonneesPagesMixin, TestCase):
         self.assertNotIn(self.stage_b, list(stages))
         offres = self.client.get(reverse("offres:offre_list")).context["object_list"]
         self.assertNotIn(self.offre_b, list(offres))
+
+
+class ResponsableSansDepartementTests(_DonneesPagesMixin, TestCase):
+    """Un Responsable dont le personnel n'a pas de département n'agit sur rien (403, jamais 500)."""
+
+    def setUp(self):
+        Personnel.objects.filter(pk=self.resp_a.pk).update(departement=None)
+
+    def test_actions_refusees_en_get_et_en_post(self):
+        ecarts = []
+        for nom, params in ACTIONS_RESPONSABLE_DEPT_A + [("offres:besoin_creer", {})]:
+            url = self._url(nom, params)
+            for methode, obtenu in (("GET", self._get(url, RESP)), ("POST", self._post(url, RESP))):
+                # GET d'une action POST seule : 405, ou 302 de redirection sans effet
+                # (vérifié par test_get_ne_modifie_aucune_donnee), est acceptable.
+                if obtenu != 403 and not (methode == "GET" and obtenu in (302, 405)):
+                    ecarts.append(f"{nom:50} {methode:4} obtenu {obtenu}")
+        self.assertFalse(ecarts, "\n" + "\n".join(ecarts))
+        self.assertEqual(Stage.objects.get(pk=self.stage_cours.pk).statut, StatutStage.EN_COURS)
+        self.assertEqual(Stage.objects.get(pk=self.stage_fini.pk).note, 15)
+        self.assertEqual(Candidature.objects.get(pk=self.cand_recue.pk).statut, StatutCandidature.RECUE)
+        self.assertEqual(Besoin.objects.get(pk=self.besoin_libre.pk).statut, StatutBesoin.ENVOYE)
+        self.assertEqual(Besoin.objects.count(), 3)
 
 
 class TelechargementsTests(_DonneesPagesMixin, TestCase):
