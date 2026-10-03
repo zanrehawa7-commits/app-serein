@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% comment %}
+RG-E8 : fiche d'un stage au vivier vue par le Responsable d'un autre département.
+Exactement les colonnes du vivier — ne rien ajouter ici sans mettre à jour RG-E8.
+{% endcomment %}
+
+{% block title %}Vivier — {{ stage.candidature.candidat }}{% endblock %}
+
+{% block content %}
+{% with candidat=stage.candidature.candidat %}
+<div class="d-flex align-items-center justify-content-between mb-4 flex-wrap gap-2">
+    <div>
+        <h4 class="mb-0 fw-semibold">
+            <i class="bi bi-mortarboard me-2"></i>{{ candidat }}
+        </h4>
+        <span class="badge text-bg-light border mt-1"><i class="bi bi-eye me-1"></i>Lecture seule — stage au vivier d'un autre département</span>
+    </div>
+    <a href="{% url 'stages:vivier' %}" class="btn btn-outline-secondary btn-sm">
+        <i class="bi bi-arrow-left me-1"></i>Vivier
+    </a>
+</div>
+
+<div class="card border-0 shadow-sm">
+    <div class="card-body">
+        <dl class="row mb-0">
+            <dt class="col-sm-4 text-muted small">Identité</dt>
+            <dd class="col-sm-8">{{ candidat }}</dd>
+
+            <dt class="col-sm-4 text-muted small">Téléphone</dt>
+            <dd class="col-sm-8">{{ candidat.telephone }}</dd>
+
+            <dt class="col-sm-4 text-muted small">Email</dt>
+            <dd class="col-sm-8">{{ candidat.email|default:"—" }}</dd>
+
+            <dt class="col-sm-4 text-muted small">Niveau d'études</dt>
+            <dd class="col-sm-8">{{ candidat.get_niveau_etudes_display|default:"—" }}</dd>
+
+            <dt class="col-sm-4 text-muted small">Filière</dt>
+            <dd class="col-sm-8">{{ candidat.filiere|default:"—" }}</dd>
+
+            <dt class="col-sm-4 text-muted small">Établissement</dt>
+            <dd class="col-sm-8">{{ candidat.etablissement|default:candidat.etablissement_autre|default:"—" }}</dd>
+
+            <dt class="col-sm-4 text-muted small">Type de stage</dt>
+            <dd class="col-sm-8">{{ stage.candidature.type_stage.libelle }}</dd>
+
+            <dt class="col-sm-4 text-muted small">Département</dt>
+            <dd class="col-sm-8">{{ stage.candidature.departement.nom }}</dd>
+
+            <dt class="col-sm-4 text-muted small">Période du stage</dt>
+            <dd class="col-sm-8">{{ stage.date_debut|date:"d/m/Y" }} – {{ stage.date_fin_reelle|default:stage.date_fin_prevue|date:"d/m/Y" }}</dd>
+
+            <dt class="col-sm-4 text-muted small">Maître de stage</dt>
+            <dd class="col-sm-8">{{ stage.maitre_stage }}</dd>
+
+            <dt class="col-sm-4 text-muted small">Note</dt>
+            <dd class="col-sm-8"><span class="badge bg-success">{{ stage.note }}/20</span></dd>
+
+            <dt class="col-sm-4 text-muted small">Rapport</dt>
+            <dd class="col-sm-8">
+                {% if stage.rapport %}
+                <a href="{% url 'stages:rapport_telecharger' stage.pk %}" class="btn btn-sm btn-outline-primary">
+                    <i class="bi bi-file-earmark-pdf me-1"></i>Télécharger
+                </a>
+                {% else %}—{% endif %}
+            </dd>
+        </dl>
+    </div>
+</div>
+{% endwith %}
+{% endblock %}

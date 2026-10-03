@@ -6,6 +6,7 @@ from django.core.exceptions import PermissionDenied
 from django.http import FileResponse, Http404, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views import View
+from django.utils import timezone
 from django.views.generic import ListView
 
 from commun.mixins import ListeMixin
@@ -17,16 +18,19 @@ from .forms import (
     EvaluerStageForm,
     InterrompreStageForm,
     ModifierStageForm,
+    ReprendreStageForm,
     TerminerStageForm,
 )
 from .models import Stage, StatutStage
 from .services import (
     TransitionInterdite,
     constituer_stage,
+    debut_modifiable,
     evaluer_stage,
     interrompre_stage,
     modifier_stage,
     peut_evaluer,
+    reprendre_stage,
     terminer_stage,
 )
 
@@ -43,11 +47,6 @@ def _get_departement_utilisateur(user):
         return user.personnel.departement
     except Exception:
         return None
-
-
-def _get_membres_dispos(departement):
-    """Retourne un dict vide (aucun champ de disponibilité sur Personnel)."""
-    return {}
 
 
 class StageListView(RoleRequisMixin, ListeMixin, ListView):
@@ -123,8 +122,9 @@ class StageDetailView(RoleRequisMixin, View):
     def get(self, request, pk):
         stage = get_object_or_404(
             Stage.objects.select_related(
-                "candidature__candidat",
+                "candidature__candidat__etablissement",
                 "candidature__departement",
+                "candidature__type_stage",
                 "candidature__offre",
                 "maitre_stage",
             ),
@@ -140,28 +140,32 @@ class StageDetailView(RoleRequisMixin, View):
                 if not stage.vivier:
                     raise PermissionDenied
                 lecture_seule = True
+        if lecture_seule:
+            # RG-E8 : exactement les colonnes du vivier ; rien d'autre n'est chargé ni transmis.
+            return render(request, "stages/stage_detail_vivier.html", {"stage": stage, "role": role})
         historiques = _get_historique(stage)
         affectations_maitre = stage.affectations_maitre.select_related(
             "maitre_stage", "affecte_par"
         ).order_by("-date_affectation")
         _peut_eval, _ = peut_evaluer(stage) if stage.statut == StatutStage.TERMINE and role == "Responsable" else (False, None)
-        _dept_ok = not lecture_seule
         return render(request, "stages/stage_detail.html", {
             "stage": stage,
             "historiques": historiques,
             "affectations_maitre": affectations_maitre,
             "role": role,
-            "lecture_seule": lecture_seule,
+            "pieces": stage.candidature.pieces.order_by("type_piece", "date_ajout"),
             "peut_modifier": (
                 role == "Secrétaire" and
                 stage.statut in [StatutStage.A_VENIR, StatutStage.EN_COURS]
             ),
-            "peut_terminer": role == "Responsable" and stage.statut == StatutStage.EN_COURS and _dept_ok,
+            "peut_terminer": role == "Responsable" and stage.statut == StatutStage.EN_COURS,
             "peut_interrompre": (
                 role == "Responsable" and
-                stage.statut in [StatutStage.A_VENIR, StatutStage.EN_COURS] and _dept_ok
+                stage.statut in [StatutStage.A_VENIR, StatutStage.EN_COURS]
             ),
-            "peut_evaluer": _peut_eval and _dept_ok,
+            "peut_evaluer": _peut_eval,
+            "peut_reprendre": role == "Responsable" and stage.statut == StatutStage.INTERROMPU,
+            "periodes_interruption": stage.periodes_interruption.select_related("interrompu_par", "repris_par"),
         })
 
 
@@ -182,12 +186,10 @@ class ConstituerStageView(RoleRequisMixin, View):
             messages.warning(request, "Cette candidature a déjà un stage constitué.")
             return redirect("stages:stage_detail", pk=cand.stage.pk)
 
-        form = ConstituerStageForm(departement=cand.departement)
-        membres_dispos = _get_membres_dispos(cand.departement)
+        form = ConstituerStageForm(departement=cand.departement, candidature=cand)
         return render(request, "stages/stage_constituer_form.html", {
             "form": form,
             "candidature": cand,
-            "membres_dispos": membres_dispos,
         })
 
     def post(self, request, candidature_pk):
@@ -196,7 +198,7 @@ class ConstituerStageView(RoleRequisMixin, View):
             messages.warning(request, "Cette candidature a déjà un stage constitué.")
             return redirect("stages:stage_detail", pk=cand.stage.pk)
 
-        form = ConstituerStageForm(request.POST, departement=cand.departement)
+        form = ConstituerStageForm(request.POST, departement=cand.departement, candidature=cand)
         if form.is_valid():
             try:
                 stage = constituer_stage(
@@ -212,11 +214,9 @@ class ConstituerStageView(RoleRequisMixin, View):
                 messages.error(request, str(e))
                 return redirect("candidatures:candidature_detail", pk=candidature_pk)
 
-        membres_dispos = _get_membres_dispos(cand.departement)
         return render(request, "stages/stage_constituer_form.html", {
             "form": form,
             "candidature": cand,
-            "membres_dispos": membres_dispos,
         })
 
 
@@ -246,11 +246,10 @@ class ModifierStageView(RoleRequisMixin, View):
             departement=stage.candidature.departement,
             stage=stage,
         )
-        membres_dispos = _get_membres_dispos(stage.candidature.departement)
         return render(request, "stages/stage_modifier_form.html", {
             "form": form,
             "stage": stage,
-            "membres_dispos": membres_dispos,
+            "debut_modifiable": debut_modifiable(stage),
         })
 
     def post(self, request, pk):
@@ -279,11 +278,10 @@ class ModifierStageView(RoleRequisMixin, View):
                 messages.error(request, str(e))
                 return redirect("stages:stage_detail", pk=pk)
 
-        membres_dispos = _get_membres_dispos(stage.candidature.departement)
         return render(request, "stages/stage_modifier_form.html", {
             "form": form,
             "stage": stage,
-            "membres_dispos": membres_dispos,
+            "debut_modifiable": debut_modifiable(stage),
         })
 
 
@@ -374,6 +372,66 @@ class InterrompreStageView(RoleRequisMixin, View):
                 messages.error(request, str(e))
                 return redirect("stages:stage_detail", pk=pk)
         return render(request, "stages/stage_interrompre_form.html", {"form": form, "stage": stage})
+
+
+class ReprendreStageView(RoleRequisMixin, View):
+    """RG-S12 : reprise d'un stage interrompu, par le Responsable du département."""
+    roles = ["Responsable"]
+
+    def _get_stage(self, pk, request):
+        stage = get_object_or_404(
+            Stage.objects.select_related("candidature__departement", "candidature__candidat"),
+            pk=pk,
+        )
+        dept = _get_departement_utilisateur(request.user)
+        if dept is None or stage.candidature.departement != dept:
+            raise PermissionDenied
+        return stage
+
+    def _formulaire_ou_redirection(self, request, stage, data=None):
+        periode = stage.periode_interruption_ouverte()
+        if stage.statut != StatutStage.INTERROMPU or periode is None:
+            messages.error(request, "Seul un stage interrompu peut être repris.")
+            return None, None
+        return ReprendreStageForm(data, stage=stage, periode=periode), periode
+
+    def _afficher(self, request, stage, form, periode):
+        return render(request, "stages/stage_reprendre_form.html", {
+            "form": form, "stage": stage, "periode": periode,
+        })
+
+    def get(self, request, pk):
+        stage = self._get_stage(pk, request)
+        form, periode = self._formulaire_ou_redirection(request, stage)
+        if form is None:
+            return redirect("stages:stage_detail", pk=pk)
+        return self._afficher(request, stage, form, periode)
+
+    def post(self, request, pk):
+        stage = self._get_stage(pk, request)
+        form, periode = self._formulaire_ou_redirection(request, stage, request.POST)
+        if form is None:
+            return redirect("stages:stage_detail", pk=pk)
+        if not form.is_valid():
+            return self._afficher(request, stage, form, periode)
+        try:
+            reprendre_stage(
+                stage=stage,
+                date_reprise=form.cleaned_data["date_reprise"],
+                date_fin_prevue=form.cleaned_data["date_fin_prevue"],
+                motif=form.cleaned_data["motif_reprise"],
+                utilisateur=request.user,
+            )
+        except TransitionInterdite as e:
+            messages.error(request, str(e))
+            return redirect("stages:stage_detail", pk=pk)
+        messages.success(request, "Stage repris.")
+        if form.cleaned_data["date_fin_prevue"] < timezone.localdate():
+            messages.info(
+                request,
+                "Ce stage sera clôturé automatiquement à la prochaine exécution de la mise à jour quotidienne.",
+            )
+        return redirect("stages:stage_detail", pk=pk)
 
 
 class EvaluerStageView(RoleRequisMixin, View):

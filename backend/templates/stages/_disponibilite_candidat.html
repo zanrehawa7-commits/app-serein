@@ -1,0 +1,12 @@
+<div class="card border-0 shadow-sm">
+    <div class="card-header bg-white border-bottom py-2">
+        <h6 class="mb-0 fw-semibold text-muted small"><i class="bi bi-calendar-range me-1"></i>Disponibilité du candidat</h6>
+    </div>
+    <div class="card-body small">
+        <p class="mb-1">
+            Du <strong>{{ candidature.debut_disponibilite|date:"d/m/Y" }}</strong>
+            au <strong>{{ candidature.fin_disponibilite|date:"d/m/Y" }}</strong>
+        </p>
+        <p class="text-muted mb-0">Le stage doit se dérouler entièrement dans cette période.</p>
+    </div>
+</div>

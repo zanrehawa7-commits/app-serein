@@ -11,7 +11,7 @@ from offres.models import Offre, StatutOffre
 from candidatures.models import Candidat, Candidature, StatutCandidature, TypeDemande
 from referentiels.models import TypeStage
 
-from .models import Stage, StatutStage, AffectationMaitreStage
+from .models import Stage, StatutStage, AffectationMaitreStage, PeriodeInterruption
 from .services import (
     TransitionInterdite,
     constituer_stage,
@@ -20,10 +20,19 @@ from .services import (
     interrompre_stage,
     demarrer_stage_auto,
     cloturer_stage_auto,
+    debut_modifiable,
+    evaluer_stage,
+    peut_evaluer,
+    reprendre_stage,
 )
 
 
 # ─── Fixtures communes ────────────────────────────────────────────────────────
+
+# Disponibilité large : ces tests ne portent pas sur RG-S11 (testée dans DisponibiliteRGS11Tests).
+_DISPO_DEBUT = timezone.localdate() - datetime.timedelta(days=3 * 365)
+_DISPO_FIN = timezone.localdate() + datetime.timedelta(days=3 * 365)
+
 
 def _groupe(nom):
     g, _ = Group.objects.get_or_create(name=nom)
@@ -69,8 +78,8 @@ def _candidature_accordee(dept, maitre=None):
         departement=dept,
         type_stage=ts,
         type_demande=TypeDemande.SPONTANEE,
-        debut_disponibilite=datetime.date(2025, 1, 1),
-        fin_disponibilite=datetime.date(2025, 12, 31),
+        debut_disponibilite=_DISPO_DEBUT,
+        fin_disponibilite=_DISPO_FIN,
         duree_souhaitee=3,
         statut=StatutCandidature.ACCORDEE,
     )
@@ -277,10 +286,10 @@ class DemarrerStageAutoTests(TestCase):
         self.assertEqual(stage.statut, StatutStage.EN_COURS)
 
     def test_ne_demarre_pas_si_futur(self):
-        debut = datetime.date(2099, 1, 1)
-        fin = datetime.date(2099, 6, 30)
+        debut = timezone.localdate() + datetime.timedelta(days=365)
+        fin = debut + datetime.timedelta(days=180)
         stage = self._stage(debut, fin, StatutStage.A_VENIR)
-        result = demarrer_stage_auto(stage, datetime.date(2025, 1, 1))
+        result = demarrer_stage_auto(stage, timezone.localdate())
         self.assertFalse(result)
         stage.refresh_from_db()
         self.assertEqual(stage.statut, StatutStage.A_VENIR)
@@ -713,7 +722,7 @@ class _DeuxDepartementsMixin:
         cand = Candidature.objects.create(
             candidat=Candidat.objects.create(nom="Stagiaire", prenom=telephone, telephone=telephone),
             departement=dept, type_stage=_type_stage(), type_demande=TypeDemande.SPONTANEE,
-            debut_disponibilite=datetime.date(2025, 1, 1), fin_disponibilite=datetime.date(2025, 12, 31),
+            debut_disponibilite=_DISPO_DEBUT, fin_disponibilite=_DISPO_FIN,
             duree_souhaitee=3, statut=StatutCandidature.ACCORDEE,
         )
         return Stage.objects.create(
@@ -740,23 +749,17 @@ class StageDetailCloisonnementTests(_DeuxDepartementsMixin, TestCase):
     def test_autre_departement_au_vivier_lecture_seule_sans_bouton(self):
         reponse = self._detail(self.stage_b_vivier)
         self.assertEqual(reponse.status_code, 200)
-        self.assertTrue(reponse.context["lecture_seule"])
-        for drapeau in ["peut_modifier", "peut_terminer", "peut_interrompre", "peut_evaluer"]:
-            with self.subTest(drapeau=drapeau):
-                self.assertFalse(reponse.context[drapeau])
+        self.assertTemplateUsed(reponse, "stages/stage_detail_vivier.html")
         pk = self.stage_b_vivier.pk
-        for nom in ["stage_modifier", "stage_terminer", "stage_interrompre", "stage_evaluer"]:
+        for nom in ["stage_modifier", "stage_terminer", "stage_interrompre", "stage_evaluer", "stage_reprendre"]:
             with self.subTest(url=nom):
                 self.assertNotContains(reponse, reverse(f"stages:{nom}", args=[pk]))
-        self.assertNotContains(
-            reponse, reverse("candidatures:candidature_detail", args=[self.stage_b_vivier.candidature.pk])
-        )
         self.assertContains(reponse, "Lecture seule")
 
     def test_propre_departement_avec_actions(self):
         reponse = self._detail(self.stage_a)
         self.assertEqual(reponse.status_code, 200)
-        self.assertFalse(reponse.context["lecture_seule"])
+        self.assertTemplateUsed(reponse, "stages/stage_detail.html")
         self.assertTrue(reponse.context["peut_terminer"])
         self.assertContains(reponse, reverse("stages:stage_terminer", args=[self.stage_a.pk]))
 
@@ -766,7 +769,80 @@ class StageDetailCloisonnementTests(_DeuxDepartementsMixin, TestCase):
                 self.client.force_login(_user(email, role))
                 reponse = self._detail(self.stage_b)
                 self.assertEqual(reponse.status_code, 200)
-                self.assertFalse(reponse.context["lecture_seule"])
+                self.assertTemplateUsed(reponse, "stages/stage_detail.html")
+
+
+# ─── RG-E8 : dossier du candidat sur la fiche stage ───────────────────────────
+
+
+class DossierCandidatRGE8Tests(_DeuxDepartementsMixin, TestCase):
+    """Dossier complet pour Secrétaire, Administrateur et Responsable du département ;
+    colonnes du vivier uniquement pour le Responsable d'un autre département."""
+
+    def setUp(self):
+        from candidatures.models import PieceJointe, TypePiece
+        from suivi.services import enregistrer_historique
+        super().setUp()
+        self.stage_b_vivier.rapport.save("rapport.pdf", ContentFile(b"%PDF-1.4 rapport"), save=True)
+        cand = self.stage_b_vivier.candidature
+        Candidat.objects.filter(pk=cand.candidat_id).update(
+            email="stagiaire@test.bf", adresse="Secteur 15, Ouagadougou", filiere="Gestion financière", niveau_etudes="L3",
+        )
+        self.piece = PieceJointe(candidature=cand, type_piece=TypePiece.CV, nom_original="cv_stagiaire.pdf")
+        self.piece.fichier.save("cv.pdf", ContentFile(b"%PDF-1.4 cv"), save=True)
+        enregistrer_historique(self.stage_b_vivier, None, "EN_COURS", "TERMINE", "Commentaire interne confidentiel")
+        PeriodeInterruption.objects.create(
+            stage=self.stage_b_vivier, date_debut=self.stage_b_vivier.date_debut,
+            date_fin=self.stage_b_vivier.date_debut + datetime.timedelta(days=3),
+            motif_interruption="Motif d'interruption privé",
+        )
+        # Maître de stage : nom affiché, coordonnées jamais (RG-E8).
+        Personnel.objects.filter(pk=self.stage_b_vivier.maitre_stage_id).update(
+            email="maitre.b@serein.bf", telephone="70999999"
+        )
+        self.url_piece = reverse("candidatures:piece_telecharger", args=[self.piece.pk])
+        self.url_candidature = reverse("candidatures:candidature_detail", args=[cand.pk])
+
+    def _detail(self, user=None):
+        if user:
+            self.client.force_login(user)
+        return self.client.get(reverse("stages:stage_detail", args=[self.stage_b_vivier.pk]))
+
+    def test_responsable_autre_departement_colonnes_du_vivier_uniquement(self):
+        reponse = self._detail()
+        self.assertEqual(reponse.status_code, 200)
+        for visible in ["70000003", "stagiaire@test.bf", "Licence 3", "Gestion financière", "Comptabilité",
+                        "15/20", "Jean Ilboudo", reverse("stages:rapport_telecharger", args=[self.stage_b_vivier.pk])]:
+            with self.subTest(visible=visible):
+                self.assertContains(reponse, visible)
+        for masque in [self.url_piece, "cv_stagiaire.pdf", self.url_candidature, "Secteur 15",
+                       "maitre.b@serein.bf", "70999999", "Commentaire interne confidentiel", "interruption privé",
+                       self.stage_b_vivier.candidature.reference]:
+            with self.subTest(masque=masque):
+                self.assertNotContains(reponse, masque)
+
+    def test_responsable_autre_departement_rien_d_autre_dans_le_contexte(self):
+        reponse = self._detail()
+        for cle in ["pieces", "historiques", "affectations_maitre", "periodes_interruption"]:
+            with self.subTest(cle=cle):
+                self.assertNotIn(cle, reponse.context)
+
+    def test_responsable_autre_departement_piece_403(self):
+        self._detail()
+        self.assertEqual(self.client.get(self.url_piece).status_code, 403)
+
+    def test_dossier_complet_secretaire_administrateur_responsable_du_departement(self):
+        resp_b = _user("resp_b@test.com", "Responsable")
+        resp_b.personnel = _membre(self.dept_b, "RespB")
+        resp_b.save(update_fields=["personnel"])
+        for user in [_user("sec4@test.com", "Secrétaire"), _user("admin4@test.com", "Administrateur"), resp_b]:
+            with self.subTest(role=user.role):
+                reponse = self._detail(user)
+                self.assertEqual(reponse.status_code, 200)
+                for visible in ["Dossier du candidat", self.url_piece, f"{self.url_piece}?inline=1",
+                                "cv_stagiaire.pdf", self.url_candidature, "Secteur 15", "stagiaire@test.bf",
+                                "Spontanée", "interruption privé"]:
+                    self.assertContains(reponse, visible)
 
 
 # ─── Rapport de stage : RG-E5 ─────────────────────────────────────────────────
@@ -805,3 +881,283 @@ class RapportTelechargementRGE5Tests(_DeuxDepartementsMixin, TestCase):
     def test_secretaire_403(self):
         self.client.force_login(_user("sec3@test.com", "Secrétaire"))
         self.assertEqual(self._rapport(self.stage_a).status_code, 403)
+
+
+# ─── RG-S11 : dates du stage dans la disponibilité du candidat ────────────────
+
+
+class DisponibiliteRGS11Tests(TestCase):
+    """Constitution et modification : début ≥ début de disponibilité, fin ≤ fin de disponibilité."""
+
+    def setUp(self):
+        self.dept = _dept()
+        self.maitre = _membre(self.dept)
+        self.sec = _secretaire()
+        self.aujourd_hui = timezone.localdate()
+        self.dispo_debut = self.aujourd_hui + datetime.timedelta(days=10)
+        self.dispo_fin = self.aujourd_hui + datetime.timedelta(days=100)
+        self.cand = _candidature_accordee(self.dept)
+        Candidature.objects.filter(pk=self.cand.pk).update(
+            debut_disponibilite=self.dispo_debut, fin_disponibilite=self.dispo_fin
+        )
+        self.cand.refresh_from_db()
+        self.periode = f"du {self.dispo_debut:%d/%m/%Y} au {self.dispo_fin:%d/%m/%Y}"
+
+    def _jour(self, n):
+        return self.aujourd_hui + datetime.timedelta(days=n)
+
+    def _constituer(self, debut, fin):
+        return constituer_stage(self.cand, debut, fin, self.maitre, self.sec)
+
+    def test_constitution_bornes_incluses_acceptees(self):
+        stage = self._constituer(self.dispo_debut, self.dispo_fin)
+        self.assertEqual((stage.date_debut, stage.date_fin_prevue), (self.dispo_debut, self.dispo_fin))
+
+    def test_constitution_debut_avant_disponibilite_refusee(self):
+        with self.assertRaisesMessage(TransitionInterdite, self.periode):
+            self._constituer(self._jour(9), self._jour(50))
+        self.assertFalse(Stage.objects.exists())
+
+    def test_constitution_fin_apres_disponibilite_refusee(self):
+        with self.assertRaisesMessage(TransitionInterdite, self.periode):
+            self._constituer(self._jour(20), self._jour(101))
+        self.assertFalse(Stage.objects.exists())
+
+    def test_formulaire_constitution_erreurs_sur_les_champs(self):
+        from .forms import ConstituerStageForm
+        form = ConstituerStageForm(
+            {"date_debut": self._jour(1), "date_fin_prevue": self._jour(200), "maitre_stage": self.maitre.pk},
+            departement=self.dept, candidature=self.cand,
+        )
+        self.assertFalse(form.is_valid())
+        self.assertIn(self.periode, form.errors["date_debut"][0])
+        self.assertIn(self.periode, form.errors["date_fin_prevue"][0])
+
+    def test_vue_constitution_hors_disponibilite_affiche_la_periode(self):
+        self.client.force_login(self.sec)
+        reponse = self.client.post(
+            reverse("stages:stage_constituer", args=[self.cand.pk]),
+            {"date_debut": self._jour(1), "date_fin_prevue": self._jour(50), "maitre_stage": self.maitre.pk},
+        )
+        self.assertEqual(reponse.status_code, 200)
+        self.assertContains(reponse, self.periode)
+        self.assertFalse(Stage.objects.exists())
+
+    def test_modification_a_venir_debut_hors_disponibilite_refusee(self):
+        stage = self._constituer(self._jour(20), self._jour(50))
+        with self.assertRaisesMessage(TransitionInterdite, self.periode):
+            modifier_stage(stage, self._jour(50), self.maitre, self.sec, date_debut=self._jour(5))
+
+    def test_modification_fin_hors_disponibilite_refusee(self):
+        stage = self._constituer(self._jour(20), self._jour(50))
+        with self.assertRaisesMessage(TransitionInterdite, self.periode):
+            modifier_stage(stage, self._jour(150), self.maitre, self.sec)
+        stage.refresh_from_db()
+        self.assertEqual(stage.date_fin_prevue, self._jour(50))
+
+    def test_stage_en_cours_existant_debut_hors_disponibilite_reste_modifiable(self):
+        """Stage antérieur à la règle : début non modifiable donc non vérifié, fin vérifiée."""
+        stage = Stage.objects.create(
+            candidature=self.cand, maitre_stage=self.maitre, statut=StatutStage.EN_COURS,
+            date_debut=self._jour(-30), date_fin_prevue=self._jour(50),
+        )
+        autre_maitre = _membre(self.dept, "Kaboré")
+        modifier_stage(stage, self._jour(60), autre_maitre, self.sec)
+        stage.refresh_from_db()
+        self.assertEqual((stage.maitre_stage, stage.date_fin_prevue), (autre_maitre, self._jour(60)))
+        with self.assertRaisesMessage(TransitionInterdite, self.periode):
+            modifier_stage(stage, self._jour(150), autre_maitre, self.sec)
+
+
+# ─── RG-S12 / RG-S13 : reprise d'un stage interrompu ──────────────────────────
+
+
+class RepriseStageTests(TestCase):
+
+    def setUp(self):
+        self.dept = _dept()
+        self.maitre = _membre(self.dept)
+        self.sec = _secretaire()
+        self.resp = _responsable(self.dept)
+        self.aujourd_hui = timezone.localdate()
+        self.cand = _candidature_accordee(self.dept)
+        self.stage = Stage.objects.create(
+            candidature=self.cand, maitre_stage=self.maitre, statut=StatutStage.EN_COURS,
+            date_debut=self._jour(-60), date_fin_prevue=self._jour(30),
+        )
+        interrompre_stage(self.stage, self._jour(-10), "Maladie", self.resp)
+        self.stage.refresh_from_db()
+
+    def _jour(self, n):
+        return self.aujourd_hui + datetime.timedelta(days=n)
+
+    def _reprendre(self, reprise, fin, motif="Rétabli"):
+        return reprendre_stage(self.stage, reprise, fin, motif, self.resp)
+
+    def _assert_inchange(self):
+        self.stage.refresh_from_db()
+        self.assertEqual(self.stage.statut, StatutStage.INTERROMPU)
+        self.assertIsNotNone(self.stage.periode_interruption_ouverte())
+
+    def test_interruption_cree_une_periode_ouverte(self):
+        periode = self.stage.periodes_interruption.get()
+        self.assertEqual(
+            (periode.date_debut, periode.date_fin, periode.motif_interruption, periode.interrompu_par),
+            (self._jour(-10), None, "Maladie", self.resp),
+        )
+
+    def test_reprise_date_passee_en_cours(self):
+        self._reprendre(self._jour(-2), self._jour(60))
+        self.stage.refresh_from_db()
+        self.assertEqual(self.stage.statut, StatutStage.EN_COURS)
+        self.assertEqual(self.stage.date_fin_prevue, self._jour(60))
+        self.assertIsNone(self.stage.date_fin_reelle)
+        self.assertEqual(self.stage.motif_interruption, "")
+        periode = self.stage.periodes_interruption.get()
+        self.assertEqual(
+            (periode.date_fin, periode.motif_reprise, periode.repris_par), (self._jour(-2), "Rétabli", self.resp)
+        )
+
+    def test_reprise_date_future_a_venir(self):
+        self._reprendre(self._jour(5), self._jour(60))
+        self.stage.refresh_from_db()
+        self.assertEqual(self.stage.statut, StatutStage.A_VENIR)
+
+    def test_reprise_avant_interruption_refusee(self):
+        with self.assertRaisesMessage(TransitionInterdite, "antérieure à la date d'interruption"):
+            self._reprendre(self._jour(-11), self._jour(60))
+        self._assert_inchange()
+
+    def test_fin_avant_reprise_refusee(self):
+        with self.assertRaises(TransitionInterdite):
+            self._reprendre(self._jour(5), self._jour(5))
+        self._assert_inchange()
+
+    def test_fin_apres_disponibilite_refusee(self):
+        Candidature.objects.filter(pk=self.cand.pk).update(fin_disponibilite=self._jour(40))
+        with self.assertRaisesMessage(TransitionInterdite, "disponibilité du candidat"):
+            self._reprendre(self._jour(-2), self._jour(41))
+        self._assert_inchange()
+
+    def test_motif_obligatoire(self):
+        with self.assertRaises(TransitionInterdite):
+            self._reprendre(self._jour(-2), self._jour(60), motif="  ")
+        self._assert_inchange()
+
+    def test_stage_non_interrompu_refuse(self):
+        self._reprendre(self._jour(-2), self._jour(60))
+        with self.assertRaisesMessage(TransitionInterdite, "Seul un stage interrompu"):
+            self._reprendre(self._jour(-1), self._jour(70))
+
+    def test_historique_et_notification_secretaires(self):
+        from suivi.models import Historique, Notification
+        self._reprendre(self._jour(-2), self._jour(60))
+        derniere = Historique.objects.filter(object_id=self.stage.pk).order_by("-pk").first()
+        self.assertEqual(
+            (derniere.ancien_statut, derniere.nouveau_statut), (StatutStage.INTERROMPU, StatutStage.EN_COURS)
+        )
+        self.assertTrue(Notification.objects.filter(destinataire=self.sec, message__contains="repris").exists())
+
+    def test_periodes_conservees_apres_deux_interruptions(self):
+        self._reprendre(self._jour(-8), self._jour(60))
+        interrompre_stage(self.stage, self._jour(-4), "Congé", self.resp)
+        self.stage.refresh_from_db()
+        self._reprendre(self._jour(-1), self._jour(70), motif="Retour")
+        periodes = list(self.stage.periodes_interruption.values_list("date_debut", "date_fin", "motif_interruption"))
+        self.assertEqual(periodes, [
+            (self._jour(-10), self._jour(-8), "Maladie"),
+            (self._jour(-4), self._jour(-1), "Congé"),
+        ])
+
+    def test_interruption_anterieure_a_la_reprise_refusee(self):
+        self._reprendre(self._jour(-2), self._jour(60))
+        with self.assertRaises(TransitionInterdite):
+            interrompre_stage(self.stage, self._jour(-3), "Erreur", self.resp)
+
+    def test_date_debut_non_modifiable_apres_reprise_future(self):
+        self._reprendre(self._jour(5), self._jour(60))
+        self.stage.refresh_from_db()
+        self.assertFalse(debut_modifiable(self.stage))
+
+    # ── Cohérence avec la commande quotidienne et l'évaluation ──────────────
+
+    def test_reprise_future_demarre_a_la_date_de_reprise(self):
+        self._reprendre(self._jour(5), self._jour(60))
+        self.assertFalse(demarrer_stage_auto(self.stage, self.aujourd_hui))
+        self.assertFalse(demarrer_stage_auto(self.stage, self._jour(4)))
+        self.assertTrue(demarrer_stage_auto(self.stage, self._jour(5)))
+        self.stage.refresh_from_db()
+        self.assertEqual(self.stage.statut, StatutStage.EN_COURS)
+
+    def test_reprise_avec_fin_passee_cloturee_par_la_commande(self):
+        self._reprendre(self._jour(-9), self._jour(-1))
+        self.assertTrue(cloturer_stage_auto(self.stage, self.aujourd_hui))
+        self.stage.refresh_from_db()
+        self.assertEqual((self.stage.statut, self.stage.date_fin_reelle), (StatutStage.TERMINE, self._jour(-1)))
+
+    def test_repris_puis_termine_est_evaluable(self):
+        self._reprendre(self._jour(-5), self._jour(60))
+        with self.assertRaisesMessage(TransitionInterdite, "reprise"):
+            terminer_stage(self.stage, self._jour(-6), self.resp)
+        terminer_stage(self.stage, self._jour(-1), self.resp)
+        self.stage.refresh_from_db()
+        self.assertTrue(peut_evaluer(self.stage)[0])
+        evaluer_stage(self.stage, 14, True, self.resp)
+        self.stage.refresh_from_db()
+        self.assertEqual((self.stage.note, self.stage.vivier), (14, True))
+
+    # ── Vue ─────────────────────────────────────────────────────────────────
+
+    def _post(self, **donnees):
+        self.client.force_login(self.resp)
+        return self.client.post(reverse("stages:stage_reprendre", args=[self.stage.pk]), donnees, follow=True)
+
+    def test_vue_reprise(self):
+        reponse = self._post(date_reprise=self._jour(-2), date_fin_prevue=self._jour(60), motif_reprise="Rétabli")
+        self.assertRedirects(reponse, reverse("stages:stage_detail", args=[self.stage.pk]))
+        self.stage.refresh_from_db()
+        self.assertEqual(self.stage.statut, StatutStage.EN_COURS)
+        self.assertContains(reponse, "Périodes d")
+        self.assertNotContains(reponse, "clôturé automatiquement")
+
+    def test_vue_reprise_fin_passee_message_information(self):
+        reponse = self._post(
+            date_reprise=self._jour(-9), date_fin_prevue=self._jour(-1), motif_reprise="Régularisation"
+        )
+        self.assertContains(
+            reponse, "Ce stage sera clôturé automatiquement à la prochaine exécution de la mise à jour quotidienne."
+        )
+
+    def test_vue_dates_invalides_formulaire_reaffiche(self):
+        reponse = self._post(date_reprise=self._jour(-11), date_fin_prevue=self._jour(60), motif_reprise="X")
+        self.assertEqual(reponse.status_code, 200)
+        self.assertContains(reponse, "antérieure à la date d")
+        self._assert_inchange()
+
+    def test_vue_bouton_reprendre_sur_la_fiche(self):
+        self.client.force_login(self.resp)
+        reponse = self.client.get(reverse("stages:stage_detail", args=[self.stage.pk]))
+        self.assertContains(reponse, reverse("stages:stage_reprendre", args=[self.stage.pk]))
+
+
+class MigrationPeriodesStagesInterrompusTests(TestCase):
+    """Migration 0006 : les stages interrompus avant le lot F reçoivent une période ouverte."""
+
+    def test_cree_une_periode_ouverte_une_seule_fois(self):
+        import importlib
+        from django.apps import apps
+        migration = importlib.import_module("stages.migrations.0006_periodes_stages_deja_interrompus")
+        dept = _dept()
+        stage = Stage.objects.create(
+            candidature=_candidature_accordee(dept), maitre_stage=_membre(dept), statut=StatutStage.INTERROMPU,
+            date_debut=timezone.localdate() - datetime.timedelta(days=30),
+            date_fin_prevue=timezone.localdate() + datetime.timedelta(days=30),
+            date_fin_reelle=timezone.localdate() - datetime.timedelta(days=3), motif_interruption="Ancien motif",
+        )
+        migration.creer_periodes_ouvertes(apps, None)
+        migration.creer_periodes_ouvertes(apps, None)
+        periode = PeriodeInterruption.objects.get(stage=stage)
+        self.assertEqual(
+            (periode.date_debut, periode.date_fin, periode.motif_interruption),
+            (stage.date_fin_reelle, None, "Ancien motif"),
+        )

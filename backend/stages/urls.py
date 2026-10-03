@@ -13,6 +13,7 @@ urlpatterns = [
     path("stages/<int:pk>/modifier/", views.ModifierStageView.as_view(), name="stage_modifier"),
     path("stages/<int:pk>/terminer/", views.TerminerStageView.as_view(), name="stage_terminer"),
     path("stages/<int:pk>/interrompre/", views.InterrompreStageView.as_view(), name="stage_interrompre"),
+    path("stages/<int:pk>/reprendre/", views.ReprendreStageView.as_view(), name="stage_reprendre"),
     path("stages/<int:pk>/evaluer/", views.EvaluerStageView.as_view(), name="stage_evaluer"),
     path("stages/<int:pk>/rapport/", views.RapportTelechargerView.as_view(), name="rapport_telecharger"),
 ]

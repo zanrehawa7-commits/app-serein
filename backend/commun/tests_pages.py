@@ -32,7 +32,7 @@ from candidatures.models import (
 from comptes.models import Utilisateur
 from offres.models import Besoin, Offre, Publication, StatutBesoin, StatutOffre
 from referentiels.models import CanalPublication, Departement, Etablissement, Personnel, TypeStage
-from stages.models import AffectationMaitreStage, Stage, StatutStage
+from stages.models import AffectationMaitreStage, PeriodeInterruption, Stage, StatutStage
 from suivi.models import Notification
 from suivi.services import enregistrer_historique
 
@@ -141,12 +141,13 @@ MATRICE = {
     "stages:stage_terminer": ((RESP,), 200, {"pk": "stage_cours"}),
     "stages:stage_interrompre": ((RESP,), 200, {"pk": "stage_cours"}),
     "stages:stage_evaluer": ((RESP,), 200, {"pk": "stage_fini"}),
+    "stages:stage_reprendre": ((RESP,), 200, {"pk": "stage_interrompu"}),
     "stages:rapport_telecharger": ((RESP, ADMIN), 200, {"pk": "stage_fini"}),
 }
 
 # Toutes les actions réservées au Responsable et liées à un département (besoin, candidature, stage).
 # Constituer / modifier un stage (dont le maître de stage) sont réservés à la Secrétaire : 403 par rôle.
-def _actions_responsable(besoin, candidature, stage, stage_termine):
+def _actions_responsable(besoin, candidature, stage, stage_termine, stage_interrompu):
     return [
         ("offres:besoin_modifier", {"pk": besoin}),
         ("offres:besoin_annuler", {"pk": besoin}),
@@ -158,11 +159,16 @@ def _actions_responsable(besoin, candidature, stage, stage_termine):
         ("stages:stage_terminer", {"pk": stage}),
         ("stages:stage_interrompre", {"pk": stage}),
         ("stages:stage_evaluer", {"pk": stage_termine}),
+        ("stages:stage_reprendre", {"pk": stage_interrompu}),
     ]
 
 
-ACTIONS_RESPONSABLE_DEPT_A = _actions_responsable("besoin_libre", "cand_recue", "stage_cours", "stage_fini")
-ACTIONS_RESPONSABLE_DEPT_B = _actions_responsable("besoin_b", "cand_b", "stage_b", "stage_b_fini")
+ACTIONS_RESPONSABLE_DEPT_A = _actions_responsable(
+    "besoin_libre", "cand_recue", "stage_cours", "stage_fini", "stage_interrompu"
+)
+ACTIONS_RESPONSABLE_DEPT_B = _actions_responsable(
+    "besoin_b", "cand_b", "stage_b", "stage_b_fini", "stage_b_interrompu"
+)
 
 _PDF = b"%PDF-1.4 test etape 10"
 
@@ -320,6 +326,19 @@ class _DonneesPagesMixin:
         )
         cls.stage_b_fini.rapport.save("rapport_b.pdf", ContentFile(_PDF), save=True)
 
+        def stage_interrompu(nom, dept, maitre):
+            s = stage(
+                candidature(candidat(nom), dept, StatutCandidature.ACCORDEE), maitre, StatutStage.INTERROMPU,
+                date_fin_reelle=aujourd_hui - datetime.timedelta(days=5), motif_interruption="Maladie",
+            )
+            PeriodeInterruption.objects.create(
+                stage=s, date_debut=s.date_fin_reelle, motif_interruption="Maladie", interrompu_par=cls.u_sec,
+            )
+            return s
+
+        cls.stage_interrompu = stage_interrompu("Zida", cls.dept_a, cls.maitre_a)
+        cls.stage_b_interrompu = stage_interrompu("Nikiema", cls.dept_b, cls.maitre_b)
+
     def _url(self, nom, params, role=None):
         kwargs = {}
         for cle, ref in params.items():
@@ -423,6 +442,7 @@ class CloisonnementDepartementTests(_DonneesPagesMixin, TestCase):
         ("stages:stage_detail", {"pk": "stage_b"}),
         ("stages:stage_terminer", {"pk": "stage_b"}),
         ("stages:stage_interrompre", {"pk": "stage_b"}),
+        ("stages:stage_reprendre", {"pk": "stage_b_interrompu"}),
         ("stages:stage_evaluer", {"pk": "stage_b_fini"}),
         ("stages:rapport_telecharger", {"pk": "stage_b_fini"}),
         # Exception voulue : fiche (lecture seule, RG-E7) et rapport (RG-E5) d'un stage AU VIVIER
