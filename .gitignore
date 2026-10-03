@@ -35,3 +35,6 @@ Thumbs.db
 .claude/
 # Guide Claude Code : local uniquement, jamais commité
 CLAUDE.md
+
+# Rapports d'implémentation des lots : locaux, jamais commités
+docs/rapports/
