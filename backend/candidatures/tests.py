@@ -1,7 +1,7 @@
 import io
 from django.contrib.auth.models import Group
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.test import TestCase, override_settings
+from django.test import TestCase
 from django.urls import reverse
 
 from comptes.models import Utilisateur
@@ -26,9 +26,6 @@ from .services import (
     refuser,
 )
 from .models import MotifRefus
-
-import tempfile, os
-from pathlib import Path
 
 
 def _fake_pdf(name="cv.pdf"):
@@ -134,7 +131,6 @@ def _setup_base():
 # ─── RG07 — candidature active unique ─────────────────────────────────────────
 
 
-@override_settings(FICHIERS_PRIVES_ROOT=tempfile.mkdtemp())
 class RG07Tests(TestCase):
     def setUp(self):
         self.sec, self.adm, self.res, self.dept, self.ts, self.candidat = _setup_base()
@@ -198,7 +194,6 @@ class RG09Tests(TestCase):
 # ─── Création candidature ─────────────────────────────────────────────────────
 
 
-@override_settings(FICHIERS_PRIVES_ROOT=tempfile.mkdtemp())
 class CreationCandidatureTests(TestCase):
     def setUp(self):
         self.sec, self.adm, self.res, self.dept, self.ts, self.candidat = _setup_base()
@@ -293,7 +288,6 @@ class PieceJointeValidationTests(TestCase):
 # ─── Modification candidature ─────────────────────────────────────────────────
 
 
-@override_settings(FICHIERS_PRIVES_ROOT=tempfile.mkdtemp())
 class ModificationCandidatureTests(TestCase):
     def setUp(self):
         self.sec, self.adm, self.res, self.dept, self.ts, self.candidat = _setup_base()
@@ -317,7 +311,6 @@ class ModificationCandidatureTests(TestCase):
 # ─── Marquer informé ─────────────────────────────────────────────────────────
 
 
-@override_settings(FICHIERS_PRIVES_ROOT=tempfile.mkdtemp())
 class MarquerInformeTests(TestCase):
     def setUp(self):
         self.sec, self.adm, self.res, self.dept, self.ts, self.candidat = _setup_base()
@@ -345,7 +338,6 @@ class MarquerInformeTests(TestCase):
 # ─── places_restantes ─────────────────────────────────────────────────────────
 
 
-@override_settings(FICHIERS_PRIVES_ROOT=tempfile.mkdtemp())
 class PlacesRestantesTests(TestCase):
     def setUp(self):
         _, _, _, self.dept, self.ts, _ = _setup_base()
@@ -382,7 +374,6 @@ class AccesSecuriteTests(TestCase):
         self.res2.personnel = membre2
         self.res2.save()
 
-    @override_settings(FICHIERS_PRIVES_ROOT=tempfile.mkdtemp())
     def test_responsable_autre_dept_candidature_detail_403(self):
         pieces = [{"type_piece": TypePiece.CV, "fichier": _fake_pdf(), "nom_original": "cv.pdf"}]
         candidature = creer_candidature(
@@ -429,7 +420,6 @@ def _candidature_factory(dept, ts, candidat, utilisateur, statut=StatutCandidatu
     )
 
 
-@override_settings(FICHIERS_PRIVES_ROOT=tempfile.mkdtemp())
 class PreselectionnerTests(TestCase):
     def setUp(self):
         self.sec, self.adm, self.res, self.dept, self.ts, self.candidat = _setup_base()
@@ -465,7 +455,6 @@ class PreselectionnerTests(TestCase):
         self.assertEqual(response.status_code, 403)
 
 
-@override_settings(FICHIERS_PRIVES_ROOT=tempfile.mkdtemp())
 class PlanifierEntretienTests(TestCase):
     def setUp(self):
         self.sec, self.adm, self.res, self.dept, self.ts, self.candidat = _setup_base()
@@ -498,7 +487,6 @@ class PlanifierEntretienTests(TestCase):
             planifier_entretien(self.cand, timezone.now() + timezone.timedelta(days=5), self.res)
 
 
-@override_settings(FICHIERS_PRIVES_ROOT=tempfile.mkdtemp())
 class AccorderTests(TestCase):
     def setUp(self):
         self.sec, self.adm, self.res, self.dept, self.ts, self.candidat = _setup_base()
@@ -583,7 +571,6 @@ class AccorderTests(TestCase):
         self.assertEqual(cand_dep.statut, StatutCandidature.ACCORDEE)
 
 
-@override_settings(FICHIERS_PRIVES_ROOT=tempfile.mkdtemp())
 class RefuserTests(TestCase):
     def setUp(self):
         self.sec, self.adm, self.res, self.dept, self.ts, self.candidat = _setup_base()
@@ -618,7 +605,6 @@ class RefuserTests(TestCase):
         self.assertEqual(response.status_code, 403)
 
 
-@override_settings(FICHIERS_PRIVES_ROOT=tempfile.mkdtemp())
 class RedirigerTests(TestCase):
     def setUp(self):
         self.sec, self.adm, self.res, self.dept, self.ts, self.candidat = _setup_base()
@@ -703,7 +689,6 @@ class TypeDemandAUTRETests(TestCase):
             c.clean()
 
 
-@override_settings(FICHIERS_PRIVES_ROOT=tempfile.mkdtemp())
 class PieceJointePDFSeulementTests(TestCase):
     """_valider_piece_jointe : PDF uniquement, 3 Mo, magic bytes."""
 
@@ -744,7 +729,6 @@ class PieceJointePDFSeulementTests(TestCase):
             self._valider(faux)
 
 
-@override_settings(FICHIERS_PRIVES_ROOT=tempfile.mkdtemp())
 class ServiceValidationCandidatureTests(TestCase):
     """_valider_candidature via creer_candidature / modifier_candidature."""
 
@@ -836,7 +820,6 @@ class ServiceValidationCandidatureTests(TestCase):
             )
 
 
-@override_settings(FICHIERS_PRIVES_ROOT=tempfile.mkdtemp())
 class FormulaireCandidatureValidationTests(TestCase):
     """Validations de CandidatureCreerForm et CandidatureModifierForm."""
 
@@ -901,7 +884,6 @@ class FormulaireCandidatureValidationTests(TestCase):
         self.assertNotIn("debut_disponibilite", form.errors)
 
 
-@override_settings(FICHIERS_PRIVES_ROOT=tempfile.mkdtemp())
 class FormsetUnicitePiecesTests(TestCase):
     """BasePieceJointeFormSet : CV obligatoire + un seul par type (sauf AUTRE)."""
 
@@ -940,7 +922,6 @@ class FormsetUnicitePiecesTests(TestCase):
 # ─── Lot D — D1 : règle 72 h avant entretien ─────────────────────────────────
 
 
-@override_settings(FICHIERS_PRIVES_ROOT=tempfile.mkdtemp())
 class Entretien72hTests(TestCase):
     def setUp(self):
         self.sec, self.adm, self.res, self.dept, self.ts, self.candidat = _setup_base()
@@ -985,7 +966,6 @@ class Entretien72hTests(TestCase):
 # ─── Lot D — D2 : alerte secrétariat entretien < 48 h ────────────────────────
 
 
-@override_settings(FICHIERS_PRIVES_ROOT=tempfile.mkdtemp())
 class AlerterEntretiensCommandTests(TestCase):
     def setUp(self):
         self.sec, self.adm, self.res, self.dept, self.ts, self.candidat = _setup_base()
@@ -1043,7 +1023,6 @@ class AlerterEntretiensCommandTests(TestCase):
 # ─── Lot D — D3 : TransfertCandidature ───────────────────────────────────────
 
 
-@override_settings(FICHIERS_PRIVES_ROOT=tempfile.mkdtemp())
 class TransfertCandidatureTests(TestCase):
     def setUp(self):
         self.sec, self.adm, self.res, self.dept, self.ts, self.candidat = _setup_base()
