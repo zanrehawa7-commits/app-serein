@@ -122,8 +122,9 @@ class StageDetailView(RoleRequisMixin, View):
     def get(self, request, pk):
         stage = get_object_or_404(
             Stage.objects.select_related(
-                "candidature__candidat",
+                "candidature__candidat__etablissement",
                 "candidature__departement",
+                "candidature__type_stage",
                 "candidature__offre",
                 "maitre_stage",
             ),
@@ -139,29 +140,31 @@ class StageDetailView(RoleRequisMixin, View):
                 if not stage.vivier:
                     raise PermissionDenied
                 lecture_seule = True
+        if lecture_seule:
+            # RG-E8 : exactement les colonnes du vivier ; rien d'autre n'est chargé ni transmis.
+            return render(request, "stages/stage_detail_vivier.html", {"stage": stage, "role": role})
         historiques = _get_historique(stage)
         affectations_maitre = stage.affectations_maitre.select_related(
             "maitre_stage", "affecte_par"
         ).order_by("-date_affectation")
         _peut_eval, _ = peut_evaluer(stage) if stage.statut == StatutStage.TERMINE and role == "Responsable" else (False, None)
-        _dept_ok = not lecture_seule
         return render(request, "stages/stage_detail.html", {
             "stage": stage,
             "historiques": historiques,
             "affectations_maitre": affectations_maitre,
             "role": role,
-            "lecture_seule": lecture_seule,
+            "pieces": stage.candidature.pieces.order_by("type_piece", "date_ajout"),
             "peut_modifier": (
                 role == "Secrétaire" and
                 stage.statut in [StatutStage.A_VENIR, StatutStage.EN_COURS]
             ),
-            "peut_terminer": role == "Responsable" and stage.statut == StatutStage.EN_COURS and _dept_ok,
+            "peut_terminer": role == "Responsable" and stage.statut == StatutStage.EN_COURS,
             "peut_interrompre": (
                 role == "Responsable" and
-                stage.statut in [StatutStage.A_VENIR, StatutStage.EN_COURS] and _dept_ok
+                stage.statut in [StatutStage.A_VENIR, StatutStage.EN_COURS]
             ),
-            "peut_evaluer": _peut_eval and _dept_ok,
-            "peut_reprendre": role == "Responsable" and stage.statut == StatutStage.INTERROMPU and _dept_ok,
+            "peut_evaluer": _peut_eval,
+            "peut_reprendre": role == "Responsable" and stage.statut == StatutStage.INTERROMPU,
             "periodes_interruption": stage.periodes_interruption.select_related("interrompu_par", "repris_par"),
         })
 

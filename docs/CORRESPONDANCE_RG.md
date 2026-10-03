@@ -66,7 +66,8 @@ pendant le développement).
 
 | Code | Règle (résumé) | Origine |
 |---|---|---|
-| RG-E7 | Fiche stage d'un autre département : 403 pour un Responsable, sauf stage au vivier (lecture seule). | Décision étape 10 |
+| RG-E7 | Fiche stage d'un autre département : 403 pour un Responsable, sauf stage au vivier (lecture seule, colonnes du vivier). | Décision étape 10, précisée au lot F |
+| RG-E8 | Dossier du candidat sur la fiche stage ; Responsable d'un autre département : colonnes du vivier uniquement. | Lot F (directeur de mémoire) |
 | RG-R3 | Écrans Référentiels réservés à l'Administrateur. | Décision étape 10 |
 | RG-N4 | Exception assumée : `notification_lire` accepte le GET. | Décision étape 10 |
 | RG-E1 à RG-E4, RG-E6 | Note 1–20, vivier si note ≥ 12, verrouillage 30 jours, rapport non verrouillé, vivier consultable. | Étape 9 |

@@ -749,23 +749,17 @@ class StageDetailCloisonnementTests(_DeuxDepartementsMixin, TestCase):
     def test_autre_departement_au_vivier_lecture_seule_sans_bouton(self):
         reponse = self._detail(self.stage_b_vivier)
         self.assertEqual(reponse.status_code, 200)
-        self.assertTrue(reponse.context["lecture_seule"])
-        for drapeau in ["peut_modifier", "peut_terminer", "peut_interrompre", "peut_evaluer"]:
-            with self.subTest(drapeau=drapeau):
-                self.assertFalse(reponse.context[drapeau])
+        self.assertTemplateUsed(reponse, "stages/stage_detail_vivier.html")
         pk = self.stage_b_vivier.pk
-        for nom in ["stage_modifier", "stage_terminer", "stage_interrompre", "stage_evaluer"]:
+        for nom in ["stage_modifier", "stage_terminer", "stage_interrompre", "stage_evaluer", "stage_reprendre"]:
             with self.subTest(url=nom):
                 self.assertNotContains(reponse, reverse(f"stages:{nom}", args=[pk]))
-        self.assertNotContains(
-            reponse, reverse("candidatures:candidature_detail", args=[self.stage_b_vivier.candidature.pk])
-        )
         self.assertContains(reponse, "Lecture seule")
 
     def test_propre_departement_avec_actions(self):
         reponse = self._detail(self.stage_a)
         self.assertEqual(reponse.status_code, 200)
-        self.assertFalse(reponse.context["lecture_seule"])
+        self.assertTemplateUsed(reponse, "stages/stage_detail.html")
         self.assertTrue(reponse.context["peut_terminer"])
         self.assertContains(reponse, reverse("stages:stage_terminer", args=[self.stage_a.pk]))
 
@@ -775,7 +769,76 @@ class StageDetailCloisonnementTests(_DeuxDepartementsMixin, TestCase):
                 self.client.force_login(_user(email, role))
                 reponse = self._detail(self.stage_b)
                 self.assertEqual(reponse.status_code, 200)
-                self.assertFalse(reponse.context["lecture_seule"])
+                self.assertTemplateUsed(reponse, "stages/stage_detail.html")
+
+
+# ─── RG-E8 : dossier du candidat sur la fiche stage ───────────────────────────
+
+
+class DossierCandidatRGE8Tests(_DeuxDepartementsMixin, TestCase):
+    """Dossier complet pour Secrétaire, Administrateur et Responsable du département ;
+    colonnes du vivier uniquement pour le Responsable d'un autre département."""
+
+    def setUp(self):
+        from candidatures.models import PieceJointe, TypePiece
+        from suivi.services import enregistrer_historique
+        super().setUp()
+        self.stage_b_vivier.rapport.save("rapport.pdf", ContentFile(b"%PDF-1.4 rapport"), save=True)
+        cand = self.stage_b_vivier.candidature
+        Candidat.objects.filter(pk=cand.candidat_id).update(
+            email="stagiaire@test.bf", adresse="Secteur 15, Ouagadougou", filiere="Gestion financière", niveau_etudes="L3",
+        )
+        self.piece = PieceJointe(candidature=cand, type_piece=TypePiece.CV, nom_original="cv_stagiaire.pdf")
+        self.piece.fichier.save("cv.pdf", ContentFile(b"%PDF-1.4 cv"), save=True)
+        enregistrer_historique(self.stage_b_vivier, None, "EN_COURS", "TERMINE", "Commentaire interne confidentiel")
+        PeriodeInterruption.objects.create(
+            stage=self.stage_b_vivier, date_debut=self.stage_b_vivier.date_debut,
+            date_fin=self.stage_b_vivier.date_debut + datetime.timedelta(days=3),
+            motif_interruption="Motif d'interruption privé",
+        )
+        self.url_piece = reverse("candidatures:piece_telecharger", args=[self.piece.pk])
+        self.url_candidature = reverse("candidatures:candidature_detail", args=[cand.pk])
+
+    def _detail(self, user=None):
+        if user:
+            self.client.force_login(user)
+        return self.client.get(reverse("stages:stage_detail", args=[self.stage_b_vivier.pk]))
+
+    def test_responsable_autre_departement_colonnes_du_vivier_uniquement(self):
+        reponse = self._detail()
+        self.assertEqual(reponse.status_code, 200)
+        for visible in ["70000003", "stagiaire@test.bf", "Licence 3", "Gestion financière", "Comptabilité",
+                        "15/20", reverse("stages:rapport_telecharger", args=[self.stage_b_vivier.pk])]:
+            with self.subTest(visible=visible):
+                self.assertContains(reponse, visible)
+        for masque in [self.url_piece, "cv_stagiaire.pdf", self.url_candidature, "Secteur 15",
+                       "Ilboudo", "Commentaire interne confidentiel", "interruption privé",
+                       self.stage_b_vivier.candidature.reference]:
+            with self.subTest(masque=masque):
+                self.assertNotContains(reponse, masque)
+
+    def test_responsable_autre_departement_rien_d_autre_dans_le_contexte(self):
+        reponse = self._detail()
+        for cle in ["pieces", "historiques", "affectations_maitre", "periodes_interruption"]:
+            with self.subTest(cle=cle):
+                self.assertNotIn(cle, reponse.context)
+
+    def test_responsable_autre_departement_piece_403(self):
+        self._detail()
+        self.assertEqual(self.client.get(self.url_piece).status_code, 403)
+
+    def test_dossier_complet_secretaire_administrateur_responsable_du_departement(self):
+        resp_b = _user("resp_b@test.com", "Responsable")
+        resp_b.personnel = _membre(self.dept_b, "RespB")
+        resp_b.save(update_fields=["personnel"])
+        for user in [_user("sec4@test.com", "Secrétaire"), _user("admin4@test.com", "Administrateur"), resp_b]:
+            with self.subTest(role=user.role):
+                reponse = self._detail(user)
+                self.assertEqual(reponse.status_code, 200)
+                for visible in ["Dossier du candidat", self.url_piece, f"{self.url_piece}?inline=1",
+                                "cv_stagiaire.pdf", self.url_candidature, "Secteur 15", "stagiaire@test.bf",
+                                "Spontanée", "interruption privé"]:
+                    self.assertContains(reponse, visible)
 
 
 # ─── Rapport de stage : RG-E5 ─────────────────────────────────────────────────
