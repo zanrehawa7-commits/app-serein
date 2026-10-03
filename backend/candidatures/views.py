@@ -63,13 +63,39 @@ class CandidatRechercheView(RoleRequisMixin, View):
     template_name = "candidatures/candidat_recherche.html"
 
     def get(self, request):
-        form = CandidatRechercheForm(request.GET or None)
+        from referentiels.models import Etablissement
+
+        q = request.GET.get("q", "").strip()
+        etablissement_id = request.GET.get("etablissement", "")
+        partenaire = request.GET.get("partenaire", "")
+        has_filter = bool(q or etablissement_id or partenaire)
+
         candidats = []
-        q = ""
-        if form.is_valid():
-            q = form.cleaned_data["q"]
-            candidats = rechercher_candidats(q)
-        return render(request, self.template_name, {"form": form, "candidats": candidats, "q": q})
+        if has_filter:
+            if q:
+                candidats = rechercher_candidats(q).select_related("etablissement")
+            else:
+                from .models import Candidat as _Candidat
+                candidats = (
+                    _Candidat.objects
+                    .select_related("etablissement")
+                    .prefetch_related("candidatures")
+                    .order_by("nom", "prenom")
+                )
+            if etablissement_id:
+                candidats = candidats.filter(etablissement_id=etablissement_id)
+            if partenaire == "1":
+                candidats = candidats.filter(etablissement__partenaire=True)
+
+        return render(request, self.template_name, {
+            "form": CandidatRechercheForm(request.GET or None),
+            "candidats": candidats,
+            "q": q,
+            "etablissements": Etablissement.objects.filter(actif=True).order_by("nom"),
+            "etablissement_filtre": etablissement_id,
+            "partenaire_filtre": partenaire,
+            "has_filter": has_filter,
+        })
 
 
 class CandidatCreateView(RoleRequisMixin, View):
@@ -245,18 +271,29 @@ class CandidatureListView(RoleRequisMixin, ListeMixin, ListView):
         if type_demande:
             qs = qs.filter(type_demande=type_demande)
 
+        etablissement_id = self.request.GET.get("etablissement")
+        if etablissement_id:
+            qs = qs.filter(candidat__etablissement_id=etablissement_id)
+
+        partenaire = self.request.GET.get("partenaire")
+        if partenaire == "1":
+            qs = qs.filter(candidat__etablissement__partenaire=True)
+
         return qs
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
-        from referentiels.models import Departement
+        from referentiels.models import Departement, Etablissement
         from .models import TypeDemande
         ctx["statuts"] = StatutCandidature.choices
         ctx["types_demande"] = TypeDemande.choices
         ctx["departements"] = Departement.objects.filter(actif=True)
+        ctx["etablissements"] = Etablissement.objects.filter(actif=True).order_by("nom")
         ctx["statut_filtre"] = self.request.GET.get("statut", "")
         ctx["departement_filtre"] = self.request.GET.get("departement", "")
         ctx["type_demande_filtre"] = self.request.GET.get("type_demande", "")
+        ctx["etablissement_filtre"] = self.request.GET.get("etablissement", "")
+        ctx["partenaire_filtre"] = self.request.GET.get("partenaire", "")
 
         if _est_responsable(self.request.user) and self.request.user.personnel:
             dept = self.request.user.personnel.departement
@@ -285,12 +322,20 @@ class CandidatureDetailView(RoleRequisMixin, View):
 
         pieces = candidature.pieces.order_by("type_piece")
         historiques = _get_historique(candidature).order_by("-date_action")
+        transferts = candidature.transferts.select_related(
+            "departement_source", "departement_cible", "realise_par"
+        ).order_by("-date_transfert")
+
+        premier = _get_historique(candidature).order_by("date_action").first()
+        depose_par = premier.utilisateur if premier else None
 
         ctx = {
             "candidature": candidature,
             "pieces": pieces,
             "historiques": historiques,
+            "transferts": transferts,
             "est_responsable": est_resp,
+            "depose_par": depose_par,
         }
         if est_resp:
             ctx["form_preselection"] = PreselectionnerForm(prefix="presel")

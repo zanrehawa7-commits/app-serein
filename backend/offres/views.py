@@ -10,8 +10,8 @@ from django.views.generic import DetailView, ListView
 from comptes.permissions import RoleRequisMixin, _role_utilisateur
 from suivi.models import Historique
 
-from .forms import BesoinForm, OffreForm, PublicationForm
-from .models import Besoin, Offre, Publication, StatutBesoin, StatutOffre
+from .forms import BesoinForm, OffreForm, ParametreOffreForm, PublicationForm
+from .models import Besoin, Offre, ParametreOffre, Publication, StatutBesoin, StatutOffre
 from .services import (
     TransitionInterdite,
     annuler_besoin,
@@ -231,7 +231,10 @@ class OffreListView(RoleRequisMixin, ListView):
         if role == "Responsable":
             if not self.request.user.personnel:
                 return Offre.objects.none()
-            qs = Offre.objects.filter(besoin__departement=self.request.user.personnel.departement)
+            dept = self.request.user.personnel.departement
+            qs = Offre.objects.filter(
+                Q(departement=dept) | Q(departement__isnull=True, besoin__departement=dept)
+            )
         else:
             qs = Offre.objects.all()
 
@@ -249,7 +252,7 @@ class OffreListView(RoleRequisMixin, ListView):
         if type_stage:
             qs = qs.filter(type_stage_id=type_stage)
 
-        return qs.select_related("type_stage", "besoin__departement").order_by("-date_creation")
+        return qs.select_related("type_stage", "departement", "besoin__departement").order_by("-date_creation")
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
@@ -277,7 +280,9 @@ class OffreDetailView(RoleRequisMixin, DetailView):
         if _role_utilisateur(self.request.user) == "Responsable":
             if not self.request.user.personnel:
                 raise PermissionDenied
-            if not obj.besoin or obj.besoin.departement != self.request.user.personnel.departement:
+            dept = self.request.user.personnel.departement
+            offre_dept = obj.departement or (obj.besoin.departement if obj.besoin else None)
+            if offre_dept != dept:
                 raise PermissionDenied
         return obj
 
@@ -288,14 +293,6 @@ class OffreDetailView(RoleRequisMixin, DetailView):
         ctx["publications"] = offre.publications.select_related("canal").order_by("-date_publication")
         ctx["role"] = _role_utilisateur(self.request.user)
         ctx["places_restantes"] = offre.places_restantes()
-        ctx["texte_publication"] = (
-            f"OFFRE DE STAGE — {offre.titre}\n"
-            f"Type : {offre.type_stage}\n"
-            f"Période : du {offre.date_debut.strftime('%d/%m/%Y')} au {offre.date_fin.strftime('%d/%m/%Y')}\n"
-            f"Profil recherché : {offre.profil_recherche}\n"
-            f"Nombre de places : {offre.nombre_places}\n"
-            f"Contact : Serein-GE"
-        )
         if offre.statut == StatutOffre.OUVERTE and _role_utilisateur(self.request.user) == "Secrétaire":
             ctx["form_publication"] = PublicationForm()
         return ctx
@@ -324,8 +321,13 @@ class OffreCreateView(RoleRequisMixin, View):
                 date_debut=cd["date_debut"],
                 date_fin=cd["date_fin"],
                 nombre_places=cd["nombre_places"],
+                departement=cd["departement"],
                 utilisateur=request.user,
             )
+            # Si la secrétaire a saisi un texte_publie personnalisé, l'appliquer
+            if cd.get("texte_publie") is not None:
+                offre.texte_publie = cd["texte_publie"]
+                offre.save(update_fields=["texte_publie"])
             messages.success(request, f"Offre « {offre.titre} » créée (brouillon).")
             return redirect("offres:offre_detail", pk=offre.pk)
         return render(request, _FORM_TPL, {
@@ -345,6 +347,7 @@ class OffreCreateFromBesoinView(RoleRequisMixin, View):
         besoin = self._get_besoin(besoin_pk)
         initial = {
             "type_stage": besoin.type_stage,
+            "departement": besoin.departement,
             "date_debut": besoin.date_debut,
             "date_fin": besoin.date_fin,
             "profil_recherche": besoin.profil_recherche,
@@ -371,6 +374,7 @@ class OffreCreateFromBesoinView(RoleRequisMixin, View):
                     date_debut=cd["date_debut"],
                     date_fin=cd["date_fin"],
                     nombre_places=cd["nombre_places"],
+                    departement=cd.get("departement") or besoin.departement,
                     utilisateur=request.user,
                     besoin=besoin,
                 )
@@ -557,3 +561,31 @@ class PublicationSupprimerView(RoleRequisMixin, View):
     def get(self, request, pk):
         pub = get_object_or_404(Publication, pk=pk)
         return redirect("offres:offre_detail", pk=pub.offre_id)
+
+
+# ─── Paramètre offre (Administrateur) ────────────────────────────────────────
+
+class ParametreOffreView(RoleRequisMixin, View):
+    roles = ["Administrateur"]
+
+    def get(self, request):
+        instance = ParametreOffre.get_instance()
+        form = ParametreOffreForm(instance=instance)
+        return render(request, "offres/parametre_offre_form.html", {
+            "form": form,
+            "titre": "Modèle de texte d'offre",
+            "url_retour": reverse("offres:offre_list"),
+        })
+
+    def post(self, request):
+        instance = ParametreOffre.get_instance()
+        form = ParametreOffreForm(request.POST, instance=instance)
+        if form.is_valid():
+            form.save()
+            messages.success(request, "Paramètres du modèle de texte mis à jour.")
+            return redirect("offres:parametre_offre")
+        return render(request, "offres/parametre_offre_form.html", {
+            "form": form,
+            "titre": "Modèle de texte d'offre",
+            "url_retour": reverse("offres:offre_list"),
+        })

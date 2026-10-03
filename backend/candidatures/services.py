@@ -226,7 +226,7 @@ def creer_candidature(
             nom_original=pd.get("nom_original", ""),
         )
 
-    enregistrer_historique(candidature, utilisateur, "", StatutCandidature.RECUE, "Candidature reçue.")
+    enregistrer_historique(candidature, utilisateur, "", StatutCandidature.RECUE, "Dépôt initial.")
 
     lien = f"/candidatures/{candidature.pk}/"
     responsable = _responsable_departement(departement)
@@ -334,6 +334,7 @@ def preselectionner(candidature, utilisateur, commentaire=""):
 
 @transaction.atomic
 def planifier_entretien(candidature, date_entretien, utilisateur):
+    from datetime import timedelta
     from suivi.services import enregistrer_historique, notifier
     from .models import Candidature as C, StatutCandidature
     cand = C.objects.select_for_update().get(pk=candidature.pk)
@@ -341,10 +342,15 @@ def planifier_entretien(candidature, date_entretien, utilisateur):
         raise TransitionInterdite(
             f"Impossible de planifier un entretien : statut actuel « {cand.get_statut_display()} »."
         )
+    if date_entretien < timezone.now() + timedelta(hours=72):
+        raise TransitionInterdite(
+            "L'entretien doit être planifié au moins 72 h à l'avance."
+        )
     cand.date_entretien = date_entretien
     cand.candidat_informe = False
     cand.date_information = None
-    cand.save(update_fields=["date_entretien", "candidat_informe", "date_information"])
+    cand.alerte_entretien_envoyee = False
+    cand.save(update_fields=["date_entretien", "candidat_informe", "date_information", "alerte_entretien_envoyee"])
     date_fmt = date_entretien.strftime("%d/%m/%Y à %H:%M")
     enregistrer_historique(
         cand, utilisateur,
@@ -441,11 +447,20 @@ def rediriger(candidature, nouveau_departement, motif, utilisateur):
         raise TransitionInterdite("Le département cible n'est pas actif.")
     if nouveau_departement.pk == cand.departement_id:
         raise TransitionInterdite("Le département cible doit être différent du département actuel.")
-    ancien_dept_nom = cand.departement.nom
+    from .models import TransfertCandidature
+    ancien_dept = cand.departement
+    ancien_dept_nom = ancien_dept.nom
     cand.departement = nouveau_departement
     cand.candidat_informe = False
     cand.date_information = None
     cand.save(update_fields=["departement", "candidat_informe", "date_information"])
+    TransfertCandidature.objects.create(
+        candidature=cand,
+        departement_source=ancien_dept,
+        departement_cible=nouveau_departement,
+        motif=motif,
+        realise_par=utilisateur,
+    )
     commentaire_hist = f"Redirigée de {ancien_dept_nom} vers {nouveau_departement.nom} : {motif}"
     enregistrer_historique(
         cand, utilisateur,

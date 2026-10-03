@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% load crispy_forms_tags %}
+
+{% block title %}Modèle de texte d'offre{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center gap-3 mb-4">
+    <a href="{{ url_retour }}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left"></i></a>
+    <div>
+        <h5 class="mb-0 fw-semibold"><i class="bi bi-file-text me-2 text-primary"></i>Modèle de texte d'offre</h5>
+        <p class="text-muted small mb-0">Configuration du texte généré à la création de chaque offre</p>
+    </div>
+</div>
+
+<div class="row g-3">
+    <div class="col-lg-7">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body">
+                <form method="post">
+                    {% csrf_token %}
+                    {{ form|crispy }}
+                </form>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-5">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body">
+                <h6 class="fw-semibold mb-3 text-muted text-uppercase" style="font-size:.7rem;letter-spacing:.05em;">
+                    Variables disponibles
+                </h6>
+                <table class="table table-sm small">
+                    <thead class="table-light">
+                        <tr><th>Variable</th><th>Remplacée par</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td><code>{contact}</code></td><td>Coordonnées de contact (ce champ)</td></tr>
+                        <tr><td><code>{type_stage}</code></td><td>Libellé du type de stage</td></tr>
+                        <tr><td><code>{departement}</code></td><td>Nom du département</td></tr>
+                        <tr><td><code>{duree_min}</code></td><td>Durée minimale (mois)</td></tr>
+                        <tr><td><code>{duree_max}</code></td><td>Durée maximale (mois)</td></tr>
+                        <tr><td><code>{nombre_places}</code></td><td>Nombre de places</td></tr>
+                        <tr><td><code>{date_debut}</code></td><td>Date de début (jj/mm/AAAA)</td></tr>
+                        <tr><td><code>{date_fin}</code></td><td>Date de fin (jj/mm/AAAA)</td></tr>
+                    </tbody>
+                </table>
+                <div class="alert alert-warning small mt-2 mb-0">
+                    <i class="bi bi-exclamation-triangle me-1"></i>
+                    Le texte est généré <strong>à la création</strong> de l'offre. Modifier ce modèle n'affecte pas les offres existantes.
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -3,9 +3,9 @@ from crispy_forms.helper import FormHelper
 from crispy_forms.layout import Submit
 
 from commun.utils import ajouter_mois
-from referentiels.models import CanalPublication, TypeStage
+from referentiels.models import CanalPublication, Departement, TypeStage
 
-from .models import Besoin, Offre, Publication
+from .models import Besoin, Offre, ParametreOffre, Publication
 
 
 def _helper(label="Enregistrer"):
@@ -59,23 +59,45 @@ class BesoinForm(forms.ModelForm):
 class OffreForm(forms.ModelForm):
     class Meta:
         model = Offre
-        fields = ["type_stage", "titre", "description", "profil_recherche", "date_debut", "date_fin", "nombre_places"]
+        fields = [
+            "departement", "type_stage", "titre",
+            "description", "profil_recherche",
+            "date_debut", "date_fin", "nombre_places",
+            "texte_publie",
+        ]
         widgets = {
             "date_debut": forms.DateInput(attrs={"type": "date"}),
             "date_fin": forms.DateInput(attrs={"type": "date"}),
             "description": forms.Textarea(attrs={"rows": 4}),
             "profil_recherche": forms.Textarea(attrs={"rows": 4}),
+            "texte_publie": forms.Textarea(attrs={"rows": 6}),
         }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.helper = _helper()
         self.fields["type_stage"].queryset = TypeStage.objects.filter(actif=True)
+        self.fields["departement"].queryset = Departement.objects.filter(actif=True)
+        self.fields["departement"].required = True
 
     def clean(self):
         cleaned = super().clean()
         _valider_duree_type_stage(cleaned)
         return cleaned
+
+
+class ParametreOffreForm(forms.ModelForm):
+    class Meta:
+        model = ParametreOffre
+        fields = ["contact", "texte_modele"]
+        widgets = {
+            "contact": forms.Textarea(attrs={"rows": 3}),
+            "texte_modele": forms.Textarea(attrs={"rows": 10}),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.helper = _helper("Enregistrer")
 
 
 class PublicationForm(forms.ModelForm):

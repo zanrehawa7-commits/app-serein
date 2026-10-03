@@ -1,344 +1,370 @@
-# Stage_App — Contexte projet pour Claude Code
+# Stage Track — Guide pour Claude Code
 
-## Présentation
-Application web Django de gestion des stages pour l'entreprise **Serein-GE**.
-Permet de gérer le cycle complet : besoins → offres → candidatures → stages → suivi.
+> Ce fichier est la source de vérité pour toute nouvelle session.
+> **Lis-le intégralement avant d'écrire la moindre ligne de code.**
 
-## Stack technique
-- Python 3.12 / Django 5.x
-- PostgreSQL (base locale : `serein_db`)
-- Bootstrap 5 + Bootstrap Icons (templates serveur)
-- Django REST Framework + SimpleJWT (API future)
-- `python-decouple` pour la lecture du `.env`
-- Déploiement prévu via Docker Compose + Nginx
+---
 
-## Structure des apps (ordre de dépendance)
+## 1. Présentation
 
-| App | Responsabilité |
+**Stage Track** est une application web Django de gestion du cycle de vie complet des dossiers de stage pour **Serein-GE** (entreprise burkinabè).
+
+Cycle couvert : Besoins → Offres → Candidatures → Stages → Évaluation → Vivier de talents.
+
+Contexte : projet réalisé dans le cadre d'un **stage de Licence** (rapport de stage à remettre, méthode Scrum). Le nom affiché dans l'interface est `Stage Track` (`APP_NAME` dans settings).
+
+---
+
+## 2. Stack et installation (Windows / PowerShell)
+
+### Versions exactes (testées, pip freeze 2026-10-02)
+
+| Paquet | Version |
 |---|---|
-| `referentiels` | Données de base : Departement, Membre, Etablissement, TypeStage, CanalPublication |
-| `comptes` | Utilisateur personnalisé (email), rôles via Django Groups |
-| `offres` | Besoin, Offre, Publication |
-| `candidatures` | Candidat, Candidature, PieceJointe |
-| `stages` | Stage |
-| `suivi` | Historique (GenericFK), Notification |
+| Python | 3.12.x |
+| Django | 5.2.17 |
+| djangorestframework | 3.18.1 |
+| djangorestframework-simplejwt | 5.5.1 |
+| psycopg (v3, binary) | 3.3.6 |
+| django-cors-headers | 4.9.0 |
+| gunicorn | 26.2.0 |
+| python-decouple | 3.8 |
+| Pillow | 12.3.0 |
+| django-crispy-forms | 2.7 |
+| crispy-bootstrap5 | 2026.9 |
+| asgiref | 3.12.1 |
 
-## Conventions de code
-- **Langue** : noms de modèles, champs, verbose_name, commentaires → **français** (sans accents dans les identifiants Python).
-- **Logique métier** dans `services.py` de chaque app. Jamais dans les vues ni les modèles (sauf `clean()`).
-- `TextChoices` pour toutes les énumérations.
-- `__str__`, `class Meta` (verbose_name, verbose_name_plural, ordering) sur chaque modèle.
-- `on_delete=PROTECT` vers les référentiels ; `CASCADE` seulement pour les compositions.
-- Pas de `null=True` sur les CharField/TextField : utiliser `blank=True` avec valeur vide.
+### Étapes d'installation pas à pas
 
-## Modèle utilisateur
-- `AUTH_USER_MODEL = "comptes.Utilisateur"`
-- Connexion par email (`USERNAME_FIELD = "email"`, champ `username` supprimé).
-- Rôles = **Groups Django** : `Administrateur`, `Secrétaire`, `Responsable`.
-- Propriété `utilisateur.role` → renvoie le nom du groupe (ou `None`).
+```powershell
+# 1. Cloner
+git clone <url-du-repo> app-serein
+cd app-serein
 
-## Module commun (`backend/commun/`)
-
-Utilitaires partagés entre toutes les apps.
-
-- **`commun/mixins.py` — `ListeMixin`** : à hériter sur toute `ListView`. Gère pagination (20/page), recherche texte (`champs_recherche = [...]`), filtre actif/inactif (`champ_actif = "actif"`, surcharger avec `"is_active"` pour `Utilisateur`), tri par colonne. Injecte `params_paginateur`, `q`, `actif_filtre`, `tri_actuel` dans le contexte.
-- **`commun/services.py` — `supprimer_ou_desactiver(instance, request=None)`** : tente `delete()`, intercepte `ProtectedError` → met `actif = False`. Affiche `messages.success` ou `messages.warning`.
-- **`templates/commun/formulaire.html`** : gabarit générique pour Create/Update (utilise `{% crispy form %}`, requiert `titre` et `url_retour` dans le contexte).
-- **`templates/commun/_pagination.html`** : partiel Bootstrap 5 préservant les paramètres GET.
-- **`templates/commun/_modal_confirmer.html`** : modal Bootstrap 5 avec formulaire POST + `{% csrf_token %}`. Le JS est inline (pas dans un `{% block %}`). Alimenté par `data-nom`, `data-url`, `data-action`, `data-info`, `data-btn-class`, `data-btn-label` sur le bouton déclencheur.
-
-## Étape 4 — Module Administrateur (F02–F07)
-
-### F02 — Rôles & permissions
-- Vue `PermissionsRoleView` : affiche/modifie les permissions Django d'un groupe via des cases à cocher.
-- Les permissions `comptes` de l'Administrateur sont toujours cochées et désactivées (cases grises + input hidden).
-- Garde-fou POST : les permissions `comptes` sont toujours réinjectées pour Administrateur même si absentes du POST.
-- `APPS_PERMISSIONS` et `ACTIONS_ORDRE` définis dans `comptes/views.py`.
-
-### F03 — Utilisateurs
-- `UtilisateurListView` : hérite de `RolePermMixin + ListeMixin`. `champ_actif = "is_active"`.
-- `UtilisateurCreateView / UpdateView` : formulaires `UtilisateurCreerForm / UtilisateurModifierForm`. Le rôle est un `ChoiceField` (pas un FK direct vers Group).
-- `UtilisateurActiverView` : refuse l'auto-désactivation (RG33).
-- Si rôle change DE Responsable → autre : `user.membre = None; user.save(update_fields=["membre"])`.
-- `UtilisateurReinitMdpView` : réinitialise le mot de passe sans connaître l'ancien.
-
-### F04–F07 — Référentiels
-- CRUD complet : Département, Établissement, TypeStage, CanalPublication.
-- Membres gérés uniquement depuis la page détail d'un département (`MembreCreateView` prend `dept_pk` dans l'URL).
-- Suppression via modal POST (pas de page de confirmation dédiée). Les vues delete sont de simples `View` (POST uniquement).
-- `DepartementModifierForm` filtre le queryset du responsable aux membres actifs du département (RG31).
-- `EtablissementTogglePartenaireView` : bascule le champ `partenaire` en POST.
-
-### Permissions et contrôle d'accès (F02–F07)
-- **`RolePermMixin`** (dans `comptes/permissions.py`) : combine `RoleRequisMixin(roles=["Administrateur"])` + `PermissionRequiredMixin`. Les superusers bypasse la vérification des permissions Django.
-- Les templates utilisent `{% if perms.app.action_model %}` pour afficher/masquer boutons.
-- Retirer une permission d'un rôle → bouton masqué ET vue retourne 403.
-
-### Relation Utilisateur ↔ Membre
-- `Utilisateur.membre` est un `OneToOneField` avec `related_name="compte"`.
-- Pour accéder à l'utilisateur depuis un membre : `membre.compte` (pas `membre.utilisateur`).
-- Dans les QuerySets : `Membre.objects.filter(compte__isnull=True)` (pas `utilisateur__isnull`).
-
-## Contrôle d'accès (étape 3)
-
-- **Protection globale** : `LoginRequiredMiddleware` natif Django 5.1+ — toutes les vues exigent la connexion sauf celles décorées `@login_not_required`.
-- **Mixins et décorateurs** : définis dans `comptes/permissions.py`.
-  - `RoleRequisMixin(roles=[...])` → CBV
-  - `@role_requis("Rôle1", "Rôle2")` → FBV
-  - `DepartementResponsableMixin` → filtre les objets par département du responsable (RG13). Surcharger `get_departement_objet()`.
-- **Superuser sans groupe** → traité comme Administrateur dans `_role_utilisateur()`.
-- **Context processor** `comptes/context_processors.py` → injecte `role_utilisateur` et `nb_notifications` dans tous les templates.
-- **Session** : déconnexion automatique après 30 min (`SESSION_COOKIE_AGE=1800`, `SESSION_SAVE_EVERY_REQUEST=True`).
-- **Formulaires** : `django-crispy-forms` + `crispy-bootstrap5`. Utiliser `{{ form|crispy }}` dans les templates.
-
-## Étape 5 — Besoins, offres et publications (F08, F09) + socle suivi (F14, F17)
-
-### Socle suivi (`suivi/services.py`)
-- **`enregistrer_historique(objet, utilisateur, ancien_statut, nouveau_statut, commentaire)`** : enregistre via GenericFK (ContentType + object_id). À appeler dans chaque transition.
-- **`notifier(destinataires, message, lien="")`** : bulk_create des `Notification`. `destinataires` est une liste d'objets Utilisateur.
-- **`templates/commun/_historique.html`** : partiel à inclure dans tout détail (besoin, offre, etc.). Attend `historiques` en contexte.
-
-### Vues notifications (`suivi/`)
-- `NotificationListView` : liste paginée des notifs de l'utilisateur connecté (toutes les 3 rôles).
-- `NotificationLireView` : GET ou POST, marque comme lue puis redirige vers `notif.lien` si présent.
-- `NotificationToutLireView` : POST uniquement, bulk update.
-- Dropdown dans `base.html` : affiche les 5 dernières (`dernieres_notifications` injecté par context processor), bouton "Tout marquer comme lu", lien "Voir toutes".
-
-### Context processor (`comptes/context_processors.py`)
-Injecte dans tous les templates : `role_utilisateur`, `nb_notifications`, `dernieres_notifications` (5 dernières).
-
-### Transitions Besoin (`offres/services.py`)
-- `TransitionInterdite(Exception)` : levée par toute transition invalide.
-- `creer_besoin(...)` : statut ENVOYE, historique + notif aux Secrétaires actives.
-- `annuler_besoin(besoin, utilisateur)` : depuis ENVOYE ou PRIS_EN_CHARGE → ANNULE. Notifie les Secrétaires actives.
-- Machine d'état : ENVOYE → PRIS_EN_CHARGE (via `creer_offre`) → CLOTURE (future étape) ; ou ANNULE depuis ENVOYE/PRIS_EN_CHARGE.
-
-### Transitions Offre (`offres/services.py`)
-- `creer_offre(..., besoin=None)` : si besoin fourni, `select_for_update()` vérifie ENVOYE + pas d'offre existante → `TransitionInterdite`. Passe le besoin en PRIS_EN_CHARGE.
-- `ouvrir_offre` : BROUILLON → OUVERTE.
-- `suspendre_offre` : OUVERTE → SUSPENDUE.
-- `rouvrir_offre` : SUSPENDUE → OUVERTE.
-- `fermer_offre` : OUVERTE ou SUSPENDUE → FERMEE.
-- `supprimer_offre` : BROUILLON seulement → delete().
-- Toutes les transitions sont `@transaction.atomic` et enregistrent l'historique.
-- En cas de `TransitionInterdite` dans les vues : redirect vers la page détail + `messages.error()` (pattern PRG).
-
-### Vues offres (`offres/views.py`)
-- `BesoinListView / OffreListView` : 3 rôles, filtrage côté serveur dans `get_queryset()`.
-  - Responsable : uniquement besoins/offres de son département.
-  - Admin : lecture seule (pas de boutons de création/modification).
-- `BesoinCreateView` : Responsable uniquement. Lève `PermissionDenied` si `request.user.membre is None`.
-- `OffreCreateFromBesoinView` : Secrétaire uniquement. Utilise `creer_offre(..., besoin=besoin)`.
-- Toutes les vues de transition (ouvrir, suspendre, rouvrir, fermer) héritent de `_OffreTransitionView`.
-
-### `init_donnees.py` — Format étendu
-Support de la notation `"app.modele": [actions]` pour permissions par modèle. Secrétaire : `view_besoin` uniquement (pas add/change/delete Besoin). Responsable : `add/change/view_besoin`, `view_offre` uniquement.
-
-### `commun/_historique.html`
-Partiel timeline à inclure dans tout détail d'objet suivi. Attend la variable `historiques` (QuerySet Historique ordonné par `-date_action`).
-
-## Règles de gestion clés
-- **RG07** : un candidat ne peut avoir qu'une seule candidature active (statut RECUE ou EN_TRAITEMENT).
-- **RG09** : si `type_demande = SUITE_OFFRE`, le champ `offre` est obligatoire ; si `SPONTANEE`, il doit être vide.
-- **RG11** : pièces jointes acceptées : pdf, jpg, jpeg, png ; taille max 5 Mo.
-- **RG22** : le maître de stage doit appartenir au département de la candidature.
-- Un référentiel utilisé ne peut pas être supprimé (`PROTECT`).
-- Le responsable d'un département doit être membre de ce département (`clean()`).
-
-## Commandes utiles
-```bash
-# Activer le venv (PowerShell)
+# 2. Créer le venv Python 3.12 (à la RACINE du projet, pas dans backend/)
+python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 
-# Lancer le serveur
-cd backend && python manage.py runserver
+# 3. Installer les dépendances
+cd backend
+pip install -r requirements.txt
 
-# Charger les données initiales (groupes, permissions, types de stage)
+# 4. Base PostgreSQL (adapter le mot de passe)
+psql -U postgres -c "CREATE DATABASE serein_db;"
+psql -U postgres -c "CREATE USER serein_user WITH PASSWORD 'motdepasse';"
+psql -U postgres -c "GRANT ALL PRIVILEGES ON DATABASE serein_db TO serein_user;"
+
+# 5. Variables d'environnement
+#    Le .env est à la RACINE du projet (app-serein/.env), lu par python-decouple depuis backend/
+cp ../.env.example ../.env
+#    Editer .env : renseigner SECRET_KEY, DB_PASSWORD (et DB_USER, DB_NAME si differents)
+
+# 6. Migrations
+python manage.py migrate
+
+# 7. Groupes, permissions, types de stage (idempotent)
 python manage.py init_donnees
 
-# Créer un superutilisateur
+# 8. Données de demo — développement uniquement (refuse si DEBUG=False)
+python manage.py init_demo
+#    Comptes créés :
+#      admin@serein.bf / Admin1234!  -> Administrateur
+#      sec@serein.bf   / Sec1234!   -> Secrétaire
+#      resp@serein.bf  / Resp1234!  -> Responsable (département Informatique)
+
+# 9. Superutilisateur (facultatif si init_demo utilisé)
 python manage.py createsuperuser
+
+# 10. Lancer le serveur
+python manage.py runserver
 ```
 
-## Étape 6 — Candidatures (F10)
+> **Attention** : le venv est dans `app-serein/.venv/`, pas dans `backend/`.
+> Depuis le répertoire `backend/`, appeler Python avec le chemin relatif :
+> `.\.venv\Scripts\python.exe manage.py ...` (depuis `app-serein/backend/`, le venv est à `..\..\`).
+> Ou activer le venv depuis la racine avant de naviguer dans `backend/`.
 
-### Workflow de saisie
-1. Secrétaire → Rechercher un candidat (par nom/prénom/tél/email)
-2. Sélectionner un candidat existant ou créer un nouveau
-3. Créer la candidature avec au moins un CV (RG11 : pdf/jpg/jpeg/png, 5 Mo max)
+### Commandes de test
 
-### Stockage privé des fichiers (`FICHIERS_PRIVES_ROOT`)
-- Les pièces jointes sont stockées dans `backend/fichiers_prives/` (hors `MEDIA_ROOT`).
-- `FileSystemStorage(location=FICHIERS_PRIVES_ROOT, base_url=None)` — `base_url=None` empêche toute URL publique.
-- **Interdiction absolue** d'utiliser `piece.fichier.url` dans les templates.
-- Tous les téléchargements passent par `PieceJointeTelechargerView` (URL `/candidatures/pieces/<pk>/telecharger/`).
-- **En production** : Nginx ne sert jamais `fichiers_prives/` directement. La vue Django envoie l'en-tête `X-Accel-Redirect` vers une location interne Nginx (ex. `location /protected/ { internal; alias /path/to/fichiers_prives/; }`) et renvoie un `FileResponse` vide en dev.
+```powershell
+# Premier run ou après migration — recreer la base de test
+python manage.py test --settings=config.settings_test --parallel=auto ^
+  commun referentiels offres candidatures suivi stages comptes
 
-### RG clés
-- **RG07** : un candidat ne peut avoir qu'une seule candidature active (RECUE ou EN_TRAITEMENT) — contrôle dans `creer_candidature()`.
-- **RG09** : offre obligatoire si `SUITE_OFFRE`, interdite si `SPONTANEE` — contrôle dans le formulaire et dans `Candidature.clean()`.
-- **RG12** : notifier le Responsable du département ; si absent → notifier tous les Administrateurs.
-- **RG19** : liste "Candidats à informer" = `candidat_informe=False` et statut ACCORDEE ou REFUSEE.
-- `Offre.places_restantes()` = `nombre_places − candidatures.filter(statut="ACCORDEE").count()`.
+# Runs suivants — conserver la base (beaucoup plus rapide)
+python manage.py test --settings=config.settings_test --keepdb --parallel=auto ^
+  commun referentiels offres candidatures suivi stages comptes
 
-### Permissions
-- Secrétaire : CRUD Candidat, CRU Candidature, CRUD PieceJointe.
-- Responsable : lecture seule (présélection/accord/refus à l'étape 7).
-- Administrateur : lecture seule.
+# Pendant le développement : seulement les apps modifiées
+python manage.py test --settings=config.settings_test --keepdb --parallel=auto candidatures stages
+```
 
-### Normalisation téléphone (`normaliser_telephone`)
-Supprime espaces/points/tirets, retire préfixe `+226`/`00226` → résultat 8 chiffres burkinabè. Appliqué à la saisie ET à la recherche pour détecter les doublons.
+`config/settings_test.py` utilise `MD5PasswordHasher` → ×1000 plus rapide que PBKDF2.
+**Ne jamais utiliser les settings de prod pour les tests.**
 
-## Étape 7 — Traitement des candidatures par le Responsable (F11)
+---
 
-### Transitions (`candidatures/services.py`)
-- `TransitionInterdite(Exception)` / `QuotaAtteint(Exception)` : exceptions métier.
-- `preselectionner(candidature, utilisateur, commentaire="")` : RECUE → EN_TRAITEMENT. Reset `candidat_informe=False`, `date_information=None`. Notifie les Secrétaires.
-- `planifier_entretien(candidature, date_entretien, utilisateur)` : EN_TRAITEMENT uniquement, date future obligatoire. Reset informe. Notifie Secrétaires : "Entretien planifié le <date> pour CAND-XXXX : prévenir le candidat."
-- `accorder(candidature, utilisateur, commentaire="", confirmer_depassement=False)` : EN_TRAITEMENT → ACCORDEE. Si offre liée et quota = 0 sans `confirmer_depassement=True` → `QuotaAtteint`. Reset informe. Notifie Secrétaires.
-- `refuser(candidature, motif, precision_motif, utilisateur, commentaire="")` : RECUE ou EN_TRAITEMENT → REFUSEE. Motif obligatoire. Si `AUTRE`, precision_motif requis. Reset informe. Notifie Secrétaires.
-- `rediriger(candidature, nouveau_departement, motif, utilisateur)` : RECUE uniquement, statut reste RECUE, département change. Notifie responsable du nouveau dept (ou admins si absent) + Secrétaires.
+## 3. Architecture
 
-### Vues (`candidatures/views.py`)
-- `_DecisionView` (base) : `roles = ["Responsable"]`, vérifie que `candidature.departement == user.membre.departement`.
-- `PreselectionnerView`, `PlanifierEntretienView` : POST-only (redirect vers detail).
-- `AccorderView` (GET+POST) : deux passes pour quota — premier POST raise `QuotaAtteint` → re-render avec `quota_atteint=True` → second POST avec `confirmer_depassement=True`.
-- `RefuserView` (GET+POST) : JS masque/affiche le champ `precision_motif` si motif = `AUTRE`.
-- `RedirigerView` (GET+POST) : `RedirigerForm` exclut le département actuel du queryset.
+### Structure du projet
 
-### Formulaires (`candidatures/forms.py`)
-- `EntretienForm` : `DateTimeInput(type=datetime-local)`, `clean_date_entretien()` valide que la date est dans le futur.
-- `AccorderForm` : `confirmer_depassement = HiddenInput` (BooleanField, required=False).
-- `RefuserForm` : `clean()` → AUTRE requiert precision non vide.
-- `RedirigerForm` : `__init__(departement_actuel=...)` exclut le dept courant du queryset.
+```
+app-serein/
+├── .venv/                  <- venv (jamais commite)
+├── .env                    <- secrets (jamais commite)
+├── .env.example            <- template a copier
+├── backend/
+│   ├── manage.py
+│   ├── config/             <- settings.py, settings_test.py, urls.py, wsgi.py
+│   ├── commun/             <- mixins, utils, services partages (pas de modeles)
+│   ├── comptes/            <- Utilisateur, permissions, context_processors
+│   ├── referentiels/       <- Departement, Personnel, Etablissement, TypeStage, CanalPublication
+│   ├── offres/             <- Besoin, Offre, Publication, ParametreOffre
+│   ├── candidatures/       <- Candidat, Candidature, PieceJointe, TransfertCandidature
+│   ├── stages/             <- Stage, AffectationMaitreStage
+│   ├── suivi/              <- Historique (GenericFK), Notification
+│   ├── static/
+│   ├── templates/
+│   └── fichiers_prives/    <- PDF candidats + rapports (hors media/, jamais servi directement)
+└── docs/
+    ├── REGLES_GESTION.md   <- toutes les règles verifiees dans le code
+    └── rapports/           <- rapports d'implementation des lots (C, D, E...)
+```
 
-### Permissions (`init_donnees.py`)
-- Responsable : `"candidatures.candidature": ["change", "view"]`, `"candidatures.candidat": ["view"]`.
-- `CandidatureModifierView` reste protégée par `roles = ["Secrétaire"]` → Responsable → 403.
+### Apps et ordre de dépendance
 
-### Templates
-- `candidature_detail.html` : panel « Actions — Responsable » (inline presel + lien entretien/accord/refus/redirection).
-- `candidature_accorder_form.html` : commentaire + zone quota avec `confirmer_depassement`.
-- `candidature_refuser_form.html` : select motif + zone precision (JS toggle si AUTRE).
-- `candidature_rediriger_form.html` : select dept + motif.
-- `candidature_list.html` : onglets Bootstrap 5 par statut (Responsable uniquement) avec compteurs.
-- `candidats_informer.html` : colonnes enrichies : téléphone, motif de refus, date entretien, date décision.
-- `tableau_bord_responsable.html` : 4 cartes candidatures (Reçues/En traitement/Accordées/Refusées) + tableau 5 dernières reçues.
+| App | Rôle |
+|---|---|
+| `commun` | Utilitaires partagés — aucun modèle |
+| `comptes` | `Utilisateur` (email, personnel, groupes), permissions, context processor |
+| `referentiels` | Tables de référence : Departement, Personnel, Etablissement, TypeStage, CanalPublication |
+| `offres` | Besoin, Offre, Publication, ParametreOffre (singleton) |
+| `candidatures` | Candidat, Candidature, PieceJointe, TransfertCandidature |
+| `stages` | Stage, AffectationMaitreStage |
+| `suivi` | Historique (ContentType + object_id), Notification |
 
-## Étape 8 — Gestion des stages (F12)
+### Relations clés (vérifiées dans les modèles)
 
-### Modèle `stages/models.py`
-- `StatutStage` : A_VENIR, EN_COURS, TERMINE, INTERROMPU.
-- Cycle : A_VENIR → EN_COURS → TERMINE ; A_VENIR/EN_COURS → INTERROMPU.
-- Statut calculé à la création selon la date de début (≤ aujourd'hui → EN_COURS, sinon A_VENIR).
-- Champs évaluation (note, vivier, rapport) réservés à l'étape 9 — NE PAS TOUCHER.
+```
+Departement  <-OneToOne->  Personnel       (responsable, nullable)
+Utilisateur  <-OneToOne->  Personnel       (compte, related_name="compte")
+Candidature  ->  Candidat, Departement, TypeStage, Offre (nullable)
+Stage        <-OneToOne->  Candidature     (related_name="stage")
+Stage        ->  Personnel                 (maitre_stage, PROTECT)
+Historique   ->  ContentType + object_id   (GenericFK sur tout objet)
+TransfertCandidature -> Candidature (CASCADE), Departement x2 (PROTECT)
+AffectationMaitreStage -> Stage (CASCADE), Personnel (PROTECT)
+```
 
-### Transitions (`stages/services.py`)
-- `TransitionInterdite(Exception)` : exception métier.
-- `constituer_stage(candidature, date_debut, date_fin_prevue, maitre_stage, utilisateur)` : candidature doit être ACCORDEE, aucun stage existant, maître actif du même département. Reset `candidat_informe`. Notifie Secrétaires.
-- `modifier_stage(stage, date_fin_prevue, maitre_stage, utilisateur, date_debut=None)` : A_VENIR ou EN_COURS. `date_debut` modifiable seulement si A_VENIR.
-- `terminer_stage(stage, date_fin_reelle, utilisateur)` : EN_COURS → TERMINE. Date réelle ≥ début et ≤ aujourd'hui.
-- `interrompre_stage(stage, date_fin_reelle, motif, utilisateur)` : A_VENIR/EN_COURS → INTERROMPU. Motif obligatoire.
-- `demarrer_stage_auto(stage, aujourd_hui)` : A_VENIR → EN_COURS si date_debut ≤ aujourd_hui.
-- `cloturer_stage_auto(stage, aujourd_hui)` : EN_COURS → TERMINE si date_fin_prevue < aujourd_hui. Notifie le Responsable du département.
+Pour accéder à l'utilisateur depuis un personnel : `personnel.compte` (PAS `personnel.utilisateur`).
+Pour filtrer les personnels sans compte : `Personnel.objects.filter(compte__isnull=True)`.
 
-### Commande de maintenance (`python manage.py mettre_a_jour_stages`)
-- Option `--date AAAA-MM-JJ` pour simuler une date passée (serveur arrêté).
-- Ordre : **démarrages d'abord** (A_VENIR → EN_COURS) puis **clôtures** (EN_COURS → TERMINE).
-- Idempotente — sans danger à relancer.
+### Module commun (`backend/commun/`)
 
-### Vues (`stages/views.py`) + URLs (`stages/urls.py`)
-- `StageListView` : 3 rôles, filtres (statut, date, type de stage, département, recherche).
-- `StageDetailView` : 3 rôles, historique inclus.
-- `ConstituerStageView` : Secrétaire uniquement.
-- `ModifierStageView` : Secrétaire uniquement.
-- `TerminerStageView` : Responsable uniquement, vérifie que le stage est dans son département.
-- `InterrompreStageView` : Responsable uniquement, idem.
-
-### Permissions (`init_donnees.py`)
-- Secrétaire : `"stages.stage": ["add", "change", "view"]`.
-- Responsable : `"stages": ["add", "change", "view"]` (terminer/interrompre passent par `change`).
-- Administrateur : accès complet.
-
-### Templates (`backend/templates/stages/`)
-- `stage_list.html` : onglets par statut + filtres + tableau.
-- `stage_detail.html` : fiche + historique + boutons selon rôle/statut.
-- `stage_constituer_form.html` : formulaire + avertissement JS si disponibilité manquante.
-- `stage_modifier_form.html` : idem, date_debut grisée si EN_COURS.
-- `stage_terminer_form.html` : date de fin réelle (≤ aujourd'hui).
-- `stage_interrompre_form.html` : date + motif.
-
-### Règle Complément 5 — `referentiels/services.py`
-`desactiver_membre()` refuse si le membre est maître de stage d'un stage A_VENIR ou EN_COURS (message : "changer d'abord le maître de stage").
-
-### Mise à jour `candidature_detail.html`
-- Si statut ACCORDEE : bouton "Constituer le stage" (Secrétaire) ou "Voir le stage" si déjà constitué.
-
-### Mise à jour `candidature_list.html`
-- Onglet Accordées : badge mortarboard bleu si stage constitué, badge ! orange si à compléter.
-
-## Étape 9 — Évaluation des stagiaires et Vivier de talents (F13)
-
-### Modèle (`stages/models.py`)
-- Champ `rapport` migré vers stockage privé (`_get_stockage_rapport` → `FICHIERS_PRIVES_ROOT`).
-- Champ `rappel_evaluation_envoye = BooleanField(default=False)` : passe à True après envoi du rappel.
-
-### Services (`stages/services.py`)
-- `peut_evaluer(stage, aujourd_hui=None)` → `(bool, date_verrou|None)`.
-- `evaluer_stage(...)` : note [1-20], vivier requiert note ≥ 12, verrouillage 30j après 1ère évaluation.
-
-### Vues (`stages/views.py`)
-- `EvaluerStageView` : Responsable même département uniquement.
-- `StagesAEvaluerListView` : TERMINÉ + sans note + fin ≤ today-7j.
-- `VivierListView` + `VivierExportCsvView` (CSV UTF-8-BOM).
-- `RapportTelechargerView` : Responsable même dept → OK ; autre dept → seulement si `vivier=True` ; Secrétaire → 403.
-
-### URLs ajoutées
-`stages/a-evaluer/`, `stages/vivier/`, `stages/vivier/export/`, `stages/<pk>/evaluer/`, `stages/<pk>/rapport/`
-
-### Commande `mettre_a_jour_stages`
-3e passe : rappel évaluation 7j, idempotent (`rappel_evaluation_envoye`).
-
-### Badge vivier
-Affiché sur la fiche candidat (tous rôles, sans la note). Secrétaire → 403 sur vivier et rapport.
-
-## Variables d'environnement
-Copier `.env.example` → `.env` et remplir les valeurs. Ne jamais commiter `.env`.
-Le `.env` est à la racine du projet (`app-serein/`), lu par `python-decouple` depuis `backend/`.
-
-
-## Règles de revue (à vérifier AVANT chaque commit)
-
-### Données et migrations
-- Ne jamais réécrire un modèle existant : uniquement des ajouts/modifications par migration.
-- Ne jamais modifier une migration déjà appliquée : créer une nouvelle migration.
-- Renommages : RenameModel / RenameField (jamais suppression + recréation). Après un RenameModel,
-  mettre à jour GROUPES_PERMISSIONS, supprimer les permissions orphelines, relancer init_donnees.
-- Avant une contrainte d'unicité ou un CHECK : vérifier que les données existantes la respectent.
-- Après chaque lot : `makemigrations --check --dry-run` doit répondre "No changes detected".
-- Ne jamais inventer de données métier (durées, motifs, listes de choix, textes officiels) :
-  reprendre le cahier des charges ; sinon proposer une valeur marquée "À VALIDER PAR SEREIN-GE".
-- Une seule source de vérité : ne pas créer de champ qui duplique une information existante
-  (ex. pas de booléen est_responsable : Departement.responsable fait foi).
+- **`ListeMixin`** (mixins.py) : hérite sur toute `ListView`. Pagination (20/page), `?q=` fulltext, `?actif=1|0`, `?tri=champ`. Injecte `params_paginateur`, `q`, `actif_filtre`, `tri_actuel`.
+- **`supprimer_ou_desactiver(instance, request)`** (services.py) : tente `delete()`, intercepte `ProtectedError` → `actif=False`.
+- **`ajouter_mois(date, n)`** (utils.py) : calcul correct des dates en mois entiers (gère fins de mois). Utiliser systématiquement — jamais `timedelta(days=30*n)`.
+- **Templates** : `commun/formulaire.html` (Create/Update via crispy), `_pagination.html`, `_modal_confirmer.html` (POST + csrf), `_historique.html` (timeline).
 
 ### Logique métier
-- Toute règle métier vit dans services.py ET est contrôlée dans le formulaire (les deux).
-- Services : transaction.atomic + select_for_update sur l'objet modifié.
-- Vérifier TOUTES les préconditions AVANT la moindre écriture en base (pas d'exception levée
-  après un changement partiel).
-- Chaque transition de statut : contrôle de la transition, historique, notifications prévues.
-- Dates : utiliser commun.utils.ajouter_mois() ; jamais de calcul de mois approximatif.
-- Penser aux cas limites : désactivation d'un élément encore utilisé (responsable, maître de
-  stage…), double clic / accès concurrent, données anciennes qui ne respectent pas une nouvelle règle.
+
+**Toujours dans `services.py`** — jamais dans les vues ni les modèles (sauf `clean()`).
+Services : `@transaction.atomic` + `select_for_update()` sur l'objet principal.
+Toujours vérifier toutes les préconditions AVANT la première écriture en base.
+
+### Stockage privé des fichiers
+
+- `FICHIERS_PRIVES_ROOT = backend/fichiers_prives/` — hors `MEDIA_ROOT`.
+- `FileSystemStorage(location=..., base_url=None)` → pas d'URL publique.
+- **Interdit** : `piece.fichier.url` ou `stage.rapport.url` dans les templates.
+- Téléchargement uniquement via vues Django : `PieceJointeTelechargerView`, `RapportTelechargerView`.
+- Production : Nginx + `X-Accel-Redirect` (ne jamais exposer `fichiers_prives/` directement).
+
+### Commandes planifiées
+
+| Commande | Frequence suggeree | Rôle |
+|---|---|---|
+| `python manage.py mettre_a_jour_stages` | 1×/nuit | A_VENIR→EN_COURS, EN_COURS→TERMINE, rappels evaluation J+7 |
+| `python manage.py alerter_entretiens` | Toutes les 2 h | Alerte Secretaires : entretien < 48 h + candidat non informe |
+
+Les deux commandes sont **idempotentes**. `mettre_a_jour_stages` accepte `--date AAAA-MM-JJ`.
+
+---
+
+## 4. Rôles et droits
+
+### 3 rôles fixes (Django Groups, créés par init_donnees)
+
+| Rôle | Droits |
+|---|---|
+| **Administrateur** | Toutes permissions sur `comptes` + `referentiels` ; **lecture seule** sur `offres`, `candidatures`, `stages`, `suivi`. Superuser sans groupe = Administrateur. |
+| **Secrétaire** | Vue Besoin ; CRUD Offre + Publication ; CRUD Candidat + PieceJointe ; CRU Candidature ; Constituer + Modifier Stage ; Vue Référentiels. |
+| **Responsable** | CU Besoin + Vue Offre (son département) ; Change/Vue Candidature (son département) ; Change/Vue Stage : terminer, interrompre, évaluer (son département). |
+
+Matrice complète et idempotente : `referentiels/management/commands/init_donnees.py` → `GROUPES_PERMISSIONS`.
+
+### Contrôle d'accès
+
+- `comptes/permissions.py` → `RoleRequisMixin(roles=[...])` (CBV) ; `@role_requis(...)` (FBV).
+- `RolePermMixin` = Administrateur + `PermissionRequiredMixin` (superuser bypass les permissions Django).
+- `LoginRequiredMiddleware` natif Django 5.1 protège toutes les vues. Exceptions : `@login_not_required`.
+- Context processor : `role_utilisateur`, `nb_notifications`, `dernieres_notifications` (5 dernières).
+
+### Scoping département (Responsable)
+
+`_est_responsable(user)` = `user.groups.filter(name="Responsable").exists()`.
+Si `user.personnel is None` → 403 ou redirect (vérification dans les vues).
+
+---
+
+## 5. Règles de gestion
+
+> **Référence complète et numérotée** : [`docs/REGLES_GESTION.md`](docs/REGLES_GESTION.md)
+
+Règles structurantes à mémoriser :
+
+- **RG07** : une seule candidature active (RECUE ou EN_TRAITEMENT) par candidat.
+- **RG09** : offre obligatoire si SUITE_OFFRE, interdite si SPONTANEE ou AUTRE.
+- **RG11** : pièces jointes = PDF (magic bytes `%PDF`), **3 Mo** max, CV obligatoire à la création.
+- **RG22** : maître de stage = personnel actif du même département que la candidature.
+- Entretien ≥ 72 h après planification ; alerte secrétariat à J−48 h (`candidat_informe=False`).
+- Accord : quota → `QuotaAtteint` non bloquant (2ème passage avec `confirmer_depassement=True`).
+- Refus : motif obligatoire ; motif AUTRE → précision obligatoire.
+- Redirection : RECUE uniquement → statut reste RECUE, tracée dans `TransfertCandidature`.
+- Note 1–20 ; vivier si note ≥ 12 ; verrouillage 30 j après `date_evaluation` (note + vivier).
+- Rapport de stage : **non verrouillé**, uploadable à tout moment après la première évaluation.
+- `ParametreOffre` singleton : `delete()` est un no-op, `pk` forcé à 1.
+
+---
+
+## 6. Conventions et règles de revue
+
+### Code
+
+- **Langue** : français dans tous les identifiants (verbose_name, commentaires…), sans accents dans les noms Python.
+- `TextChoices` pour toutes les énumérations.
+- `__str__`, `class Meta` (verbose_name, ordering) sur chaque modèle.
+- `on_delete=PROTECT` vers les référentiels ; `CASCADE` pour les compositions.
+- Pas de `null=True` sur CharField/TextField : `blank=True` avec valeur vide.
+- Commentaires uniquement quand le POURQUOI n'est pas évident. Pas de commentaires décrivant le QUOI.
+
+### Données et migrations
+
+- Jamais modifier une migration déjà appliquée : nouvelle migration uniquement.
+- Renommages via `RenameModel` / `RenameField` (jamais suppression + recréation).
+- `makemigrations --check --dry-run` = "No changes detected" avant chaque commit.
+- Ne jamais inventer de données métier → marquer **"À VALIDER PAR SEREIN-GE"**.
+
+### Logique métier
+
+- Toute règle métier vit dans `services.py` ET dans le formulaire.
+- `@transaction.atomic` + `select_for_update()` sur l'objet modifié.
+- Vérifier TOUTES les préconditions AVANT la première écriture en base.
+- Chaque transition : contrôle + historique + notifications.
+- Dates : toujours `ajouter_mois()`. Jamais de calcul approximatif.
 
 ### Sécurité et accès
-- Administrateur : TOUTES permissions sur comptes et referentiels, LECTURE SEULE partout ailleurs.
-- Les contrôles d'accès se font côté serveur (rôle + permission + département dans get_queryset
-  et dans les vues d'action), jamais seulement en masquant un bouton.
-- Actions en POST uniquement, schéma Post/Redirect/Get, messages en français.
-- Fichiers : stockage privé, jamais de fichier.url dans un template, téléchargement via vue protégée.
-- Aucune valeur affichée codée en dur dans les tableaux de bord : vraies requêtes.
+
+- Contrôles côté serveur (rôle + permission + département). Jamais uniquement côté template.
+- Actions en POST uniquement. Pattern Post/Redirect/Get. Messages en français.
+- Fichiers privés : jamais de `.url` dans les templates ; téléchargement via vue protégée.
 
 ### Tests
-- Un test par règle métier ajoutée + un test 403 pour chaque rôle non autorisé.
-- Lancer TOUTE la suite de tests avant chaque commit ; 0 échec.
+
+- Un test par règle métier + un test 403 pour chaque rôle non autorisé.
+- **Pendant le dev** : `--settings=config.settings_test --keepdb --parallel=auto <apps modifiées>`.
+- **Avant le commit** : suite complète `commun referentiels offres candidatures suivi stages comptes`.
+- 0 échec obligatoire. Jamais les settings de prod pour les tests.
+
+---
+
+## 7. Méthode de travail avec moi
+
+1. **Plan avant le code** : pour toute demande non triviale, présenter un plan complet (fichiers, migrations, tests, ordre) et attendre ma validation.
+2. **Travailler par lots** (Lot E, F…) sur des branches dédiées (`lot-x`) depuis `main`.
+3. **Un commit par lot**, après 0 échec sur la suite complète.
+4. **Ne jamais pusher** sans mon accord explicite.
+5. **Ne jamais inventer** de données métier → marquer "À VALIDER PAR SEREIN-GE".
+6. Migrations additive-only.
+7. Vérifier `makemigrations --check` avant chaque commit.
+8. Rapports d'implémentation dans `docs/rapports/lot_X_rapport.md`.
+
+---
+
+## 8. État d'avancement
+
+| Étape / Lot | Contenu | État | Commit |
+|---|---|---|---|
+| Étapes 1–2 | 6 apps, modèles, migrations, admin Django | ✅ | 962c0cf |
+| Étape 3 | Auth, permissions, templates Bootstrap 5 | ✅ | cd10c23 |
+| Étape 4 (F02–F07) | Module Administrateur : rôles, users, référentiels CRUD | ✅ | a3643ee |
+| Étape 5 (F08, F09, F14, F17) | Besoins, offres, publications, notifs in-app | ✅ | 9e88b40 |
+| Étape 6 (F10) | Candidatures : saisie, pièces jointes privées | ✅ | 841a958 |
+| Étape 7 (F11) | Traitement candidatures par le Responsable | ✅ | 0eee903 |
+| Étape 8 (F12) | Stages : constitution, suivi, commande auto | ✅ | 688d944 |
+| Étape 9 (F13) | Évaluation + vivier + export CSV + rappels auto | ✅ | aab7f77 |
+| Lot 0 | Renommage app → Stage Track | ✅ | 81fdb97 |
+| Lot A | Membre → Personnel (modèles, vues, templates) | ✅ | 1f1b348 |
+| Lot B | Durées TypeStage, dates candidature, PDF-only, 3 Mo | ✅ | b338348 |
+| Lot C | ParametreOffre singleton, Offre.departement, texte_publie | ✅ | a0b2fd6 |
+| Lot D | 72 h entretiens, alerter_entretiens, TransfertCandidature, AffectationMaitreStage | ✅ | bcd2999 |
+
+**Branche active** : `lot-d` (à fusionner dans `main` après validation)
+**Tests** : **265 / 265** ✅ — 0 echec
+
+---
+
+## 9. En attente / À faire
+
+### Lot E — Rôles personnalisés
+
+Analyse complète : [`docs/rapports/lot_e_analyse.md`](docs/rapports/lot_e_analyse.md)
+
+**Décision bloquante (E-R3)** avant tout développement :
+- Option A : remplacer les gardes `roles=[...]` hardcodes par des permissions Django fines. Effort élevé, très flexible.
+- Option B : ajouter un champ "famille de rôle" sur Group (variantes des 3 rôles existants). Effort modéré.
+
+E-R1 (CRUD groupes), E-R2 (permissions sur groupes perso), E-R5 (audit trail permissions) sont indépendants et réalisables rapidement quelle que soit la décision E-R3.
+
+### Prochaines étapes
+
+| Étape | Contenu |
+|---|---|
+| Étape 10 | Finitions UX, accessibilité, optimisations requêtes |
+| Étape 11 | Recette avec les utilisateurs finaux |
+| Étape 12 | Déploiement Debian : Gunicorn, Nginx, X-Accel-Redirect, crons systemd |
+
+### Questions ouvertes / À VALIDER PAR SEREIN-GE
+
+| Sujet | Situation |
+|---|---|
+| TypeDemande AUTRE : cas d'usage exact ? | Implémenté sans offre, sans définition précise |
+| Durées des 5 types de stage (duree_min/max) | Créés sans valeur → à renseigner via l'Admin |
+| Filtre "partenaire" sur listes : tous rôles ou Admin seul ? | Tous rôles (provisoire) |
+| Fréquence cron `alerter_entretiens` | Toutes les 2 h (provisoire) |
+| Fréquence cron `mettre_a_jour_stages` | 1×/nuit (provisoire) |
+| **Lot E — architecture E-R3 : Option A ou B ?** | **Bloquant** |
+| AffectationMaitreStage visible aux Administrateurs ? | Masqué (provisoire) |
+| Notifications email SMTP en production | Non implémentées (in-app uniquement) |
+
+---
+
+## 10. Historique des décisions
+
+| Décision | Raison | Lot/Étape |
+|---|---|---|
+| Membre → Personnel | Terminologie Serein-GE (glossaire projet) | Lot A |
+| 3 types de demande : SPONTANEE, SUITE_OFFRE, AUTRE | Cahier des charges | Étape 6 |
+| Administrateur = lecture seule hors comptes/referentiels | Séparation rôle admin-système / métier | Étape 4 |
+| PDF uniquement + magic bytes %PDF | Contrôle réel du contenu, sécurité upload | Lot B |
+| 3 Mo max par pièce (pas 5 Mo) | Valeur réelle vérifiée dans models.py | Lot B |
+| 72 h minimum avant entretien | Demande directeur de mémoire | Lot D |
+| Alerte secrétariat à 48 h si candidat non informé | Besoin opérationnel | Lot D |
+| Accord = avertissement quota non bloquant | Décision Serein-GE | Étape 7 |
+| Rapport stage non verrouillé (note/vivier seuls verrouillés) | Correction directeur de mémoire | Étape 9 |
+| Personnel sans département autorisé | Employé avant affectation ou sans département | Lot A |
+| Departement.responsable = OneToOne Personnel | Pas de champ booléen dupliqué | Étapes 1–4 |
+| ParametreOffre singleton (pk=1, delete() no-op) | Une seule config pour toute l'appli | Lot C |
+| Stockage fichiers dans fichiers_prives/ (hors media/) | Pas d'URL publique, contrôle via vues Django | Étape 6 |
+| designer_responsable vérifie compte AVANT toute modif | Correction directeur de mémoire | Lot A |
+| TransfertCandidature + AffectationMaitreStage | Traçabilité demandée | Lot D |

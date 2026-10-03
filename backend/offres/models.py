@@ -2,6 +2,55 @@ from django.core.exceptions import ValidationError
 from django.db import models
 
 
+_TEXTE_MODELE_DEFAUT = (
+    "Nous recherchons {nombre_places} stagiaire(s) pour un stage de type « {type_stage} » "
+    "au sein du département {departement}.\n\n"
+    "Durée : de {duree_min} à {duree_max} mois.\n"
+    "Période : du {date_debut} au {date_fin}.\n\n"
+    "Contact : {contact}"
+)
+
+
+class ParametreOffre(models.Model):
+    """Singleton — modèle de texte configurable par l'Administrateur."""
+
+    contact = models.TextField(
+        blank=True,
+        verbose_name="contact",
+        help_text="Coordonnées de contact affichées dans le texte de l'offre.",
+    )
+    texte_modele = models.TextField(
+        blank=True,
+        verbose_name="modèle de texte",
+        help_text=(
+            "Variables disponibles : {contact}, {type_stage}, {departement}, "
+            "{duree_min}, {duree_max}, {nombre_places}, {date_debut}, {date_fin}."
+        ),
+    )
+
+    class Meta:
+        verbose_name = "Paramètre de texte d'offre"
+        verbose_name_plural = "Paramètres de texte d'offre"
+
+    def __str__(self):
+        return "Paramètres de texte d'offre"
+
+    def save(self, *args, **kwargs):
+        self.pk = 1
+        super().save(*args, **kwargs)
+
+    def delete(self, using=None, keep_parents=False):
+        pass  # singleton non supprimable
+
+    @classmethod
+    def get_instance(cls):
+        obj, _ = cls.objects.get_or_create(
+            pk=1,
+            defaults={"contact": "", "texte_modele": _TEXTE_MODELE_DEFAUT},
+        )
+        return obj
+
+
 class StatutBesoin(models.TextChoices):
     ENVOYE = "ENVOYE", "Envoyé"
     PRIS_EN_CHARGE = "PRIS_EN_CHARGE", "Pris en charge"
@@ -75,6 +124,14 @@ class Offre(models.Model):
         related_name="offre",
         verbose_name="besoin associé",
     )
+    departement = models.ForeignKey(
+        "referentiels.Departement",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="offres",
+        verbose_name="département",
+    )
     type_stage = models.ForeignKey(
         "referentiels.TypeStage",
         on_delete=models.PROTECT,
@@ -87,6 +144,11 @@ class Offre(models.Model):
     date_debut = models.DateField(verbose_name="date de début")
     date_fin = models.DateField(verbose_name="date de fin")
     nombre_places = models.PositiveSmallIntegerField(verbose_name="nombre de places")
+    texte_publie = models.TextField(
+        blank=True,
+        verbose_name="texte de l'offre",
+        help_text="Texte généré à la création depuis le modèle. Modifiable par la secrétaire.",
+    )
     statut = models.CharField(
         max_length=20,
         choices=StatutOffre.choices,
