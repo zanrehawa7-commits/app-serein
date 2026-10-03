@@ -626,3 +626,124 @@ class OffreDepartementTests(TestCase):
         offre.save(update_fields=["departement"])
         offre.refresh_from_db()
         self.assertEqual(offre.departement, self.dept)
+
+
+# ─── RG-O9 : fermer l'offre clôture le besoin pris en charge ──────────────────
+
+
+class ClotureBesoinTests(TestCase):
+
+    def setUp(self):
+        from suivi.models import Historique, Notification
+        self.Historique, self.Notification = Historique, Notification
+        self.dept = Departement.objects.create(nom="Informatique")
+        self.autre_dept = Departement.objects.create(nom="Comptabilité")
+        self.ts = TypeStage.objects.create(libelle="Stage test", duree_min_mois=1, duree_max_mois=6)
+        self.secretaire = _user("sec@serein.bf", groupe="Secrétaire")
+        self.responsable = _user("resp@serein.bf", groupe="Responsable")
+        self.responsable.personnel = Personnel.objects.create(nom="Kaboré", prenom="Awa", departement=self.dept)
+        self.responsable.save(update_fields=["personnel"])
+        self.resp_autre = _user("resp2@serein.bf", groupe="Responsable")
+        self.resp_autre.personnel = Personnel.objects.create(nom="Sawadogo", prenom="Issa", departement=self.autre_dept)
+        self.resp_autre.save(update_fields=["personnel"])
+        self.besoin = _besoin(self.dept, self.ts)
+        self.offre = creer_offre(
+            self.ts, "Stage développeur", "Description", "Profil", "2027-01-01", "2027-06-30", 2,
+            self.secretaire, besoin=self.besoin,
+        )
+        ouvrir_offre(self.offre, self.secretaire)
+        self.besoin.refresh_from_db()
+
+    def _historique_besoin(self):
+        from django.contrib.contenttypes.models import ContentType
+        return self.Historique.objects.filter(
+            content_type=ContentType.objects.get_for_model(Besoin), object_id=self.besoin.pk
+        ).order_by("-pk")
+
+    def test_offre_fermee_cloture_le_besoin_pris_en_charge(self):
+        self.assertEqual(self.besoin.statut, StatutBesoin.PRIS_EN_CHARGE)
+        fermer_offre(self.offre, self.secretaire)
+        self.besoin.refresh_from_db()
+        self.assertEqual(self.besoin.statut, StatutBesoin.CLOTURE)
+        h = self._historique_besoin().first()
+        self.assertEqual(
+            (h.ancien_statut, h.nouveau_statut, h.commentaire, h.utilisateur),
+            (StatutBesoin.PRIS_EN_CHARGE, StatutBesoin.CLOTURE, "Offre fermée", self.secretaire),
+        )
+        notifs = self.Notification.objects.filter(message__contains="clôturé")
+        self.assertEqual([n.destinataire for n in notifs], [self.responsable])
+        self.assertEqual(notifs.get().lien, reverse("offres:besoin_detail", args=[self.besoin.pk]))
+
+    def test_offre_suspendue_fermee_cloture_aussi_le_besoin(self):
+        suspendre_offre(self.offre, self.secretaire)
+        fermer_offre(self.offre, self.secretaire)
+        self.besoin.refresh_from_db()
+        self.assertEqual(self.besoin.statut, StatutBesoin.CLOTURE)
+
+    def test_offre_sans_besoin_fermee_sans_effet(self):
+        offre = creer_offre(
+            self.ts, "Offre libre", "D", "P", "2027-01-01", "2027-06-30", 1, self.secretaire, departement=self.dept,
+        )
+        ouvrir_offre(offre, self.secretaire)
+        avant = self.Notification.objects.count()
+        fermer_offre(offre, self.secretaire)
+        offre.refresh_from_db()
+        self.besoin.refresh_from_db()
+        self.assertEqual(offre.statut, StatutOffre.FERMEE)
+        self.assertEqual(self.besoin.statut, StatutBesoin.PRIS_EN_CHARGE)
+        self.assertEqual(self.Notification.objects.count(), avant)
+
+    def test_besoin_dans_un_autre_statut_inchange_sans_exception(self):
+        annuler_besoin(self.besoin, self.responsable)
+        nb_historique = self._historique_besoin().count()
+        avant = self.Notification.objects.filter(message__contains="clôturé").count()
+        fermer_offre(self.offre, self.secretaire)
+        self.offre.refresh_from_db()
+        self.besoin.refresh_from_db()
+        self.assertEqual(self.offre.statut, StatutOffre.FERMEE)
+        self.assertEqual(self.besoin.statut, StatutBesoin.ANNULE)
+        self.assertEqual(self._historique_besoin().count(), nb_historique)
+        self.assertEqual(self.Notification.objects.filter(message__contains="clôturé").count(), avant)
+
+    # ── CLOTURE est un état final ───────────────────────────────────────────
+
+    def _cloturer(self):
+        fermer_offre(self.offre, self.secretaire)
+        self.besoin.refresh_from_db()
+
+    def test_besoin_cloture_ne_peut_pas_etre_annule(self):
+        self._cloturer()
+        with self.assertRaises(TransitionInterdite):
+            annuler_besoin(self.besoin, self.responsable)
+        self.besoin.refresh_from_db()
+        self.assertEqual(self.besoin.statut, StatutBesoin.CLOTURE)
+
+    def test_besoin_cloture_ne_peut_pas_etre_repris_en_charge(self):
+        self._cloturer()
+        with self.assertRaises(TransitionInterdite):
+            creer_offre(
+                self.ts, "Nouvelle offre", "D", "P", "2027-01-01", "2027-06-30", 1, self.secretaire,
+                besoin=self.besoin,
+            )
+
+    def test_besoin_cloture_modification_refusee_par_la_vue(self):
+        self._cloturer()
+        self.client.force_login(self.responsable)
+        url = reverse("offres:besoin_modifier", args=[self.besoin.pk])
+        self.assertRedirects(self.client.get(url), reverse("offres:besoin_detail", args=[self.besoin.pk]))
+        self.client.post(url, {
+            "departement": self.dept.pk, "type_stage": self.ts.pk, "date_debut": "2027-02-01",
+            "date_fin": "2027-06-30", "profil_recherche": "Modifié", "nombre_places": 5,
+        })
+        self.besoin.refresh_from_db()
+        self.assertEqual((self.besoin.profil_recherche, self.besoin.nombre_places), ("Profil test", 2))
+
+    def test_besoin_cloture_aucun_bouton_d_action(self):
+        self._cloturer()
+        for user in (self.responsable, self.secretaire):
+            with self.subTest(role=user.role):
+                self.client.force_login(user)
+                reponse = self.client.get(reverse("offres:besoin_detail", args=[self.besoin.pk]))
+                self.assertEqual(reponse.status_code, 200)
+                for action in ("offres:besoin_modifier", "offres:besoin_annuler", "offres:offre_creer_depuis_besoin"):
+                    self.assertNotContains(reponse, reverse(action, args=[self.besoin.pk]))

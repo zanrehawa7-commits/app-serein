@@ -57,11 +57,12 @@
 | RG-O1 | La durée de l'offre (date_debut → date_fin) doit être dans les bornes [duree_min_mois, duree_max_mois] du TypeStage. | `offres/services.py` |
 | RG-O2 | date_fin > date_debut pour Besoin et Offre (`CheckConstraint` + `clean()`). | `offres/models.py` |
 | RG-O3 | nombre_places ≥ 1 (`CheckConstraint` + `clean()`). | `offres/models.py` |
-| RG-O4 | Machines d'état : Besoin (ENVOYE→PRIS_EN_CHARGE→CLOTURE, ou ANNULE depuis ENVOYE/PRIS_EN_CHARGE) ; Offre (BROUILLON→OUVERTE↔SUSPENDUE→FERMEE). | `offres/services.py` |
+| RG-O4 | Machines d'état : Besoin — ENVOYE → PRIS_EN_CHARGE (création d'une offre depuis le besoin) → CLOTURE (fermeture de l'offre, RG-O9) ; ANNULE depuis ENVOYE ou PRIS_EN_CHARGE ; **CLOTURE et ANNULE sont finaux**. Offre — BROUILLON → OUVERTE ↔ SUSPENDUE → FERMEE (fermeture depuis OUVERTE ou SUSPENDUE) ; suppression possible en BROUILLON. | `offres/services.py` |
 | RG-O5 | Offre créée depuis un besoin : besoin doit être ENVOYE et sans offre existante (`select_for_update`). | `offres/services.py` |
 | RG-O6 | **ParametreOffre** = singleton (pk forcé à 1, delete() = no-op). 8 variables dans le modèle de texte : `{contact}`, `{type_stage}`, `{departement}`, `{duree_min}`, `{duree_max}`, `{nombre_places}`, `{date_debut}`, `{date_fin}`. | `offres/models.py` |
 | RG-O7 | `texte_publie` généré automatiquement à la création de l'offre, modifiable ensuite par la Secrétaire. | `offres/services.py` |
 | RG-O8 | `Offre.places_restantes()` = nombre_places − candidatures.filter(statut=ACCORDEE).count(). | `offres/models.py` |
+| RG-O9 | **Fermer l'offre clôture le besoin** : dans la même transaction, si l'offre a un besoin lié au statut PRIS_EN_CHARGE, il passe à CLOTURE, avec une entrée d'historique (« Offre fermée ») et une notification aux Responsables du département du besoin. Besoin dans un autre statut (ex. ANNULE) ou offre sans besoin : aucun changement côté besoin, la fermeture de l'offre reste valide. CLOTURE est final : ni modification, ni annulation, ni nouvelle prise en charge. | `offres/services.py` (`fermer_offre`) |
 
 ---
 

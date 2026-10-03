@@ -74,6 +74,7 @@ pendant le développement).
 | RG-S1 à RG-S10 | Constitution, transitions et automatisation des stages. | Étape 8 |
 | RG-S11 | Dates du stage dans la disponibilité du candidat (bloquant). | Lot F (directeur de mémoire) |
 | RG-S12, RG-S13 | Reprise d'un stage interrompu ; périodes d'interruption conservées. | Lot F (directeur de mémoire) |
+| RG-O9 | Fermer l'offre → le besoin lié PRIS_EN_CHARGE passe à CLOTURE (état final), historique + notification. | Spécification de l'étape 5, implémentée au lot fix/besoin-cloture |
 | RG-R1, RG-R2 | Suppression → désactivation si utilisé ; durée min ≤ max. | Étapes 4 / lot B |
 | RG-P1 à RG-P7 | Règles sur le personnel et les responsables de département. | Lot A |
 | RG-U1 à RG-U4, RG-U6 | Connexion par email, rôle = groupe, superuser, session 30 min, changement de rôle. | Étapes 3–4 |
