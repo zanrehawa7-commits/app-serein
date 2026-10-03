@@ -1,7 +1,9 @@
 # Règles de gestion — Stage Track
 
 > Document de référence généré à partir du code source (vérification directe sur models.py,
-> services.py, forms.py). Dernière mise à jour : **2026-10-02** (lot D + vérifications pré-merge).
+> services.py, forms.py). Dernière mise à jour : **2026-10-03** (étape 10).
+>
+> Correspondance avec la numérotation du cahier des charges (RG01–RG35) : [`CORRESPONDANCE_RG.md`](CORRESPONDANCE_RG.md).
 
 ---
 
