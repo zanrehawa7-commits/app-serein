@@ -1,6 +1,6 @@
 # Stage Track — Export pour la modélisation UML
 
-> Extrait **du code source** (commit de référence : `a6db938` + lot `fix/besoin-cloture`, 2026-10-03), pour mettre à jour les
+> Extrait **du code source** (commit de référence : `8596072` + lot `fix/besoin-cloture`, 2026-10-03), pour mettre à jour les
 > diagrammes de classes, d'états et de cas d'utilisation du rapport.
 >
 > - Section 1 : générée par introspection des modèles Django (`_meta`) — champs, relations, contraintes,
