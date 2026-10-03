@@ -11,7 +11,7 @@ from offres.models import Offre, StatutOffre
 from candidatures.models import Candidat, Candidature, StatutCandidature, TypeDemande
 from referentiels.models import TypeStage
 
-from .models import Stage, StatutStage, AffectationMaitreStage
+from .models import Stage, StatutStage, AffectationMaitreStage, PeriodeInterruption
 from .services import (
     TransitionInterdite,
     constituer_stage,
@@ -20,6 +20,10 @@ from .services import (
     interrompre_stage,
     demarrer_stage_auto,
     cloturer_stage_auto,
+    debut_modifiable,
+    evaluer_stage,
+    peut_evaluer,
+    reprendre_stage,
 )
 
 
@@ -896,3 +900,197 @@ class DisponibiliteRGS11Tests(TestCase):
         self.assertEqual((stage.maitre_stage, stage.date_fin_prevue), (autre_maitre, self._jour(60)))
         with self.assertRaisesMessage(TransitionInterdite, self.periode):
             modifier_stage(stage, self._jour(150), autre_maitre, self.sec)
+
+
+# ─── RG-S12 / RG-S13 : reprise d'un stage interrompu ──────────────────────────
+
+
+class RepriseStageTests(TestCase):
+
+    def setUp(self):
+        self.dept = _dept()
+        self.maitre = _membre(self.dept)
+        self.sec = _secretaire()
+        self.resp = _responsable(self.dept)
+        self.aujourd_hui = timezone.localdate()
+        self.cand = _candidature_accordee(self.dept)
+        self.stage = Stage.objects.create(
+            candidature=self.cand, maitre_stage=self.maitre, statut=StatutStage.EN_COURS,
+            date_debut=self._jour(-60), date_fin_prevue=self._jour(30),
+        )
+        interrompre_stage(self.stage, self._jour(-10), "Maladie", self.resp)
+        self.stage.refresh_from_db()
+
+    def _jour(self, n):
+        return self.aujourd_hui + datetime.timedelta(days=n)
+
+    def _reprendre(self, reprise, fin, motif="Rétabli"):
+        return reprendre_stage(self.stage, reprise, fin, motif, self.resp)
+
+    def _assert_inchange(self):
+        self.stage.refresh_from_db()
+        self.assertEqual(self.stage.statut, StatutStage.INTERROMPU)
+        self.assertIsNotNone(self.stage.periode_interruption_ouverte())
+
+    def test_interruption_cree_une_periode_ouverte(self):
+        periode = self.stage.periodes_interruption.get()
+        self.assertEqual(
+            (periode.date_debut, periode.date_fin, periode.motif_interruption, periode.interrompu_par),
+            (self._jour(-10), None, "Maladie", self.resp),
+        )
+
+    def test_reprise_date_passee_en_cours(self):
+        self._reprendre(self._jour(-2), self._jour(60))
+        self.stage.refresh_from_db()
+        self.assertEqual(self.stage.statut, StatutStage.EN_COURS)
+        self.assertEqual(self.stage.date_fin_prevue, self._jour(60))
+        self.assertIsNone(self.stage.date_fin_reelle)
+        self.assertEqual(self.stage.motif_interruption, "")
+        periode = self.stage.periodes_interruption.get()
+        self.assertEqual(
+            (periode.date_fin, periode.motif_reprise, periode.repris_par), (self._jour(-2), "Rétabli", self.resp)
+        )
+
+    def test_reprise_date_future_a_venir(self):
+        self._reprendre(self._jour(5), self._jour(60))
+        self.stage.refresh_from_db()
+        self.assertEqual(self.stage.statut, StatutStage.A_VENIR)
+
+    def test_reprise_avant_interruption_refusee(self):
+        with self.assertRaisesMessage(TransitionInterdite, "antérieure à la date d'interruption"):
+            self._reprendre(self._jour(-11), self._jour(60))
+        self._assert_inchange()
+
+    def test_fin_avant_reprise_refusee(self):
+        with self.assertRaises(TransitionInterdite):
+            self._reprendre(self._jour(5), self._jour(5))
+        self._assert_inchange()
+
+    def test_fin_apres_disponibilite_refusee(self):
+        Candidature.objects.filter(pk=self.cand.pk).update(fin_disponibilite=self._jour(40))
+        with self.assertRaisesMessage(TransitionInterdite, "disponibilité du candidat"):
+            self._reprendre(self._jour(-2), self._jour(41))
+        self._assert_inchange()
+
+    def test_motif_obligatoire(self):
+        with self.assertRaises(TransitionInterdite):
+            self._reprendre(self._jour(-2), self._jour(60), motif="  ")
+        self._assert_inchange()
+
+    def test_stage_non_interrompu_refuse(self):
+        self._reprendre(self._jour(-2), self._jour(60))
+        with self.assertRaisesMessage(TransitionInterdite, "Seul un stage interrompu"):
+            self._reprendre(self._jour(-1), self._jour(70))
+
+    def test_historique_et_notification_secretaires(self):
+        from suivi.models import Historique, Notification
+        self._reprendre(self._jour(-2), self._jour(60))
+        derniere = Historique.objects.filter(object_id=self.stage.pk).order_by("-pk").first()
+        self.assertEqual(
+            (derniere.ancien_statut, derniere.nouveau_statut), (StatutStage.INTERROMPU, StatutStage.EN_COURS)
+        )
+        self.assertTrue(Notification.objects.filter(destinataire=self.sec, message__contains="repris").exists())
+
+    def test_periodes_conservees_apres_deux_interruptions(self):
+        self._reprendre(self._jour(-8), self._jour(60))
+        interrompre_stage(self.stage, self._jour(-4), "Congé", self.resp)
+        self.stage.refresh_from_db()
+        self._reprendre(self._jour(-1), self._jour(70), motif="Retour")
+        periodes = list(self.stage.periodes_interruption.values_list("date_debut", "date_fin", "motif_interruption"))
+        self.assertEqual(periodes, [
+            (self._jour(-10), self._jour(-8), "Maladie"),
+            (self._jour(-4), self._jour(-1), "Congé"),
+        ])
+
+    def test_interruption_anterieure_a_la_reprise_refusee(self):
+        self._reprendre(self._jour(-2), self._jour(60))
+        with self.assertRaises(TransitionInterdite):
+            interrompre_stage(self.stage, self._jour(-3), "Erreur", self.resp)
+
+    def test_date_debut_non_modifiable_apres_reprise_future(self):
+        self._reprendre(self._jour(5), self._jour(60))
+        self.stage.refresh_from_db()
+        self.assertFalse(debut_modifiable(self.stage))
+
+    # ── Cohérence avec la commande quotidienne et l'évaluation ──────────────
+
+    def test_reprise_future_demarre_a_la_date_de_reprise(self):
+        self._reprendre(self._jour(5), self._jour(60))
+        self.assertFalse(demarrer_stage_auto(self.stage, self.aujourd_hui))
+        self.assertFalse(demarrer_stage_auto(self.stage, self._jour(4)))
+        self.assertTrue(demarrer_stage_auto(self.stage, self._jour(5)))
+        self.stage.refresh_from_db()
+        self.assertEqual(self.stage.statut, StatutStage.EN_COURS)
+
+    def test_reprise_avec_fin_passee_cloturee_par_la_commande(self):
+        self._reprendre(self._jour(-9), self._jour(-1))
+        self.assertTrue(cloturer_stage_auto(self.stage, self.aujourd_hui))
+        self.stage.refresh_from_db()
+        self.assertEqual((self.stage.statut, self.stage.date_fin_reelle), (StatutStage.TERMINE, self._jour(-1)))
+
+    def test_repris_puis_termine_est_evaluable(self):
+        self._reprendre(self._jour(-5), self._jour(60))
+        with self.assertRaisesMessage(TransitionInterdite, "reprise"):
+            terminer_stage(self.stage, self._jour(-6), self.resp)
+        terminer_stage(self.stage, self._jour(-1), self.resp)
+        self.stage.refresh_from_db()
+        self.assertTrue(peut_evaluer(self.stage)[0])
+        evaluer_stage(self.stage, 14, True, self.resp)
+        self.stage.refresh_from_db()
+        self.assertEqual((self.stage.note, self.stage.vivier), (14, True))
+
+    # ── Vue ─────────────────────────────────────────────────────────────────
+
+    def _post(self, **donnees):
+        self.client.force_login(self.resp)
+        return self.client.post(reverse("stages:stage_reprendre", args=[self.stage.pk]), donnees, follow=True)
+
+    def test_vue_reprise(self):
+        reponse = self._post(date_reprise=self._jour(-2), date_fin_prevue=self._jour(60), motif_reprise="Rétabli")
+        self.assertRedirects(reponse, reverse("stages:stage_detail", args=[self.stage.pk]))
+        self.stage.refresh_from_db()
+        self.assertEqual(self.stage.statut, StatutStage.EN_COURS)
+        self.assertContains(reponse, "Périodes d")
+        self.assertNotContains(reponse, "clôturé automatiquement")
+
+    def test_vue_reprise_fin_passee_message_information(self):
+        reponse = self._post(
+            date_reprise=self._jour(-9), date_fin_prevue=self._jour(-1), motif_reprise="Régularisation"
+        )
+        self.assertContains(
+            reponse, "Ce stage sera clôturé automatiquement à la prochaine exécution de la mise à jour quotidienne."
+        )
+
+    def test_vue_dates_invalides_formulaire_reaffiche(self):
+        reponse = self._post(date_reprise=self._jour(-11), date_fin_prevue=self._jour(60), motif_reprise="X")
+        self.assertEqual(reponse.status_code, 200)
+        self.assertContains(reponse, "antérieure à la date d")
+        self._assert_inchange()
+
+    def test_vue_bouton_reprendre_sur_la_fiche(self):
+        self.client.force_login(self.resp)
+        reponse = self.client.get(reverse("stages:stage_detail", args=[self.stage.pk]))
+        self.assertContains(reponse, reverse("stages:stage_reprendre", args=[self.stage.pk]))
+
+
+class MigrationPeriodesStagesInterrompusTests(TestCase):
+    """Migration 0006 : les stages interrompus avant le lot F reçoivent une période ouverte."""
+
+    def test_cree_une_periode_ouverte_une_seule_fois(self):
+        import importlib
+        from django.apps import apps
+        migration = importlib.import_module("stages.migrations.0006_periodes_stages_deja_interrompus")
+        dept = _dept()
+        stage = Stage.objects.create(
+            candidature=_candidature_accordee(dept), maitre_stage=_membre(dept), statut=StatutStage.INTERROMPU,
+            date_debut=timezone.localdate() - datetime.timedelta(days=30),
+            date_fin_prevue=timezone.localdate() + datetime.timedelta(days=30),
+            date_fin_reelle=timezone.localdate() - datetime.timedelta(days=3), motif_interruption="Ancien motif",
+        )
+        migration.creer_periodes_ouvertes(apps, None)
+        migration.creer_periodes_ouvertes(apps, None)
+        periode = PeriodeInterruption.objects.get(stage=stage)
+        self.assertEqual(
+            (periode.date_debut, periode.date_fin, periode.motif_interruption),
+            (stage.date_fin_reelle, None, "Ancien motif"),
+        )

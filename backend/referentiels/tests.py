@@ -431,7 +431,7 @@ class InitDonneesCommandeTests(TestCase):
             "offres.view_besoin", "offres.view_offre", "offres.view_parametreoffre", "offres.view_publication",
             "candidatures.view_candidat", "candidatures.view_candidature",
             "candidatures.view_piecejointe", "candidatures.view_transfertcandidature",
-            "stages.view_stage", "stages.view_affectationmaitrestage",
+            "stages.view_stage", "stages.view_affectationmaitrestage", "stages.view_periodeinterruption",
             "suivi.view_historique", "suivi.view_notification",
         }
         self._lancer()

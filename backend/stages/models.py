@@ -78,6 +78,17 @@ class Stage(models.Model):
     def __str__(self):
         return f"Stage {self.candidature.reference} — {self.candidature.candidat}"
 
+    def date_demarrage_effective(self):
+        """Date de la dernière reprise (RG-S12), sinon date de début : borne basse des dates saisies."""
+        derniere_reprise = (
+            self.periodes_interruption.filter(date_fin__isnull=False)
+            .order_by("-date_fin").values_list("date_fin", flat=True).first()
+        )
+        return derniere_reprise or self.date_debut
+
+    def periode_interruption_ouverte(self):
+        return self.periodes_interruption.filter(date_fin__isnull=True).first()
+
     def clean(self):
         if self.date_debut and self.date_fin_prevue and self.date_fin_prevue <= self.date_debut:
             raise ValidationError(
@@ -127,3 +138,54 @@ class AffectationMaitreStage(models.Model):
 
     def __str__(self):
         return f"Maître {self.maitre_stage} → {self.stage}"
+
+
+class PeriodeInterruption(models.Model):
+    """RG-S13 : créée à l'interruption, complétée à la reprise ; toutes les périodes sont conservées."""
+
+    stage = models.ForeignKey(
+        Stage,
+        on_delete=models.CASCADE,
+        related_name="periodes_interruption",
+        verbose_name="stage",
+    )
+    date_debut = models.DateField(verbose_name="date d'interruption")
+    date_fin = models.DateField(null=True, blank=True, verbose_name="date de reprise")
+    motif_interruption = models.TextField(verbose_name="motif d'interruption")
+    motif_reprise = models.TextField(blank=True, verbose_name="motif de reprise")
+    interrompu_par = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        verbose_name="interrompu par",
+    )
+    repris_par = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        verbose_name="repris par",
+    )
+
+    class Meta:
+        verbose_name = "Période d'interruption"
+        verbose_name_plural = "Périodes d'interruption"
+        ordering = ["date_debut", "pk"]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(date_fin__isnull=True) | models.Q(date_fin__gte=models.F("date_debut")),
+                name="periode_interruption_reprise_apres_interruption",
+            ),
+            models.UniqueConstraint(
+                fields=["stage"],
+                condition=models.Q(date_fin__isnull=True),
+                name="periode_interruption_une_seule_ouverte_par_stage",
+            ),
+        ]
+
+    def __str__(self):
+        fin = f"{self.date_fin:%d/%m/%Y}" if self.date_fin else "en cours"
+        return f"Interruption {self.stage} : {self.date_debut:%d/%m/%Y} → {fin}"

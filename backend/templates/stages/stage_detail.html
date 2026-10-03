@@ -33,6 +33,11 @@
             <i class="bi bi-stop-circle me-1"></i>Interrompre
         </a>
         {% endif %}
+        {% if peut_reprendre %}
+        <a href="{% url 'stages:stage_reprendre' stage.pk %}" class="btn btn-primary btn-sm">
+            <i class="bi bi-play-circle me-1"></i>Reprendre le stage
+        </a>
+        {% endif %}
         {% if peut_evaluer %}
         <a href="{% url 'stages:stage_evaluer' stage.pk %}" class="btn btn-warning btn-sm">
             <i class="bi bi-star me-1"></i>{% if stage.note %}Modifier l'évaluation{% else %}Évaluer{% endif %}
@@ -154,6 +159,40 @@
             {% endif %}
         </p>
         {% endif %}
+    </div>
+</div>
+{% endif %}
+
+<!-- Périodes d'interruption (RG-S13) -->
+{% if periodes_interruption %}
+<div class="card border-0 shadow-sm mb-3">
+    <div class="card-header bg-white border-bottom py-2">
+        <h6 class="mb-0 fw-semibold"><i class="bi bi-pause-circle me-1"></i>Périodes d'interruption</h6>
+    </div>
+    <div class="table-responsive">
+        <table class="table table-sm table-hover mb-0 small">
+            <thead class="table-light">
+                <tr>
+                    <th>Interruption</th>
+                    <th>Motif</th>
+                    <th>Reprise</th>
+                    <th>Motif de reprise</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for p in periodes_interruption %}
+                <tr>
+                    <td class="text-nowrap">{{ p.date_debut|date:"d/m/Y" }}<br><span class="text-muted">{{ p.interrompu_par|default:"—" }}</span></td>
+                    <td>{{ p.motif_interruption }}</td>
+                    <td class="text-nowrap">
+                        {% if p.date_fin %}{{ p.date_fin|date:"d/m/Y" }}<br><span class="text-muted">{{ p.repris_par|default:"—" }}</span>
+                        {% else %}<span class="badge bg-danger">En cours</span>{% endif %}
+                    </td>
+                    <td>{{ p.motif_reprise|default:"—" }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
     </div>
 </div>
 {% endif %}

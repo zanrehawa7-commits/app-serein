@@ -106,7 +106,7 @@ class ModifierStageForm(forms.Form):
         cleaned = super().clean()
         fin = cleaned.get("date_fin_prevue")
         modifiable = debut_modifiable(self._stage)
-        debut = (cleaned.get("date_debut") or self._stage.date_debut) if modifiable else self._stage.date_debut
+        debut = (cleaned.get("date_debut") or self._stage.date_debut) if modifiable else self._stage.date_demarrage_effective()
         if fin and fin <= debut:
             self.add_error("date_fin_prevue", "La date de fin doit être postérieure à la date de début.")
         debut_a_verifier = debut if modifiable else None
@@ -138,8 +138,10 @@ class TerminerStageForm(forms.Form):
         today = timezone.localdate()
         if date > today:
             raise forms.ValidationError("La date de fin réelle ne peut pas être dans le futur.")
-        if self._stage and date < self._stage.date_debut:
-            raise forms.ValidationError("La date de fin réelle ne peut pas être antérieure à la date de début.")
+        if self._stage and date < self._stage.date_demarrage_effective():
+            raise forms.ValidationError(
+                "La date de fin réelle ne peut pas être antérieure à la date de début (ou de reprise)."
+            )
         return date
 
 
@@ -171,8 +173,13 @@ class InterrompreStageForm(forms.Form):
         today = timezone.localdate()
         if date > today:
             raise forms.ValidationError("La date d'interruption ne peut pas être dans le futur.")
-        if self._stage and date < self._stage.date_debut:
-            raise forms.ValidationError("La date d'interruption ne peut pas être antérieure à la date de début.")
+        # Un stage à venir s'interrompt avant son début : borne basse seulement s'il est en cours.
+        from .models import StatutStage
+        en_cours = self._stage and self._stage.statut == StatutStage.EN_COURS
+        if en_cours and date < self._stage.date_demarrage_effective():
+            raise forms.ValidationError(
+                "La date d'interruption ne peut pas être antérieure à la date de début (ou de reprise)."
+            )
         return date
 
     def clean_motif_interruption(self):
@@ -180,6 +187,60 @@ class InterrompreStageForm(forms.Form):
         if not motif:
             raise forms.ValidationError("Le motif d'interruption est obligatoire.")
         return motif
+
+
+class ReprendreStageForm(forms.Form):
+    date_reprise = forms.DateField(
+        label="Date de reprise",
+        widget=forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"),
+    )
+    date_fin_prevue = forms.DateField(
+        label="Nouvelle date de fin prévue",
+        widget=forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"),
+    )
+    motif_reprise = forms.CharField(
+        label="Motif de reprise",
+        widget=forms.Textarea(attrs={"rows": 3}),
+    )
+
+    def __init__(self, *args, stage, periode, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._stage = stage
+        self._periode = periode
+        self.fields["date_reprise"].widget.attrs["min"] = periode.date_debut.isoformat()
+        self.fields["date_fin_prevue"].widget.attrs["max"] = stage.candidature.fin_disponibilite.isoformat()
+
+        self.helper = FormHelper()
+        self.helper.layout = Layout(
+            Row(
+                Column("date_reprise", css_class="col-md-6"),
+                Column("date_fin_prevue", css_class="col-md-6"),
+            ),
+            Field("motif_reprise"),
+            Submit("submit", "Reprendre le stage", css_class="btn btn-primary mt-2"),
+        )
+
+    def clean_motif_reprise(self):
+        motif = self.cleaned_data["motif_reprise"].strip()
+        if not motif:
+            raise forms.ValidationError("Le motif de reprise est obligatoire.")
+        return motif
+
+    def clean(self):
+        cleaned = super().clean()
+        reprise = cleaned.get("date_reprise")
+        fin = cleaned.get("date_fin_prevue")
+        if reprise and reprise < self._periode.date_debut:
+            self.add_error(
+                "date_reprise",
+                f"La date de reprise ne peut pas être antérieure à la date d'interruption "
+                f"({self._periode.date_debut:%d/%m/%Y}).",
+            )
+        if reprise and fin and fin <= reprise:
+            self.add_error("date_fin_prevue", "La nouvelle date de fin prévue doit être postérieure à la date de reprise.")
+        for champ, message in erreurs_disponibilite(self._stage.candidature, date_fin_prevue=fin).items():
+            self.add_error(champ, message)
+        return cleaned
 
 
 class EvaluerStageForm(forms.Form):

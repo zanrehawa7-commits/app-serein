@@ -105,9 +105,9 @@ def constituer_stage(candidature, date_debut, date_fin_prevue, maitre_stage, uti
 
 
 def debut_modifiable(stage):
-    """La date de début ne se modifie que sur un stage à venir jamais démarré."""
+    """La date de début ne se modifie que sur un stage à venir jamais démarré (ni repris)."""
     from .models import StatutStage
-    return stage.statut == StatutStage.A_VENIR
+    return stage.statut == StatutStage.A_VENIR and not stage.periodes_interruption.exists()
 
 
 @transaction.atomic
@@ -174,8 +174,10 @@ def terminer_stage(stage, date_fin_reelle, utilisateur):
             f"Impossible de terminer : statut actuel « {s.get_statut_display()} »."
         )
     today = timezone.localdate()
-    if date_fin_reelle < s.date_debut:
-        raise TransitionInterdite("La date de fin réelle ne peut pas être antérieure à la date de début.")
+    if date_fin_reelle < s.date_demarrage_effective():
+        raise TransitionInterdite(
+            "La date de fin réelle ne peut pas être antérieure à la date de début (ou de reprise)."
+        )
     if date_fin_reelle > today:
         raise TransitionInterdite("La date de fin réelle ne peut pas être dans le futur.")
 
@@ -205,12 +207,21 @@ def interrompre_stage(stage, date_fin_reelle, motif, utilisateur):
         )
     if not motif.strip():
         raise TransitionInterdite("Le motif d'interruption est obligatoire.")
+    # Un stage à venir s'interrompt avant son début : borne basse seulement s'il est en cours.
+    if s.statut == StatutStage.EN_COURS and date_fin_reelle < s.date_demarrage_effective():
+        raise TransitionInterdite(
+            "La date d'interruption ne peut pas être antérieure à la date de début (ou de reprise)."
+        )
 
     ancien = s.statut
     s.statut = StatutStage.INTERROMPU
     s.date_fin_reelle = date_fin_reelle
     s.motif_interruption = motif
     s.save(update_fields=["statut", "date_fin_reelle", "motif_interruption"])
+    from .models import PeriodeInterruption
+    PeriodeInterruption.objects.create(
+        stage=s, date_debut=date_fin_reelle, motif_interruption=motif, interrompu_par=utilisateur,
+    )
 
     enregistrer_historique(
         s, utilisateur, ancien, StatutStage.INTERROMPU,
@@ -222,6 +233,60 @@ def interrompre_stage(stage, date_fin_reelle, motif, utilisateur):
     if secs:
         notifier(secs, f"Stage de {s.candidature.candidat} interrompu.", lien)
 
+    return s
+
+
+@transaction.atomic
+def reprendre_stage(stage, date_reprise, date_fin_prevue, motif, utilisateur, aujourd_hui=None):
+    """RG-S12 : INTERROMPU → EN_COURS (reprise passée ou du jour) ou A_VENIR (reprise future)."""
+    from suivi.services import enregistrer_historique, notifier
+    from .models import Stage as S, StatutStage
+
+    if aujourd_hui is None:
+        aujourd_hui = timezone.localdate()
+
+    s = S.objects.select_for_update().get(pk=stage.pk)
+    if s.statut != StatutStage.INTERROMPU:
+        raise TransitionInterdite(
+            f"Seul un stage interrompu peut être repris (statut actuel « {s.get_statut_display()} »)."
+        )
+    periode = s.periode_interruption_ouverte()
+    if periode is None:
+        raise TransitionInterdite("Aucune période d'interruption ouverte pour ce stage.")
+    if not motif.strip():
+        raise TransitionInterdite("Le motif de reprise est obligatoire.")
+    if date_reprise < periode.date_debut:
+        raise TransitionInterdite(
+            f"La date de reprise ne peut pas être antérieure à la date d'interruption "
+            f"({periode.date_debut:%d/%m/%Y})."
+        )
+    if date_fin_prevue <= date_reprise:
+        raise TransitionInterdite("La nouvelle date de fin prévue doit être postérieure à la date de reprise.")
+    _verifier_disponibilite(s.candidature, date_fin_prevue=date_fin_prevue)
+
+    periode.date_fin = date_reprise
+    periode.motif_reprise = motif
+    periode.repris_par = utilisateur
+    periode.save(update_fields=["date_fin", "motif_reprise", "repris_par"])
+
+    nouveau = StatutStage.EN_COURS if date_reprise <= aujourd_hui else StatutStage.A_VENIR
+    s.statut = nouveau
+    s.date_fin_prevue = date_fin_prevue
+    s.date_fin_reelle = None
+    s.motif_interruption = ""
+    s.save(update_fields=["statut", "date_fin_prevue", "date_fin_reelle", "motif_interruption"])
+
+    enregistrer_historique(
+        s, utilisateur, StatutStage.INTERROMPU, nouveau,
+        f"Stage repris le {date_reprise:%d/%m/%Y} (fin prévue le {date_fin_prevue:%d/%m/%Y}) — {motif}",
+    )
+    secs = _secretaires_actives()
+    if secs:
+        notifier(
+            secs,
+            f"Stage de {s.candidature.candidat} repris le {date_reprise:%d/%m/%Y} : informer le stagiaire.",
+            f"/stages/{s.pk}/",
+        )
     return s
 
 
@@ -296,7 +361,8 @@ def demarrer_stage_auto(stage, aujourd_hui):
     from .models import Stage as S, StatutStage
 
     s = S.objects.select_for_update().get(pk=stage.pk)
-    if s.statut != StatutStage.A_VENIR or s.date_debut > aujourd_hui:
+    # Stage repris avec une date future : il démarre à la reprise, pas à son début d'origine.
+    if s.statut != StatutStage.A_VENIR or s.date_demarrage_effective() > aujourd_hui:
         return False
 
     s.statut = StatutStage.EN_COURS
