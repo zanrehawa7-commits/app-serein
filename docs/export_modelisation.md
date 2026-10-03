@@ -1,6 +1,6 @@
 # Stage Track — Export pour la modélisation UML
 
-> Extrait **du code source** (commit de référence : `e4901e4`, 2026-10-03), pour mettre à jour les
+> Extrait **du code source** (commit de référence : `a6db938` + lot `fix/besoin-cloture`, 2026-10-03), pour mettre à jour les
 > diagrammes de classes, d'états et de cas d'utilisation du rapport.
 >
 > - Section 1 : générée par introspection des modèles Django (`_meta`) — champs, relations, contraintes,
@@ -594,10 +594,12 @@ Contraintes BD :
 | — (création) | `ENVOYE` | `offres.services.creer_besoin` | Responsable (son département) | manuelle |
 | `ENVOYE` | `PRIS_EN_CHARGE` | `offres.services.creer_offre` (création d'une offre à partir du besoin) | Secrétaire | manuelle |
 | `ENVOYE`, `PRIS_EN_CHARGE` | `ANNULE` | `offres.services.annuler_besoin` | Responsable (son département) | manuelle |
+| `PRIS_EN_CHARGE` | `CLOTURE` | `offres.services.fermer_offre` (fermeture de l'offre liée, RG-O9) — historique « Offre fermée » + notification aux Responsables du département | Secrétaire | manuelle (effet de la fermeture de l'offre) |
 
 - La modification d'un besoin (`BesoinModifierView`) n'est possible qu'au statut `ENVOYE` et ne change pas le statut.
-- **`CLOTURE` (Clôturé) : défini dans l'énumération et affiché par les templates, mais aucune fonction du code
-  ne fait passer un besoin à ce statut.** État sans transition entrante dans l'implémentation actuelle.
+- `CLOTURE` et `ANNULE` sont des **états finaux** : ni modification, ni annulation, ni nouvelle prise en charge
+  (`annuler_besoin` et `creer_offre` lèvent `TransitionInterdite`).
+- Fermeture d'une offre dont le besoin n'est pas `PRIS_EN_CHARGE` (ex. `ANNULE`) : le besoin ne change pas.
 
 ### 2.2 Offre (`offres.Offre.statut` — `StatutOffre`)
 
@@ -607,7 +609,7 @@ Contraintes BD :
 | `BROUILLON` | `OUVERTE` | `offres.services.ouvrir_offre` | Secrétaire | manuelle |
 | `OUVERTE` | `SUSPENDUE` | `offres.services.suspendre_offre` | Secrétaire | manuelle |
 | `SUSPENDUE` | `OUVERTE` | `offres.services.rouvrir_offre` | Secrétaire | manuelle |
-| `OUVERTE`, `SUSPENDUE` | `FERMEE` | `offres.services.fermer_offre` | Secrétaire | manuelle |
+| `OUVERTE`, `SUSPENDUE` | `FERMEE` (+ besoin lié `PRIS_EN_CHARGE` → `CLOTURE`, RG-O9) | `offres.services.fermer_offre` | Secrétaire | manuelle |
 | `BROUILLON` | (supprimée) | `offres.services.supprimer_offre` | Secrétaire | manuelle |
 
 ### 2.3 Candidature (`candidatures.Candidature.statut` — `StatutCandidature`)
@@ -884,6 +886,7 @@ Lecture seule, tous départements. Chaque cas n'est ouvert que si le droit indiq
 | Accorder une candidature | «extend» | Confirmer le dépassement du quota de l'offre | `QuotaAtteint`, `confirmer_depassement` |
 | Planifier un entretien | «include» | Respecter le délai de 72 h | `EntretienForm`, `planifier_entretien` |
 | Créer une offre à partir d'un besoin | «include» | Passer le besoin à « Pris en charge » | `offres.services.creer_offre` |
+| Fermer une offre | «include» | Clôturer le besoin lié s'il est « Pris en charge » (+ notifier le Responsable) | `offres.services.fermer_offre` |
 | Constituer un stage | «include» | Choisir un maître de stage actif du département (RG22) | `stages.services.constituer_stage` |
 | Constituer / modifier un stage | «include» | Vérifier les dates dans la disponibilité du candidat (RG-S11) | `stages.services.erreurs_disponibilite` |
 | Modifier un stage | «extend» | Changer de maître de stage (trace `AffectationMaitreStage`) | `stages.services.modifier_stage` |
@@ -961,11 +964,12 @@ de référence.
 | RG-O1 | La durée de l'offre (date_debut → date_fin) doit être dans les bornes [duree_min_mois, duree_max_mois] du TypeStage. | `offres/services.py` |
 | RG-O2 | date_fin > date_debut pour Besoin et Offre (`CheckConstraint` + `clean()`). | `offres/models.py` |
 | RG-O3 | nombre_places ≥ 1 (`CheckConstraint` + `clean()`). | `offres/models.py` |
-| RG-O4 | Machines d'état : Besoin (ENVOYE→PRIS_EN_CHARGE→CLOTURE, ou ANNULE depuis ENVOYE/PRIS_EN_CHARGE) ; Offre (BROUILLON→OUVERTE↔SUSPENDUE→FERMEE). | `offres/services.py` |
+| RG-O4 | Machines d'état : Besoin — ENVOYE → PRIS_EN_CHARGE (création d'une offre depuis le besoin) → CLOTURE (fermeture de l'offre, RG-O9) ; ANNULE depuis ENVOYE ou PRIS_EN_CHARGE ; **CLOTURE et ANNULE sont finaux**. Offre — BROUILLON → OUVERTE ↔ SUSPENDUE → FERMEE (fermeture depuis OUVERTE ou SUSPENDUE) ; suppression possible en BROUILLON. | `offres/services.py` |
 | RG-O5 | Offre créée depuis un besoin : besoin doit être ENVOYE et sans offre existante (`select_for_update`). | `offres/services.py` |
 | RG-O6 | **ParametreOffre** = singleton (pk forcé à 1, delete() = no-op). 8 variables dans le modèle de texte : `{contact}`, `{type_stage}`, `{departement}`, `{duree_min}`, `{duree_max}`, `{nombre_places}`, `{date_debut}`, `{date_fin}`. | `offres/models.py` |
 | RG-O7 | `texte_publie` généré automatiquement à la création de l'offre, modifiable ensuite par la Secrétaire. | `offres/services.py` |
 | RG-O8 | `Offre.places_restantes()` = nombre_places − candidatures.filter(statut=ACCORDEE).count(). | `offres/models.py` |
+| RG-O9 | **Fermer l'offre clôture le besoin** : dans la même transaction, si l'offre a un besoin lié au statut PRIS_EN_CHARGE, il passe à CLOTURE, avec une entrée d'historique (« Offre fermée ») et une notification aux Responsables du département du besoin. Besoin dans un autre statut (ex. ANNULE) ou offre sans besoin : aucun changement côté besoin, la fermeture de l'offre reste valide. CLOTURE est final : ni modification, ni annulation, ni nouvelle prise en charge. | `offres/services.py` (`fermer_offre`) |
 
 ---
 
@@ -1147,6 +1151,7 @@ pendant le développement).
 | RG-S1 à RG-S10 | Constitution, transitions et automatisation des stages. | Étape 8 |
 | RG-S11 | Dates du stage dans la disponibilité du candidat (bloquant). | Lot F (directeur de mémoire) |
 | RG-S12, RG-S13 | Reprise d'un stage interrompu ; périodes d'interruption conservées. | Lot F (directeur de mémoire) |
+| RG-O9 | Fermer l'offre → le besoin lié PRIS_EN_CHARGE passe à CLOTURE (état final), historique + notification. | Spécification de l'étape 5, implémentée au lot fix/besoin-cloture |
 | RG-R1, RG-R2 | Suppression → désactivation si utilisé ; durée min ≤ max. | Étapes 4 / lot B |
 | RG-P1 à RG-P7 | Règles sur le personnel et les responsables de département. | Lot A |
 | RG-U1 à RG-U4, RG-U6 | Connexion par email, rôle = groupe, superuser, session 30 min, changement de rôle. | Étapes 3–4 |

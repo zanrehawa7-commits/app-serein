@@ -68,6 +68,13 @@ def _secretaires_actives():
     return list(Utilisateur.objects.filter(groups__name="Secrétaire", is_active=True))
 
 
+def _responsables_departement(departement):
+    Utilisateur = get_user_model()
+    return list(Utilisateur.objects.filter(
+        groups__name="Responsable", is_active=True, personnel__departement=departement,
+    ))
+
+
 @transaction.atomic
 def creer_besoin(departement, type_stage, date_debut, date_fin, profil_recherche, nombre_places, utilisateur):
     _valider_duree(type_stage, date_debut, date_fin)
@@ -202,14 +209,39 @@ def rouvrir_offre(offre, utilisateur):
 
 @transaction.atomic
 def fermer_offre(offre, utilisateur):
+    """Ferme l'offre ; RG-O9 : le besoin lié PRIS_EN_CHARGE passe à CLOTURE (état final)."""
+    offre = Offre.objects.select_for_update().get(pk=offre.pk)
     if offre.statut not in (StatutOffre.OUVERTE, StatutOffre.SUSPENDUE):
         raise TransitionInterdite(
             f"L'offre est au statut « {offre.get_statut_display()} » — impossible de fermer."
         )
+    besoin = None
+    if offre.besoin_id:
+        besoin = Besoin.objects.select_for_update().select_related("departement").get(pk=offre.besoin_id)
+    # Besoin dans un autre statut (ex. annulé) : la fermeture de l'offre reste valide, sans effet sur lui.
+    cloturer = besoin is not None and besoin.statut == StatutBesoin.PRIS_EN_CHARGE
+
     ancien = offre.statut
     offre.statut = StatutOffre.FERMEE
     offre.save(update_fields=["statut"])
     enregistrer_historique(offre, utilisateur, ancien_statut=ancien, nouveau_statut=StatutOffre.FERMEE)
+
+    if cloturer:
+        besoin.statut = StatutBesoin.CLOTURE
+        besoin.save(update_fields=["statut"])
+        enregistrer_historique(
+            besoin, utilisateur,
+            ancien_statut=StatutBesoin.PRIS_EN_CHARGE,
+            nouveau_statut=StatutBesoin.CLOTURE,
+            commentaire="Offre fermée",
+        )
+        responsables = _responsables_departement(besoin.departement)
+        if responsables:
+            notifier(
+                responsables,
+                f"Besoin {besoin} clôturé : l'offre « {offre.titre} » a été fermée.",
+                reverse("offres:besoin_detail", args=[besoin.pk]),
+            )
     return offre
 
 
