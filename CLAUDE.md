@@ -102,6 +102,10 @@ python manage.py test --settings=config.settings_test --keepdb --parallel=auto c
 `config/settings_test.py` utilise `MD5PasswordHasher` → ×1000 plus rapide que PBKDF2.
 **Ne jamais utiliser les settings de prod pour les tests.**
 
+Les tests n'écrivent **jamais** dans `fichiers_prives/` : `settings_test` pointe `FICHIERS_PRIVES_ROOT` vers un
+dossier temporaire supprimé en fin de suite, et le runner `commun.test_runner.StageTrackTestRunner` fait échouer
+la suite si un fichier apparaît dans le vrai dossier. Inutile d'ajouter `override_settings(FICHIERS_PRIVES_ROOT=...)`.
+
 ---
 
 ## 3. Architecture
@@ -175,7 +179,8 @@ Toujours vérifier toutes les préconditions AVANT la première écriture en bas
 ### Stockage privé des fichiers
 
 - `FICHIERS_PRIVES_ROOT = backend/fichiers_prives/` — hors `MEDIA_ROOT`.
-- `FileSystemStorage(location=..., base_url=None)` → pas d'URL publique.
+- `commun.stockage.StockagePrive` (FileSystemStorage qui relit `FICHIERS_PRIVES_ROOT` à chaque accès) → pas d'URL publique.
+- Accès au fichier toujours via le stockage (`piece.fichier.path`, `stage.rapport.path`), jamais en reconstruisant le chemin.
 - **Interdit** : `piece.fichier.url` ou `stage.rapport.url` dans les templates.
 - Téléchargement uniquement via vues Django : `PieceJointeTelechargerView`, `RapportTelechargerView`.
 - Production : Nginx + `X-Accel-Redirect` (ne jamais exposer `fichiers_prives/` directement).
@@ -310,7 +315,7 @@ Règles structurantes à mémoriser :
 | Lot D | 72 h entretiens, alerter_entretiens, TransfertCandidature, AffectationMaitreStage | ✅ | bcd2999 |
 
 **Branche active** : `lot-d` (à fusionner dans `main` après validation)
-**Tests** : **268 / 268** ✅ — 0 echec
+**Tests** : **271 / 271** ✅ — 0 echec
 
 ---
 

@@ -2,13 +2,14 @@ import os
 import uuid
 from django.conf import settings
 from django.core.exceptions import ValidationError
-from django.core.files.storage import FileSystemStorage
 from django.db import models
+
+from commun.stockage import StockagePrive
 
 
 def _get_stockage_prive():
     """Stockage hors MEDIA_ROOT — les fichiers ne doivent jamais être servis via /media/."""
-    return FileSystemStorage(location=settings.FICHIERS_PRIVES_ROOT, base_url=None)
+    return StockagePrive()
 
 
 def _piece_upload_path(instance, filename):

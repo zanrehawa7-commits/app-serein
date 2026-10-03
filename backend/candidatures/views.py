@@ -1,6 +1,5 @@
 import os
 from pathlib import Path
-from django.conf import settings
 from django.contrib import messages
 from django.contrib.contenttypes.models import ContentType
 from django.core.exceptions import PermissionDenied
@@ -460,7 +459,7 @@ class PieceJointeTelechargerView(RoleRequisMixin, View):
             if not request.user.personnel or piece.candidature.departement != request.user.personnel.departement:
                 raise PermissionDenied
 
-        file_path = Path(settings.FICHIERS_PRIVES_ROOT) / piece.fichier.name
+        file_path = Path(piece.fichier.path)
         if not file_path.exists():
             raise Http404("Fichier introuvable.")
 
