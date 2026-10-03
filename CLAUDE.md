@@ -203,10 +203,14 @@ Les deux commandes sont **idempotentes**. `mettre_a_jour_stages` accepte `--date
 | Rôle | Droits |
 |---|---|
 | **Administrateur** | Toutes permissions sur `comptes` + `referentiels` ; **lecture seule** sur `offres`, `candidatures`, `stages`, `suivi`. Superuser sans groupe = Administrateur. |
-| **Secrétaire** | Vue Besoin ; CRUD Offre + Publication ; CRUD Candidat + PieceJointe ; CRU Candidature ; Constituer + Modifier Stage ; Vue Référentiels. |
+| **Secrétaire** | Vue Besoin ; CRUD Offre + Publication ; CRUD Candidat + PieceJointe ; CRU Candidature ; Constituer + Modifier Stage. |
 | **Responsable** | CU Besoin + Vue Offre (son département) ; Change/Vue Candidature (son département) ; Change/Vue Stage : terminer, interrompre, évaluer (son département). |
 
 Matrice complète et idempotente : `referentiels/management/commands/init_donnees.py` → `GROUPES_PERMISSIONS`.
+
+**Référentiels (écrans `/referentiels/`) : réservés à l'Administrateur** (`RolePermMixin`) — Secrétaire et
+Responsable → 403 (RG-R3). Leurs permissions `view_*` sur `referentiels` ne donnent accès à aucun écran ;
+les listes déroulantes des formulaires (départements, types de stage…) ne dépendent pas des permissions.
 
 **Lecture seule de l'Administrateur — ne jamais lui redonner add/change/delete** sur ces apps.
 Source unique : `comptes.permissions.APPS_LECTURE_SEULE_ADMINISTRATEUR`, utilisée par `init_donnees` ET par

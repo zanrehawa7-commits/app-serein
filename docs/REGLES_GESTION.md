@@ -39,6 +39,7 @@
 |---|---|---|
 | RG-R1 | Un référentiel utilisé ne peut pas être supprimé (`PROTECT`). Tentative → désactivation (`actif=False`) via `supprimer_ou_desactiver()`. | `commun/services.py` |
 | RG-R2 | Durée min ≤ durée max sur TypeStage (`CheckConstraint` + `clean()`). | `referentiels/models.py` |
+| RG-R3 | Les écrans Référentiels (départements, personnels, établissements, types de stage, canaux) sont **réservés à l'Administrateur** : Secrétaire et Responsable → 403, y compris en lecture. Les données restent proposées dans les listes déroulantes de leurs formulaires. | `referentiels/views.py` (`RolePermMixin`) |
 
 ---
 
