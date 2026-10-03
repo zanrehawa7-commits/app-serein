@@ -96,6 +96,28 @@ class AccesRolesTests(TestCase):
         self._assert_403("referentiels:personnel_modifier", {"pk": self.personnel.pk})
 
 
+class AffichageListesAdministrateurTests(TestCase):
+    """Les listes s'affichent réellement (200) : détecte les erreurs de template."""
+
+    def setUp(self):
+        dept = Departement.objects.create(nom="Dept Test")
+        personnel = Personnel.objects.create(nom="Doe", prenom="John", departement=dept)
+        _creer_utilisateur("perso@serein.bf", groupe="Secrétaire", personnel=personnel)
+        Personnel.objects.create(nom="Sans", prenom="Compte")
+        self.client.force_login(_creer_utilisateur("admin@serein.bf", is_superuser=True))
+
+    def test_listes_referentiels_200(self):
+        for url_name in [
+            "referentiels:departement_list",
+            "referentiels:etablissement_list",
+            "referentiels:typestage_list",
+            "referentiels:canalpublication_list",
+            "referentiels:personnel_list",
+        ]:
+            with self.subTest(url=url_name):
+                self.assertEqual(self.client.get(reverse(url_name)).status_code, 200)
+
+
 # ─── Tests TypeStage suppression ──────────────────────────────────────────────
 
 class TypeStageSuppressionTests(TestCase):
