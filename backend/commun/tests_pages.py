@@ -40,6 +40,38 @@ ADMIN = "Administrateur"
 SEC = "Secrétaire"
 RESP = "Responsable"
 TOUS = (ADMIN, SEC, RESP)
+CONSULT_TOUT = "Consultation tout coché"
+CONSULT_RIEN = "Consultation rien coché"
+
+# RG-U10 : seules routes qu'un rôle de consultation peut ouvrir, avec le droit requis
+# (None = tout rôle de consultation actif). Toute autre route : 403. Le code attendu est
+# celui de MATRICE.
+DROIT_CONSULTATION = {
+    "comptes:connexion": None,
+    "comptes:deconnexion": None,
+    "comptes:password_change": None,
+    "comptes:password_change_done": None,
+    "comptes:tableau_de_bord": None,
+    "comptes:en_developpement": None,
+    "comptes:tableau_bord_consultation": None,
+    "suivi:notification_list": None,
+    "suivi:notification_tout_lire": None,
+    "suivi:notification_lire": None,
+    "offres:besoin_list": "offres.view_besoin",
+    "offres:besoin_detail": "offres.view_besoin",
+    "offres:offre_list": "offres.view_offre",
+    "offres:offre_detail": "offres.view_offre",
+    "candidatures:candidat_detail": "candidatures.view_candidat",
+    "candidatures:candidature_list": "candidatures.view_candidature",
+    "candidatures:candidature_detail": "candidatures.view_candidature",
+    "candidatures:piece_telecharger": "candidatures.telecharger_pieces_jointes",
+    "stages:stage_list": "stages.view_stage",
+    "stages:stage_detail": "stages.view_stage",
+    "stages:vivier": "stages.consulter_vivier",
+    "stages:vivier_export_csv": "stages.exporter_vivier",
+    "stages:rapport_telecharger": "stages.telecharger_rapports",
+    "suivi:historique_list": "suivi.view_historique",
+}
 
 # Route → (rôles autorisés, code attendu pour un rôle autorisé, paramètres d'URL).
 # Les paramètres désignent un attribut du jeu de données (voir setUpTestData) ;
@@ -228,6 +260,11 @@ class _DonneesPagesMixin:
         cls.u_sec = cls.utilisateurs[SEC]
         cls.role_audit = Group.objects.create(name="Auditeur")
         ProfilRole.objects.create(groupe=cls.role_audit, description="Lecture")
+        from comptes.permissions import CODES_DROITS_CONSULTATION
+        cls.utilisateurs[CONSULT_TOUT] = _utilisateur_consultation(
+            "tout@test.bf", CONSULT_TOUT, sorted(CODES_DROITS_CONSULTATION)
+        )
+        cls.utilisateurs[CONSULT_RIEN] = _utilisateur_consultation("rien@test.bf", CONSULT_RIEN, [])
         cls.notifs = {
             role: Notification.objects.create(destinataire=u, message="Test", lien="/")
             for role, u in cls.utilisateurs.items()
@@ -396,6 +433,58 @@ class PagesParRoleTests(_DonneesPagesMixin, TestCase):
                 if obtenu != attendu:
                     ecarts.append(f"{nom:50} {role:15} attendu {attendu}, obtenu {obtenu}")
         self.assertFalse(ecarts, "\n" + "\n".join(ecarts))
+
+    def test_chaque_page_roles_de_consultation(self):
+        """« Tout coché » : lecture partout, 403 sur toute action ; « rien coché » : pages communes seules."""
+        ecarts = []
+        for nom, (_, code_ok, params) in MATRICE.items():
+            for role in (CONSULT_TOUT, CONSULT_RIEN):
+                ouverte = nom in DROIT_CONSULTATION and (role == CONSULT_TOUT or DROIT_CONSULTATION[nom] is None)
+                attendu = code_ok if ouverte else 403
+                obtenu = self._get(self._url(nom, params, role), role)
+                if obtenu != attendu:
+                    ecarts.append(f"{nom:50} {role:25} attendu {attendu}, obtenu {obtenu}")
+        self.assertFalse(ecarts, "\n" + "\n".join(ecarts))
+
+    def test_droits_consultation_routes_existantes(self):
+        self.assertFalse(set(DROIT_CONSULTATION) - set(MATRICE))
+
+    def test_aucun_lien_d_action_pour_un_role_de_consultation(self):
+        """Chaque lien ou formulaire d'une page vue en consultation mène à une route de consultation."""
+        import re
+        from django.urls import Resolver404, resolve
+        pages = [
+            ("comptes:tableau_bord_consultation", {}), ("offres:besoin_list", {}),
+            ("offres:besoin_detail", {"pk": "besoin_libre"}), ("offres:offre_list", {}),
+            ("offres:offre_detail", {"pk": "offre_a"}), ("candidatures:candidature_list", {}),
+            ("candidatures:candidature_detail", {"pk": "cand_recue"}),
+            ("candidatures:candidature_detail", {"pk": "cand_traitement"}),
+            ("candidatures:candidature_detail", {"pk": "cand_accordee"}),
+            ("candidatures:candidat_detail", {"pk": "candidat_recue"}), ("stages:stage_list", {}),
+            ("stages:stage_detail", {"pk": "stage_cours"}), ("stages:stage_detail", {"pk": "stage_fini"}),
+            ("stages:stage_detail", {"pk": "stage_interrompu"}), ("stages:vivier", {}),
+            ("suivi:historique_list", {}),
+        ]
+        ecarts = []
+        for role in (CONSULT_TOUT, CONSULT_RIEN):
+            self.client.logout()
+            self.client.force_login(self.utilisateurs[role])
+            for nom, params in pages:
+                reponse = self.client.get(self._url(nom, params))
+                if reponse.status_code != 200:
+                    continue
+                html = reponse.content.decode()
+                for cible in re.findall(r'(?:href|action)="(/[^"#?]*)', html):
+                    if cible.startswith(("/static/", "/media/")):
+                        continue
+                    try:
+                        route = resolve(cible)
+                    except Resolver404:
+                        continue
+                    nom_route = f"{route.namespace}:{route.url_name}" if route.namespace else route.url_name
+                    if nom_route not in DROIT_CONSULTATION:
+                        ecarts.append(f"{role} — {nom} {params} → {cible} ({nom_route})")
+        self.assertFalse(ecarts, "\n" + "\n".join(sorted(set(ecarts))))
 
     def test_get_ne_modifie_aucune_donnee(self):
         actions = [n for n, (_, code, _) in MATRICE.items() if code in (302, 405)]
