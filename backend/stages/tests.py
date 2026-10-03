@@ -25,6 +25,11 @@ from .services import (
 
 # ─── Fixtures communes ────────────────────────────────────────────────────────
 
+# Disponibilité large : ces tests ne portent pas sur RG-S11 (testée dans DisponibiliteRGS11Tests).
+_DISPO_DEBUT = timezone.localdate() - datetime.timedelta(days=3 * 365)
+_DISPO_FIN = timezone.localdate() + datetime.timedelta(days=3 * 365)
+
+
 def _groupe(nom):
     g, _ = Group.objects.get_or_create(name=nom)
     return g
@@ -69,8 +74,8 @@ def _candidature_accordee(dept, maitre=None):
         departement=dept,
         type_stage=ts,
         type_demande=TypeDemande.SPONTANEE,
-        debut_disponibilite=datetime.date(2025, 1, 1),
-        fin_disponibilite=datetime.date(2025, 12, 31),
+        debut_disponibilite=_DISPO_DEBUT,
+        fin_disponibilite=_DISPO_FIN,
         duree_souhaitee=3,
         statut=StatutCandidature.ACCORDEE,
     )
@@ -277,10 +282,10 @@ class DemarrerStageAutoTests(TestCase):
         self.assertEqual(stage.statut, StatutStage.EN_COURS)
 
     def test_ne_demarre_pas_si_futur(self):
-        debut = datetime.date(2099, 1, 1)
-        fin = datetime.date(2099, 6, 30)
+        debut = timezone.localdate() + datetime.timedelta(days=365)
+        fin = debut + datetime.timedelta(days=180)
         stage = self._stage(debut, fin, StatutStage.A_VENIR)
-        result = demarrer_stage_auto(stage, datetime.date(2025, 1, 1))
+        result = demarrer_stage_auto(stage, timezone.localdate())
         self.assertFalse(result)
         stage.refresh_from_db()
         self.assertEqual(stage.statut, StatutStage.A_VENIR)
@@ -713,7 +718,7 @@ class _DeuxDepartementsMixin:
         cand = Candidature.objects.create(
             candidat=Candidat.objects.create(nom="Stagiaire", prenom=telephone, telephone=telephone),
             departement=dept, type_stage=_type_stage(), type_demande=TypeDemande.SPONTANEE,
-            debut_disponibilite=datetime.date(2025, 1, 1), fin_disponibilite=datetime.date(2025, 12, 31),
+            debut_disponibilite=_DISPO_DEBUT, fin_disponibilite=_DISPO_FIN,
             duree_souhaitee=3, statut=StatutCandidature.ACCORDEE,
         )
         return Stage.objects.create(
@@ -805,3 +810,89 @@ class RapportTelechargementRGE5Tests(_DeuxDepartementsMixin, TestCase):
     def test_secretaire_403(self):
         self.client.force_login(_user("sec3@test.com", "Secrétaire"))
         self.assertEqual(self._rapport(self.stage_a).status_code, 403)
+
+
+# ─── RG-S11 : dates du stage dans la disponibilité du candidat ────────────────
+
+
+class DisponibiliteRGS11Tests(TestCase):
+    """Constitution et modification : début ≥ début de disponibilité, fin ≤ fin de disponibilité."""
+
+    def setUp(self):
+        self.dept = _dept()
+        self.maitre = _membre(self.dept)
+        self.sec = _secretaire()
+        self.aujourd_hui = timezone.localdate()
+        self.dispo_debut = self.aujourd_hui + datetime.timedelta(days=10)
+        self.dispo_fin = self.aujourd_hui + datetime.timedelta(days=100)
+        self.cand = _candidature_accordee(self.dept)
+        Candidature.objects.filter(pk=self.cand.pk).update(
+            debut_disponibilite=self.dispo_debut, fin_disponibilite=self.dispo_fin
+        )
+        self.cand.refresh_from_db()
+        self.periode = f"du {self.dispo_debut:%d/%m/%Y} au {self.dispo_fin:%d/%m/%Y}"
+
+    def _jour(self, n):
+        return self.aujourd_hui + datetime.timedelta(days=n)
+
+    def _constituer(self, debut, fin):
+        return constituer_stage(self.cand, debut, fin, self.maitre, self.sec)
+
+    def test_constitution_bornes_incluses_acceptees(self):
+        stage = self._constituer(self.dispo_debut, self.dispo_fin)
+        self.assertEqual((stage.date_debut, stage.date_fin_prevue), (self.dispo_debut, self.dispo_fin))
+
+    def test_constitution_debut_avant_disponibilite_refusee(self):
+        with self.assertRaisesMessage(TransitionInterdite, self.periode):
+            self._constituer(self._jour(9), self._jour(50))
+        self.assertFalse(Stage.objects.exists())
+
+    def test_constitution_fin_apres_disponibilite_refusee(self):
+        with self.assertRaisesMessage(TransitionInterdite, self.periode):
+            self._constituer(self._jour(20), self._jour(101))
+        self.assertFalse(Stage.objects.exists())
+
+    def test_formulaire_constitution_erreurs_sur_les_champs(self):
+        from .forms import ConstituerStageForm
+        form = ConstituerStageForm(
+            {"date_debut": self._jour(1), "date_fin_prevue": self._jour(200), "maitre_stage": self.maitre.pk},
+            departement=self.dept, candidature=self.cand,
+        )
+        self.assertFalse(form.is_valid())
+        self.assertIn(self.periode, form.errors["date_debut"][0])
+        self.assertIn(self.periode, form.errors["date_fin_prevue"][0])
+
+    def test_vue_constitution_hors_disponibilite_affiche_la_periode(self):
+        self.client.force_login(self.sec)
+        reponse = self.client.post(
+            reverse("stages:stage_constituer", args=[self.cand.pk]),
+            {"date_debut": self._jour(1), "date_fin_prevue": self._jour(50), "maitre_stage": self.maitre.pk},
+        )
+        self.assertEqual(reponse.status_code, 200)
+        self.assertContains(reponse, self.periode)
+        self.assertFalse(Stage.objects.exists())
+
+    def test_modification_a_venir_debut_hors_disponibilite_refusee(self):
+        stage = self._constituer(self._jour(20), self._jour(50))
+        with self.assertRaisesMessage(TransitionInterdite, self.periode):
+            modifier_stage(stage, self._jour(50), self.maitre, self.sec, date_debut=self._jour(5))
+
+    def test_modification_fin_hors_disponibilite_refusee(self):
+        stage = self._constituer(self._jour(20), self._jour(50))
+        with self.assertRaisesMessage(TransitionInterdite, self.periode):
+            modifier_stage(stage, self._jour(150), self.maitre, self.sec)
+        stage.refresh_from_db()
+        self.assertEqual(stage.date_fin_prevue, self._jour(50))
+
+    def test_stage_en_cours_existant_debut_hors_disponibilite_reste_modifiable(self):
+        """Stage antérieur à la règle : début non modifiable donc non vérifié, fin vérifiée."""
+        stage = Stage.objects.create(
+            candidature=self.cand, maitre_stage=self.maitre, statut=StatutStage.EN_COURS,
+            date_debut=self._jour(-30), date_fin_prevue=self._jour(50),
+        )
+        autre_maitre = _membre(self.dept, "Kaboré")
+        modifier_stage(stage, self._jour(60), autre_maitre, self.sec)
+        stage.refresh_from_db()
+        self.assertEqual((stage.maitre_stage, stage.date_fin_prevue), (autre_maitre, self._jour(60)))
+        with self.assertRaisesMessage(TransitionInterdite, self.periode):
+            modifier_stage(stage, self._jour(150), autre_maitre, self.sec)

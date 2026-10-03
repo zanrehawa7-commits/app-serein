@@ -7,6 +7,29 @@ class TransitionInterdite(Exception):
     pass
 
 
+def erreurs_disponibilite(candidature, date_debut=None, date_fin_prevue=None):
+    """
+    RG-S11 : le stage se déroule pendant la disponibilité du candidat.
+    Renvoie {champ: message} ; une date à None n'est pas vérifiée (ex. début non modifiable).
+    """
+    message = (
+        "Le stage doit se dérouler pendant la disponibilité du candidat : "
+        f"du {candidature.debut_disponibilite:%d/%m/%Y} au {candidature.fin_disponibilite:%d/%m/%Y}."
+    )
+    erreurs = {}
+    if date_debut is not None and date_debut < candidature.debut_disponibilite:
+        erreurs["date_debut"] = message
+    if date_fin_prevue is not None and date_fin_prevue > candidature.fin_disponibilite:
+        erreurs["date_fin_prevue"] = message
+    return erreurs
+
+
+def _verifier_disponibilite(candidature, date_debut=None, date_fin_prevue=None):
+    erreurs = erreurs_disponibilite(candidature, date_debut, date_fin_prevue)
+    if erreurs:
+        raise TransitionInterdite(next(iter(erreurs.values())))
+
+
 def _secretaires_actives():
     from comptes.models import Utilisateur
     return list(Utilisateur.objects.filter(groups__name="Secrétaire", is_active=True))
@@ -42,6 +65,7 @@ def constituer_stage(candidature, date_debut, date_fin_prevue, maitre_stage, uti
         )
     if not maitre_stage.actif:
         raise TransitionInterdite("Le maître de stage doit être actif.")
+    _verifier_disponibilite(cand, date_debut, date_fin_prevue)
 
     today = timezone.localdate()
     statut = StatutStage.EN_COURS if date_debut <= today else StatutStage.A_VENIR
@@ -80,6 +104,12 @@ def constituer_stage(candidature, date_debut, date_fin_prevue, maitre_stage, uti
     return stage
 
 
+def debut_modifiable(stage):
+    """La date de début ne se modifie que sur un stage à venir jamais démarré."""
+    from .models import StatutStage
+    return stage.statut == StatutStage.A_VENIR
+
+
 @transaction.atomic
 def modifier_stage(stage, date_fin_prevue, maitre_stage, utilisateur, date_debut=None):
     from suivi.services import enregistrer_historique
@@ -95,9 +125,13 @@ def modifier_stage(stage, date_fin_prevue, maitre_stage, utilisateur, date_debut
         raise TransitionInterdite("Le maître de stage doit appartenir au département (RG22).")
     if not maitre_stage.actif:
         raise TransitionInterdite("Le maître de stage doit être actif.")
+    # Début vérifié seulement s'il est modifiable : un stage en cours dont le début
+    # (antérieur à la règle) sort de la disponibilité reste modifiable.
+    debut_a_verifier = (date_debut or s.date_debut) if debut_modifiable(s) else None
+    _verifier_disponibilite(s.candidature, debut_a_verifier, date_fin_prevue)
 
     changements = []
-    if date_debut is not None and s.statut == StatutStage.A_VENIR:
+    if date_debut is not None and debut_modifiable(s):
         if date_debut != s.date_debut:
             changements.append(f"début : {s.date_debut} → {date_debut}")
             s.date_debut = date_debut

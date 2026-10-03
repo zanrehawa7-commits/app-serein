@@ -118,6 +118,7 @@
 | RG-S8 | Démarrage automatique (`mettre_a_jour_stages`) : A_VENIR → EN_COURS si date_debut ≤ aujourd'hui. Exécuté AVANT les clôtures. | `stages/services.py` |
 | RG-S9 | Clôture automatique : EN_COURS → TERMINE si date_fin_prevue < aujourd'hui. Notifie le Responsable du département. | `stages/services.py` |
 | RG-S10 | Rappel évaluation automatique : TERMINE + note=null + date_fin ≤ aujourd'hui-7j + rappel_evaluation_envoye=False → notif Responsable + flag posé (idempotent). | `stages/management/commands/mettre_a_jour_stages.py` |
+| RG-S11 | Dates du stage dans la disponibilité du candidat : `date_debut ≥ debut_disponibilite` et `date_fin_prevue ≤ fin_disponibilite`, **bloquant** (formulaire + service), message avec la période du candidat. À la modification, le début n'est vérifié que s'il est modifiable (stage à venir jamais démarré) ; la fin l'est toujours. Stages existants inchangés : la règle s'applique à leur prochaine modification. | `stages/services.py` (`erreurs_disponibilite`), `stages/forms.py` |
 
 ---
 

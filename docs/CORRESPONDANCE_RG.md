@@ -71,6 +71,7 @@ pendant le développement).
 | RG-N4 | Exception assumée : `notification_lire` accepte le GET. | Décision étape 10 |
 | RG-E1 à RG-E4, RG-E6 | Note 1–20, vivier si note ≥ 12, verrouillage 30 jours, rapport non verrouillé, vivier consultable. | Étape 9 |
 | RG-S1 à RG-S10 | Constitution, transitions et automatisation des stages. | Étape 8 |
+| RG-S11 | Dates du stage dans la disponibilité du candidat (bloquant). | Lot F (directeur de mémoire) |
 | RG-R1, RG-R2 | Suppression → désactivation si utilisé ; durée min ≤ max. | Étapes 4 / lot B |
 | RG-P1 à RG-P7 | Règles sur le personnel et les responsables de département. | Lot A |
 | RG-U1 à RG-U4, RG-U6 | Connexion par email, rôle = groupe, superuser, session 30 min, changement de rôle. | Étapes 3–4 |

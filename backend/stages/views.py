@@ -45,11 +45,6 @@ def _get_departement_utilisateur(user):
         return None
 
 
-def _get_membres_dispos(departement):
-    """Retourne un dict vide (aucun champ de disponibilité sur Personnel)."""
-    return {}
-
-
 class StageListView(RoleRequisMixin, ListeMixin, ListView):
     model = Stage
     template_name = "stages/stage_list.html"
@@ -182,12 +177,10 @@ class ConstituerStageView(RoleRequisMixin, View):
             messages.warning(request, "Cette candidature a déjà un stage constitué.")
             return redirect("stages:stage_detail", pk=cand.stage.pk)
 
-        form = ConstituerStageForm(departement=cand.departement)
-        membres_dispos = _get_membres_dispos(cand.departement)
+        form = ConstituerStageForm(departement=cand.departement, candidature=cand)
         return render(request, "stages/stage_constituer_form.html", {
             "form": form,
             "candidature": cand,
-            "membres_dispos": membres_dispos,
         })
 
     def post(self, request, candidature_pk):
@@ -196,7 +189,7 @@ class ConstituerStageView(RoleRequisMixin, View):
             messages.warning(request, "Cette candidature a déjà un stage constitué.")
             return redirect("stages:stage_detail", pk=cand.stage.pk)
 
-        form = ConstituerStageForm(request.POST, departement=cand.departement)
+        form = ConstituerStageForm(request.POST, departement=cand.departement, candidature=cand)
         if form.is_valid():
             try:
                 stage = constituer_stage(
@@ -212,11 +205,9 @@ class ConstituerStageView(RoleRequisMixin, View):
                 messages.error(request, str(e))
                 return redirect("candidatures:candidature_detail", pk=candidature_pk)
 
-        membres_dispos = _get_membres_dispos(cand.departement)
         return render(request, "stages/stage_constituer_form.html", {
             "form": form,
             "candidature": cand,
-            "membres_dispos": membres_dispos,
         })
 
 
@@ -246,11 +237,9 @@ class ModifierStageView(RoleRequisMixin, View):
             departement=stage.candidature.departement,
             stage=stage,
         )
-        membres_dispos = _get_membres_dispos(stage.candidature.departement)
         return render(request, "stages/stage_modifier_form.html", {
             "form": form,
             "stage": stage,
-            "membres_dispos": membres_dispos,
         })
 
     def post(self, request, pk):
@@ -279,11 +268,9 @@ class ModifierStageView(RoleRequisMixin, View):
                 messages.error(request, str(e))
                 return redirect("stages:stage_detail", pk=pk)
 
-        membres_dispos = _get_membres_dispos(stage.candidature.departement)
         return render(request, "stages/stage_modifier_form.html", {
             "form": form,
             "stage": stage,
-            "membres_dispos": membres_dispos,
         })
 
 
