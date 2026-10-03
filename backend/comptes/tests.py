@@ -260,3 +260,44 @@ class ChangementRoleTests(TestCase):
         })
         self.resp_user.refresh_from_db()
         self.assertIsNone(self.resp_user.personnel)
+
+
+class PermissionsAdministrateurLectureSeuleTests(TestCase):
+    """F02 : impossible de redonner à l'Administrateur l'écriture sur offres, candidatures, stages, suivi."""
+
+    def setUp(self):
+        from io import StringIO
+        from django.core.management import call_command
+        call_command("init_donnees", stdout=StringIO())
+        self.admin = _creer_utilisateur("admin@serein.bf", "pass", groupe="Administrateur")
+        self.client.force_login(self.admin)
+        self.url = reverse("comptes:permissions_role", args=["Administrateur"])
+
+    def test_post_ne_redonne_pas_l_ecriture(self):
+        from django.contrib.auth.models import Permission
+        groupe = Group.objects.get(name="Administrateur")
+        demandees = list(groupe.permissions.values_list("pk", flat=True))
+        demandees += list(
+            Permission.objects.filter(codename__in=["add_offre", "change_candidature", "delete_stage", "change_notification"])
+            .values_list("pk", flat=True)
+        )
+        self.client.post(self.url, {"permissions": [str(pk) for pk in demandees]})
+        ecriture = groupe.permissions.filter(
+            content_type__app_label__in=["offres", "candidatures", "stages", "suivi"]
+        ).exclude(codename__startswith="view_")
+        self.assertFalse(ecriture.exists(), list(ecriture.values_list("codename", flat=True)))
+        self.assertTrue(groupe.permissions.filter(codename="view_offre").exists())
+
+    def test_cases_ecriture_grisees_et_decochees(self):
+        reponse = self.client.get(self.url)
+        actions = {
+            (bloc["app_label"], modele["label"], action["action_label"]): action
+            for bloc in reponse.context["structure"]
+            for modele in bloc["modeles"]
+            for action in modele["actions"] if action["exists"]
+        }
+        ajout_offre = actions[("Offres & besoins", "Offre", "Ajouter")]
+        self.assertTrue(ajout_offre["disabled"])
+        self.assertFalse(ajout_offre["checked"])
+        voir_offre = actions[("Offres & besoins", "Offre", "Voir")]
+        self.assertFalse(voir_offre["disabled"])

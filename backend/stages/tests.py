@@ -1,5 +1,6 @@
 import datetime
 from django.contrib.auth.models import Group
+from django.core.files.base import ContentFile
 from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
@@ -686,3 +687,121 @@ class AffectationMaitreStageTests(TestCase):
         self.assertEqual(affectations.count(), 2)
         self.assertEqual(affectations.last().maitre_stage, nouveau_maitre)
 
+
+
+# ─── Fiche stage : cloisonnement département (Responsable) ────────────────────
+
+
+class _DeuxDepartementsMixin:
+    """Responsable du département A connecté ; stages en A et en B (dont un au vivier)."""
+
+    def setUp(self):
+        self.dept_a = _dept("Informatique")
+        self.dept_b = _dept("Comptabilité")
+        self.resp_a = _responsable(self.dept_a)
+        maitre_a = _membre(self.dept_a, "Zongo")
+        maitre_b = _membre(self.dept_b, "Ilboudo")
+        self.stage_a = self._stage(self.dept_a, maitre_a, "70000001", StatutStage.EN_COURS)
+        self.stage_b = self._stage(self.dept_b, maitre_b, "70000002", StatutStage.EN_COURS)
+        self.stage_b_vivier = self._stage(
+            self.dept_b, maitre_b, "70000003", StatutStage.TERMINE,
+            note=15, vivier=True, date_evaluation=timezone.localdate(),
+        )
+        self.client.force_login(self.resp_a)
+
+    def _stage(self, dept, maitre, telephone, statut, **extra):
+        cand = Candidature.objects.create(
+            candidat=Candidat.objects.create(nom="Stagiaire", prenom=telephone, telephone=telephone),
+            departement=dept, type_stage=_type_stage(), type_demande=TypeDemande.SPONTANEE,
+            debut_disponibilite=datetime.date(2025, 1, 1), fin_disponibilite=datetime.date(2025, 12, 31),
+            duree_souhaitee=3, statut=StatutCandidature.ACCORDEE,
+        )
+        return Stage.objects.create(
+            candidature=cand, maitre_stage=maitre, statut=statut,
+            date_debut=timezone.localdate() - datetime.timedelta(days=60),
+            date_fin_prevue=timezone.localdate() + datetime.timedelta(days=30), **extra,
+        )
+
+
+class StageDetailCloisonnementTests(_DeuxDepartementsMixin, TestCase):
+    """RG-E7 : fiche d'un stage d'un autre département → 403, sauf stage au vivier (lecture seule)."""
+
+    def _detail(self, stage):
+        return self.client.get(reverse("stages:stage_detail", args=[stage.pk]))
+
+    def test_autre_departement_hors_vivier_403(self):
+        self.assertEqual(self._detail(self.stage_b).status_code, 403)
+
+    def test_responsable_sans_departement_403(self):
+        self.resp_a.personnel.departement = None
+        self.resp_a.personnel.save(update_fields=["departement"])
+        self.assertEqual(self._detail(self.stage_a).status_code, 403)
+
+    def test_autre_departement_au_vivier_lecture_seule_sans_bouton(self):
+        reponse = self._detail(self.stage_b_vivier)
+        self.assertEqual(reponse.status_code, 200)
+        self.assertTrue(reponse.context["lecture_seule"])
+        for drapeau in ["peut_modifier", "peut_terminer", "peut_interrompre", "peut_evaluer"]:
+            with self.subTest(drapeau=drapeau):
+                self.assertFalse(reponse.context[drapeau])
+        pk = self.stage_b_vivier.pk
+        for nom in ["stage_modifier", "stage_terminer", "stage_interrompre", "stage_evaluer"]:
+            with self.subTest(url=nom):
+                self.assertNotContains(reponse, reverse(f"stages:{nom}", args=[pk]))
+        self.assertNotContains(
+            reponse, reverse("candidatures:candidature_detail", args=[self.stage_b_vivier.candidature.pk])
+        )
+        self.assertContains(reponse, "Lecture seule")
+
+    def test_propre_departement_avec_actions(self):
+        reponse = self._detail(self.stage_a)
+        self.assertEqual(reponse.status_code, 200)
+        self.assertFalse(reponse.context["lecture_seule"])
+        self.assertTrue(reponse.context["peut_terminer"])
+        self.assertContains(reponse, reverse("stages:stage_terminer", args=[self.stage_a.pk]))
+
+    def test_secretaire_et_administrateur_non_cloisonnes(self):
+        for role, email in [("Secrétaire", "sec2@test.com"), ("Administrateur", "admin2@test.com")]:
+            with self.subTest(role=role):
+                self.client.force_login(_user(email, role))
+                reponse = self._detail(self.stage_b)
+                self.assertEqual(reponse.status_code, 200)
+                self.assertFalse(reponse.context["lecture_seule"])
+
+
+# ─── Rapport de stage : RG-E5 ─────────────────────────────────────────────────
+
+
+class RapportTelechargementRGE5Tests(_DeuxDepartementsMixin, TestCase):
+    """RG-E5 : rapport du département du Responsable, ou d'un autre département si stage au vivier."""
+
+    def setUp(self):
+        super().setUp()
+        self.stage_b_hors_vivier = self._stage(
+            self.dept_b, _membre(self.dept_b, "Some"), "70000004", StatutStage.TERMINE,
+            note=10, vivier=False, date_evaluation=timezone.localdate(),
+        )
+        for stage in [self.stage_a, self.stage_b_vivier, self.stage_b_hors_vivier]:
+            stage.rapport.save(f"rapport_{stage.pk}.pdf", ContentFile(b"%PDF-1.4 rapport"), save=True)
+
+    def _rapport(self, stage):
+        return self.client.get(reverse("stages:rapport_telecharger", args=[stage.pk]))
+
+    def test_propre_departement_autorise(self):
+        self.assertEqual(self._rapport(self.stage_a).status_code, 200)
+
+    def test_autre_departement_au_vivier_autorise(self):
+        self.assertEqual(self._rapport(self.stage_b_vivier).status_code, 200)
+
+    def test_autre_departement_hors_vivier_403(self):
+        self.assertEqual(self._rapport(self.stage_b_hors_vivier).status_code, 403)
+
+    def test_responsable_sans_departement_hors_vivier_403(self):
+        self.resp_a.personnel.departement = None
+        self.resp_a.personnel.save(update_fields=["departement"])
+        self.assertEqual(self._rapport(self.stage_b_hors_vivier).status_code, 403)
+        self.assertEqual(self._rapport(self.stage_b_vivier).status_code, 200)
+
+    def test_secretaire_403(self):
+        self.client.force_login(_user("sec3@test.com", "Secrétaire"))
+        self.assertEqual(self._rapport(self.stage_a).status_code, 403)

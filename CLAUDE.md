@@ -102,6 +102,10 @@ python manage.py test --settings=config.settings_test --keepdb --parallel=auto c
 `config/settings_test.py` utilise `MD5PasswordHasher` → ×1000 plus rapide que PBKDF2.
 **Ne jamais utiliser les settings de prod pour les tests.**
 
+Les tests n'écrivent **jamais** dans `fichiers_prives/` : `settings_test` pointe `FICHIERS_PRIVES_ROOT` vers un
+dossier temporaire supprimé en fin de suite, et le runner `commun.test_runner.StageTrackTestRunner` fait échouer
+la suite si un fichier apparaît dans le vrai dossier. Inutile d'ajouter `override_settings(FICHIERS_PRIVES_ROOT=...)`.
+
 ---
 
 ## 3. Architecture
@@ -175,7 +179,8 @@ Toujours vérifier toutes les préconditions AVANT la première écriture en bas
 ### Stockage privé des fichiers
 
 - `FICHIERS_PRIVES_ROOT = backend/fichiers_prives/` — hors `MEDIA_ROOT`.
-- `FileSystemStorage(location=..., base_url=None)` → pas d'URL publique.
+- `commun.stockage.StockagePrive` (FileSystemStorage qui relit `FICHIERS_PRIVES_ROOT` à chaque accès) → pas d'URL publique.
+- Accès au fichier toujours via le stockage (`piece.fichier.path`, `stage.rapport.path`), jamais en reconstruisant le chemin.
 - **Interdit** : `piece.fichier.url` ou `stage.rapport.url` dans les templates.
 - Téléchargement uniquement via vues Django : `PieceJointeTelechargerView`, `RapportTelechargerView`.
 - Production : Nginx + `X-Accel-Redirect` (ne jamais exposer `fichiers_prives/` directement).
@@ -198,10 +203,19 @@ Les deux commandes sont **idempotentes**. `mettre_a_jour_stages` accepte `--date
 | Rôle | Droits |
 |---|---|
 | **Administrateur** | Toutes permissions sur `comptes` + `referentiels` ; **lecture seule** sur `offres`, `candidatures`, `stages`, `suivi`. Superuser sans groupe = Administrateur. |
-| **Secrétaire** | Vue Besoin ; CRUD Offre + Publication ; CRUD Candidat + PieceJointe ; CRU Candidature ; Constituer + Modifier Stage ; Vue Référentiels. |
+| **Secrétaire** | Vue Besoin ; CRUD Offre + Publication ; CRUD Candidat + PieceJointe ; CRU Candidature ; Constituer + Modifier Stage. |
 | **Responsable** | CU Besoin + Vue Offre (son département) ; Change/Vue Candidature (son département) ; Change/Vue Stage : terminer, interrompre, évaluer (son département). |
 
 Matrice complète et idempotente : `referentiels/management/commands/init_donnees.py` → `GROUPES_PERMISSIONS`.
+
+**Référentiels (écrans `/referentiels/`) : réservés à l'Administrateur** (`RolePermMixin`) — Secrétaire et
+Responsable → 403 (RG-R3). Leurs permissions `view_*` sur `referentiels` ne donnent accès à aucun écran ;
+les listes déroulantes des formulaires (départements, types de stage…) ne dépendent pas des permissions.
+
+**Lecture seule de l'Administrateur — ne jamais lui redonner add/change/delete** sur ces apps.
+Source unique : `comptes.permissions.APPS_LECTURE_SEULE_ADMINISTRATEUR`, utilisée par `init_donnees` ET par
+l'écran F02 (cases grisées + filtrage serveur au POST). La liste exacte de ses 36 permissions est figée par
+`referentiels.tests.InitDonneesCommandeTests.test_permissions_exactes_du_groupe_administrateur`.
 
 ### Contrôle d'accès
 
@@ -233,6 +247,8 @@ Règles structurantes à mémoriser :
 - Redirection : RECUE uniquement → statut reste RECUE, tracée dans `TransfertCandidature`.
 - Note 1–20 ; vivier si note ≥ 12 ; verrouillage 30 j après `date_evaluation` (note + vivier).
 - Rapport de stage : **non verrouillé**, uploadable à tout moment après la première évaluation.
+- **RG-E5** (voulu) : un Responsable lit le rapport d'un stage d'un autre département **uniquement si ce stage est au vivier**.
+- **RG-E7** : fiche stage d'un autre département → 403 pour un Responsable, sauf stage au vivier (lecture seule, aucun bouton).
 - `ParametreOffre` singleton : `delete()` est un no-op, `pk` forcé à 1.
 
 ---
@@ -267,6 +283,7 @@ Règles structurantes à mémoriser :
 
 - Contrôles côté serveur (rôle + permission + département). Jamais uniquement côté template.
 - Actions en POST uniquement. Pattern Post/Redirect/Get. Messages en français.
+  Seule exception assumée : `notification_lire` accepte le GET (lien du menu ; marquer comme lue n'altère aucune donnée métier — RG-N4).
 - Fichiers privés : jamais de `.url` dans les templates ; téléchargement via vue protégée.
 
 ### Tests
@@ -309,10 +326,11 @@ Règles structurantes à mémoriser :
 | Lot C | ParametreOffre singleton, Offre.departement, texte_publie | ✅ | a0b2fd6 |
 | Lot D | 72 h entretiens, alerter_entretiens, TransfertCandidature, AffectationMaitreStage | ✅ | bcd2999 |
 | Fix | init_donnees sur base neuve + liste personnels (commun_tags) | ✅ | cae763e |
-| Étape 10 (pages) | Test de toutes les pages × rôles + cloisonnement département (`commun/tests_pages.py`) | ✅ | — |
+| Étape 10 (pages) | Test de toutes les pages × rôles + cloisonnement département (`commun/tests_pages.py`) | ✅ | b1224d5 |
+| Étape 10 (constats) | Fichiers de test hors `fichiers_prives/`, Admin lecture seule, RG-E5, RG-E7, RG-R3, RG-N4 | ✅ (branche) | d6dfdfb |
 
-**Branche active** : `etape-10-pages` (à fusionner dans `main` après validation)
-**Tests** : **278 / 278** ✅ — 0 echec
+**Branche active** : `etape-10-constats` (contient `fix-fichiers-tests` ; à fusionner dans `main` après validation)
+**Tests** : **295 / 295** ✅ — 0 echec
 
 > Toute nouvelle route doit être déclarée dans `MATRICE` (`commun/tests_pages.py`), sinon la suite échoue.
 
@@ -350,8 +368,8 @@ E-R1 (CRUD groupes), E-R2 (permissions sur groupes perso), E-R5 (audit trail per
 | **Lot E — architecture E-R3 : Option A ou B ?** | **Bloquant** |
 | AffectationMaitreStage visible aux Administrateurs ? | Masqué (provisoire) |
 | Notifications email SMTP en production | Non implémentées (in-app uniquement) |
-| Constats 1 à 5 de l'étape 10 (droits Admin, fiche stage autre département, rapport vivier, accès Référentiels, GET notification_lire) | À trancher — voir [`docs/rapports/etape_10_pages_rapport.md`](docs/rapports/etape_10_pages_rapport.md) |
-| Constat 6 : les tests écrivent dans le vrai `fichiers_prives/` | Correction proposée (petit lot séparé) |
+| Responsable **sans département** : terminer / interrompre / évaluer un stage de n'importe quel département (`if dept and ...`) | **À trancher** — correction proposée dans [`docs/rapports/etape_10_pages_rapport.md`](docs/rapports/etape_10_pages_rapport.md) |
+| Nettoyage des fichiers de test dans `fichiers_prives/` (non référencés en base) | En attente d'accord |
 
 ---
 
@@ -374,3 +392,4 @@ E-R1 (CRUD groupes), E-R2 (permissions sur groupes perso), E-R5 (audit trail per
 | Stockage fichiers dans fichiers_prives/ (hors media/) | Pas d'URL publique, contrôle via vues Django | Étape 6 |
 | designer_responsable vérifie compte AVANT toute modif | Correction directeur de mémoire | Lot A |
 | TransfertCandidature + AffectationMaitreStage | Traçabilité demandée | Lot D |
+| Administrateur en lecture seule sur offres, candidatures, stages, suivi (view uniquement) | Régression introduite à l'Étape 4 (`a3643ee`, `_CRUD`) puis réimposée à chaque `init_donnees` (`permissions.set`) ; l'écran F02 permettait aussi de recocher les droits. Corrigé par une source unique + test de la liste exacte | Étape 10 |

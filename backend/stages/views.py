@@ -130,19 +130,28 @@ class StageDetailView(RoleRequisMixin, View):
             ),
             pk=pk,
         )
+        role = _role_utilisateur(request.user)
+        # RG-E7 : Responsable limité à son département, sauf stage au vivier (vivier partagé
+        # entre départements, cf. RG-E5/E6) consulté en lecture seule.
+        lecture_seule = False
+        if role == "Responsable":
+            dept = _get_departement_utilisateur(request.user)
+            if dept is None or stage.candidature.departement != dept:
+                if not stage.vivier:
+                    raise PermissionDenied
+                lecture_seule = True
         historiques = _get_historique(stage)
         affectations_maitre = stage.affectations_maitre.select_related(
             "maitre_stage", "affecte_par"
         ).order_by("-date_affectation")
-        role = _role_utilisateur(request.user)
         _peut_eval, _ = peut_evaluer(stage) if stage.statut == StatutStage.TERMINE and role == "Responsable" else (False, None)
-        dept = _get_departement_utilisateur(request.user)
-        _dept_ok = not dept or stage.candidature.departement == dept
+        _dept_ok = not lecture_seule
         return render(request, "stages/stage_detail.html", {
             "stage": stage,
             "historiques": historiques,
             "affectations_maitre": affectations_maitre,
             "role": role,
+            "lecture_seule": lecture_seule,
             "peut_modifier": (
                 role == "Secrétaire" and
                 stage.statut in [StatutStage.A_VENIR, StatutStage.EN_COURS]
@@ -289,7 +298,7 @@ class TerminerStageView(RoleRequisMixin, View):
             pk=pk,
         )
         dept = _get_departement_utilisateur(request.user)
-        if dept and stage.candidature.departement != dept:
+        if dept is None or stage.candidature.departement != dept:
             raise PermissionDenied
         return stage
 
@@ -333,7 +342,7 @@ class InterrompreStageView(RoleRequisMixin, View):
             pk=pk,
         )
         dept = _get_departement_utilisateur(request.user)
-        if dept and stage.candidature.departement != dept:
+        if dept is None or stage.candidature.departement != dept:
             raise PermissionDenied
         return stage
 
@@ -379,7 +388,7 @@ class EvaluerStageView(RoleRequisMixin, View):
             statut=StatutStage.TERMINE,
         )
         dept = _get_departement_utilisateur(request.user)
-        if dept and stage.candidature.departement != dept:
+        if dept is None or stage.candidature.departement != dept:
             raise PermissionDenied
         return stage
 
@@ -537,10 +546,11 @@ class RapportTelechargerView(RoleRequisMixin, View):
         if not stage.rapport:
             raise Http404("Aucun rapport pour ce stage.")
 
+        # RG-E5 : rapport d'un autre département lisible uniquement si le stage est au vivier.
         role = _role_utilisateur(request.user)
         if role == "Responsable":
             dept = _get_departement_utilisateur(request.user)
-            if dept and stage.candidature.departement != dept:
+            if dept is None or stage.candidature.departement != dept:
                 if not stage.vivier:
                     raise PermissionDenied
 

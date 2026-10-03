@@ -1,7 +1,9 @@
 # Règles de gestion — Stage Track
 
 > Document de référence généré à partir du code source (vérification directe sur models.py,
-> services.py, forms.py). Dernière mise à jour : **2026-10-02** (lot D + vérifications pré-merge).
+> services.py, forms.py). Dernière mise à jour : **2026-10-03** (étape 10).
+>
+> Correspondance avec la numérotation du cahier des charges (RG01–RG35) : [`CORRESPONDANCE_RG.md`](CORRESPONDANCE_RG.md).
 
 ---
 
@@ -27,7 +29,7 @@
 | RG-U2 | Rôle = premier groupe Django de l'utilisateur (`user.role = groups.first().name`). Un utilisateur = un groupe. | `comptes/models.py` |
 | RG-U3 | Superutilisateur sans groupe → traité comme Administrateur dans `_role_utilisateur()`. | `comptes/permissions.py` |
 | RG-U4 | Déconnexion automatique après 30 min d'inactivité (`SESSION_COOKIE_AGE = 1800`). | `config/settings.py` |
-| RG-U5 | Un Responsable doit avoir `user.personnel` renseigné pour accéder aux vues filtrées par département. Sans personnel → 403 ou redirect. | `candidatures/views.py` |
+| RG-U5 | Un Responsable n'agit que sur les objets **de son département** (besoins, candidatures, stages). Sans personnel, sans département, ou objet d'un autre département → **403**, en GET comme en POST. Seules exceptions en lecture : stage au vivier (RG-E5, RG-E7). Les listes d'un Responsable sans département sont vides. | `offres/views.py`, `candidatures/views.py`, `stages/views.py` |
 | RG-U6 | Si rôle change DE Responsable → autre rôle : `user.personnel = None ; user.save()`. | `comptes/views.py` (CLAUDE.md §F03) |
 | RG-U7 | Auto-désactivation refusée (RG33 dans le code). | `comptes/views.py` |
 
@@ -39,6 +41,7 @@
 |---|---|---|
 | RG-R1 | Un référentiel utilisé ne peut pas être supprimé (`PROTECT`). Tentative → désactivation (`actif=False`) via `supprimer_ou_desactiver()`. | `commun/services.py` |
 | RG-R2 | Durée min ≤ durée max sur TypeStage (`CheckConstraint` + `clean()`). | `referentiels/models.py` |
+| RG-R3 | Les écrans Référentiels (départements, personnels, établissements, types de stage, canaux) sont **réservés à l'Administrateur** : Secrétaire et Responsable → 403, y compris en lecture. Les données restent proposées dans les listes déroulantes de leurs formulaires. | `referentiels/views.py` (`RolePermMixin`) |
 
 ---
 
@@ -126,8 +129,9 @@
 | RG-E2 | Vivier = True nécessite note ≥ 12 (`CheckConstraint` + `clean()` + service). | `stages/models.py` + services |
 | RG-E3 | Verrouillage 30 jours après `date_evaluation` : note et vivier ne peuvent plus être modifiés. | `stages/services.py` |
 | RG-E4 | Rapport de stage : non verrouillé, uploadable ou remplaçable à tout moment après le premier enregistrement de l'évaluation. | `stages/services.py` |
-| RG-E5 | Rapport téléchargeable par le Responsable du même département. Un autre département y accède seulement si `vivier=True`. Secrétaire → 403. | `stages/views.py` |
+| RG-E5 | Rapport téléchargeable par le Responsable du même département. Un autre département (ou un Responsable sans département) y accède **seulement si `vivier=True`** — comportement voulu, décidé à l'étape 9 et confirmé à l'étape 10 (le vivier est partagé entre départements). Administrateur : autorisé. Secrétaire → 403. | `stages/views.py` (`RapportTelechargerView`) |
 | RG-E6 | Vivier consultable par tous les Responsables et l'Administrateur (export CSV inclus). | `stages/views.py` |
+| RG-E7 | Fiche stage : un Responsable ne voit que les stages de son département (sans département → 403). Exception : un stage **au vivier** d'un autre département est consultable **en lecture seule** — aucun bouton d'action, pas de lien vers la candidature. Secrétaire et Administrateur : non cloisonnés. | `stages/views.py` (`StageDetailView`) |
 
 ---
 
@@ -138,6 +142,7 @@
 | RG-N1 | Toutes les notifications passent par `suivi.services.notifier(destinataires, message, lien)`. Bulk create. | `suivi/services.py` |
 | RG-N2 | Dropdown base.html : 5 dernières non lues (context processor). | `comptes/context_processors.py` |
 | RG-N3 | Marquage individuel (`NotificationLireView`) ou tout marquer (`NotificationToutLireView`). | `suivi/views.py` |
+| RG-N4 | **Exception assumée** à « actions en POST uniquement » : ouvrir `/notifications/<pk>/lire/` en GET marque la notification comme lue puis redirige vers son lien. Raison : le menu utilise de simples liens ; l'opération n'altère aucune donnée métier et se limite aux notifications de l'utilisateur connecté (autre utilisateur → 404). « Tout marquer comme lu » reste en POST. | `suivi/views.py` |
 
 ---
 

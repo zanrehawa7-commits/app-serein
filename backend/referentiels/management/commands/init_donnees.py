@@ -2,6 +2,7 @@ from django.contrib.auth.models import Group, Permission
 from django.contrib.contenttypes.models import ContentType
 from django.core.management.base import BaseCommand
 
+from comptes.permissions import APPS_LECTURE_SEULE_ADMINISTRATEUR
 from referentiels.models import TypeStage
 
 
@@ -12,10 +13,7 @@ GROUPES_PERMISSIONS = {
     "Administrateur": {
         "comptes": _CRUD,
         "referentiels": _CRUD,
-        "offres": _CRUD,
-        "candidatures": ["view"],                # lecture seule (pas de saisie)
-        "stages": _CRUD,
-        "suivi": _CRUD,
+        **{app: ["view"] for app in APPS_LECTURE_SEULE_ADMINISTRATEUR},
     },
     "Secrétaire": {
         "offres.besoin": ["view"],

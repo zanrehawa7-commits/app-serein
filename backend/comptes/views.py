@@ -16,7 +16,12 @@ from .forms import (
     UtilisateurModifierForm,
 )
 from .models import Utilisateur
-from .permissions import RolePermMixin, RoleRequisMixin, _role_utilisateur
+from .permissions import (
+    APPS_LECTURE_SEULE_ADMINISTRATEUR,
+    RolePermMixin,
+    RoleRequisMixin,
+    _role_utilisateur,
+)
 
 _FORM_TPL = "commun/formulaire.html"
 
@@ -386,15 +391,19 @@ class PermissionsRoleView(RoleRequisMixin, View):
                         content_type=ct, codename=codename
                     ).first()
                     if perm:
-                        est_verrouillee = (
-                            groupe.name == "Administrateur" and app_code == "comptes"
+                        est_admin = groupe.name == "Administrateur"
+                        est_verrouillee = est_admin and app_code == "comptes"
+                        est_interdite = (
+                            est_admin
+                            and app_code in APPS_LECTURE_SEULE_ADMINISTRATEUR
+                            and action_code != "view"
                         )
                         actions.append({
                             "exists": True,
                             "perm": perm,
                             "action_label": action_label,
-                            "checked": perm.pk in perms_groupe or est_verrouillee,
-                            "disabled": est_verrouillee,
+                            "checked": (perm.pk in perms_groupe or est_verrouillee) and not est_interdite,
+                            "disabled": est_verrouillee or est_interdite,
                         })
                     else:
                         actions.append({"exists": False, "action_label": action_label})
@@ -430,6 +439,11 @@ class PermissionsRoleView(RoleRequisMixin, View):
                 .values_list("pk", flat=True)
             )
             selected_ids |= comptes_perm_ids
+            selected_ids -= set(
+                Permission.objects.filter(content_type__app_label__in=APPS_LECTURE_SEULE_ADMINISTRATEUR)
+                .exclude(codename__startswith="view_")
+                .values_list("pk", flat=True)
+            )
 
         all_relevant_ids = set(
             Permission.objects.filter(content_type__app_label__in=apps_codes)

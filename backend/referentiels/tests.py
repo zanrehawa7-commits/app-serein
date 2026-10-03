@@ -418,6 +418,38 @@ class InitDonneesCommandeTests(TestCase):
                 ts = TypeStage.objects.get(libelle=libelle)
                 self.assertEqual((ts.duree_min_mois, ts.duree_max_mois), (duree_min, duree_max))
 
+    def test_permissions_exactes_du_groupe_administrateur(self):
+        """CRUD sur comptes et référentiels ; lecture seule sur offres, candidatures, stages, suivi."""
+        crud = ["add", "change", "delete", "view"]
+        attendues = {f"comptes.{a}_utilisateur" for a in crud}
+        attendues |= {
+            f"referentiels.{a}_{m}"
+            for m in ["canalpublication", "departement", "etablissement", "personnel", "typestage"]
+            for a in crud
+        }
+        attendues |= {
+            "offres.view_besoin", "offres.view_offre", "offres.view_parametreoffre", "offres.view_publication",
+            "candidatures.view_candidat", "candidatures.view_candidature",
+            "candidatures.view_piecejointe", "candidatures.view_transfertcandidature",
+            "stages.view_stage", "stages.view_affectationmaitrestage",
+            "suivi.view_historique", "suivi.view_notification",
+        }
+        self._lancer()
+        obtenues = {
+            f"{app}.{code}"
+            for app, code in Group.objects.get(name="Administrateur")
+            .permissions.values_list("content_type__app_label", "codename")
+        }
+        self.assertEqual(obtenues, attendues)
+
+    def test_relancer_init_donnees_retablit_la_lecture_seule(self):
+        """Un droit ajouté à la main (admin Django, SQL…) est retiré au prochain init_donnees."""
+        self._lancer()
+        groupe = Group.objects.get(name="Administrateur")
+        groupe.permissions.add(Permission.objects.get(codename="add_offre"))
+        self._lancer()
+        self.assertFalse(groupe.permissions.filter(codename="add_offre").exists())
+
     def test_idempotente_et_ne_modifie_pas_les_durees_existantes(self):
         TypeStage.objects.all().delete()
         self._lancer()

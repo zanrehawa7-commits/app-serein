@@ -6,6 +6,11 @@ from functools import wraps
 
 ROLES_VALIDES = ["Administrateur", "Secrétaire", "Responsable"]
 
+# L'Administrateur consulte les données métier sans jamais les modifier (CLAUDE.md §4).
+# Source unique pour init_donnees et l'écran F02 : sans elle, les droits complets
+# revenaient à chaque init_donnees ou via les cases à cocher.
+APPS_LECTURE_SEULE_ADMINISTRATEUR = ("offres", "candidatures", "stages", "suivi")
+
 
 def _role_utilisateur(user):
     """Renvoie le rôle effectif : groupe Django ou 'Administrateur' pour les superusers."""

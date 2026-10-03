@@ -116,7 +116,7 @@ class BesoinCreateView(RoleRequisMixin, View):
     roles = ["Responsable"]
 
     def dispatch(self, request, *args, **kwargs):
-        if not request.user.personnel:
+        if not request.user.personnel or not request.user.personnel.departement_id:
             raise PermissionDenied
         return super().dispatch(request, *args, **kwargs)
 
