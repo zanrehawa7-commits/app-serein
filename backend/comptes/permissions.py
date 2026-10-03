@@ -79,6 +79,21 @@ class RoleRequisMixin(AccessMixin):
         return super().dispatch(request, *args, **kwargs)
 
 
+class ConsultationMixin(AccessMixin):
+    """
+    Vues de LISTE, DÉTAIL et TÉLÉCHARGEMENT uniquement (RG-U10) : rôles de base `roles`
+    (comportement inchangé) ou rôle de consultation actif ayant `permission_consultation`
+    (None = tout rôle de consultation actif). Ne jamais l'utiliser sur une vue d'action.
+    """
+    roles = []
+    permission_consultation = None
+
+    def dispatch(self, request, *args, **kwargs):
+        if not a_acces(request.user, self.roles, self.permission_consultation):
+            raise PermissionDenied
+        return super().dispatch(request, *args, **kwargs)
+
+
 def role_requis(*roles):
     """Décorateur FBV : restreint l'accès aux rôles passés en argument."""
     def decorateur(vue):

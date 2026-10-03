@@ -2,14 +2,14 @@ from django.shortcuts import get_object_or_404, redirect
 from django.views import View
 from django.views.generic import ListView
 
-from comptes.permissions import RoleRequisMixin
+from comptes.permissions import ConsultationMixin
 
 from .models import Notification
 
 _ROLES_TOUS = ["Administrateur", "Secrétaire", "Responsable"]
 
 
-class NotificationListView(RoleRequisMixin, ListView):
+class NotificationListView(ConsultationMixin, ListView):
     roles = _ROLES_TOUS
     template_name = "suivi/notifications.html"
     context_object_name = "notifications"
@@ -26,7 +26,7 @@ class NotificationListView(RoleRequisMixin, ListView):
         return ctx
 
 
-class NotificationLireView(RoleRequisMixin, View):
+class NotificationLireView(ConsultationMixin, View):
     """Marque une notification comme lue et redirige vers son lien (GET ou POST)."""
     roles = _ROLES_TOUS
 
@@ -49,7 +49,7 @@ class NotificationLireView(RoleRequisMixin, View):
         return self._marquer_et_rediriger(request, pk)
 
 
-class NotificationToutLireView(RoleRequisMixin, View):
+class NotificationToutLireView(ConsultationMixin, View):
     """Marque toutes les notifications de l'utilisateur comme lues (POST uniquement)."""
     roles = _ROLES_TOUS
 

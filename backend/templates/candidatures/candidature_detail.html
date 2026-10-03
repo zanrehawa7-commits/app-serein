@@ -7,7 +7,7 @@
     <div>
         <h4 class="mb-0 fw-semibold"><i class="bi bi-folder2-open me-2"></i>{{ candidature.reference }}</h4>
         <p class="text-muted small mb-0">
-            Candidat : <a href="{% url 'candidatures:candidat_detail' candidature.candidat.pk %}" class="fw-semibold">{{ candidature.candidat }}</a>
+            Candidat : {% if peut_voir_candidat %}<a href="{% url 'candidatures:candidat_detail' candidature.candidat.pk %}" class="fw-semibold">{{ candidature.candidat }}</a>{% else %}<span class="fw-semibold">{{ candidature.candidat }}</span>{% endif %}
             &nbsp;·&nbsp;Déposée le {{ candidature.date_depot|date:"d/m/Y" }}
             {% if depose_par %}&nbsp;par <strong>{{ depose_par.get_full_name|default:depose_par.email }}</strong>{% endif %}
         </p>
@@ -85,7 +85,7 @@
                     <dd class="col-sm-7">{{ candidature.get_type_demande_display }}</dd>
                     {% if candidature.offre %}
                     <dt class="col-sm-5 text-muted small">Offre liée</dt>
-                    <dd class="col-sm-7"><a href="{% url 'offres:offre_detail' candidature.offre.pk %}">{{ candidature.offre.reference }}</a></dd>
+                    <dd class="col-sm-7">{% if peut_voir_offre %}<a href="{% url 'offres:offre_detail' candidature.offre.pk %}">{{ candidature.offre.reference }}</a>{% else %}{{ candidature.offre.reference }}{% endif %}</dd>
                     {% endif %}
                     <dt class="col-sm-5 text-muted small">Disponibilité</dt>
                     <dd class="col-sm-7">{{ candidature.debut_disponibilite|date:"d/m/Y" }} → {{ candidature.fin_disponibilite|date:"d/m/Y" }}</dd>
@@ -100,6 +100,7 @@
         </div>
     </div>
 
+{% if peut_telecharger_pieces %}
     <!-- Pièces jointes -->
     <div class="col-md-6">
         <div class="card border-0 shadow-sm h-100">
@@ -133,6 +134,7 @@
             </ul>
         </div>
     </div>
+{% endif %}
 </div>
 
 <!-- Panel Décision — Responsable uniquement -->

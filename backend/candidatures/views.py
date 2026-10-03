@@ -10,7 +10,7 @@ from django.views.generic import ListView
 from suivi.models import Historique
 
 from commun.mixins import ListeMixin
-from comptes.permissions import RoleRequisMixin
+from comptes.permissions import ConsultationMixin, RoleRequisMixin, a_acces
 from .forms import (
     AccorderForm,
     CandidatForm,
@@ -120,8 +120,9 @@ class CandidatCreateView(RoleRequisMixin, View):
         })
 
 
-class CandidatDetailView(RoleRequisMixin, View):
+class CandidatDetailView(ConsultationMixin, View):
     roles = _ROLES_LECTURE
+    permission_consultation = "candidatures.view_candidat"
     template_name = "candidatures/candidat_detail.html"
 
     def get(self, request, pk):
@@ -241,8 +242,9 @@ class CandidatureCreateView(RoleRequisMixin, View):
         })
 
 
-class CandidatureListView(RoleRequisMixin, ListeMixin, ListView):
+class CandidatureListView(ConsultationMixin, ListeMixin, ListView):
     roles = _ROLES_LECTURE
+    permission_consultation = "candidatures.view_candidature"
     model = Candidature
     template_name = "candidatures/candidature_list.html"
     context_object_name = "candidatures"
@@ -305,8 +307,9 @@ class CandidatureListView(RoleRequisMixin, ListeMixin, ListView):
         return ctx
 
 
-class CandidatureDetailView(RoleRequisMixin, View):
+class CandidatureDetailView(ConsultationMixin, View):
     roles = _ROLES_LECTURE
+    permission_consultation = "candidatures.view_candidature"
     template_name = "candidatures/candidature_detail.html"
 
     def get(self, request, pk):
@@ -319,7 +322,9 @@ class CandidatureDetailView(RoleRequisMixin, View):
             if not request.user.personnel or candidature.departement != request.user.personnel.departement:
                 raise PermissionDenied
 
-        pieces = candidature.pieces.order_by("type_piece")
+        # RG-U10 : pièces jointes (données personnelles) jamais chargées sans le droit.
+        peut_telecharger_pieces = a_acces(request.user, _ROLES_LECTURE, "candidatures.telecharger_pieces_jointes")
+        pieces = candidature.pieces.order_by("type_piece") if peut_telecharger_pieces else None
         historiques = _get_historique(candidature).order_by("-date_action")
         transferts = candidature.transferts.select_related(
             "departement_source", "departement_cible", "realise_par"
@@ -335,6 +340,9 @@ class CandidatureDetailView(RoleRequisMixin, View):
             "transferts": transferts,
             "est_responsable": est_resp,
             "depose_par": depose_par,
+            "peut_telecharger_pieces": peut_telecharger_pieces,
+            "peut_voir_candidat": a_acces(request.user, _ROLES_LECTURE, "candidatures.view_candidat"),
+            "peut_voir_offre": a_acces(request.user, ["Administrateur", "Secrétaire", "Responsable"], "offres.view_offre"),
         }
         if est_resp:
             ctx["form_preselection"] = PreselectionnerForm(prefix="presel")
@@ -448,8 +456,9 @@ _CONTENT_TYPES = {
 }
 
 
-class PieceJointeTelechargerView(RoleRequisMixin, View):
+class PieceJointeTelechargerView(ConsultationMixin, View):
     roles = _ROLES_LECTURE
+    permission_consultation = "candidatures.telecharger_pieces_jointes"
 
     def get(self, request, pk):
         piece = get_object_or_404(

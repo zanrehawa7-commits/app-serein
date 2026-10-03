@@ -507,6 +507,132 @@ class ResponsableSansDepartementTests(_DonneesPagesMixin, TestCase):
         self.assertEqual(Besoin.objects.count(), 3)
 
 
+def _utilisateur_consultation(email, nom_role, codes, actif=True):
+    """Rôle de consultation (profil non système) portant les droits « app.codename » donnés."""
+    from django.contrib.auth.models import Permission
+    groupe = Group.objects.create(name=nom_role)
+    ProfilRole.objects.create(groupe=groupe, actif=actif)
+    for code in codes:
+        app, codename = code.split(".")
+        groupe.permissions.add(Permission.objects.get(content_type__app_label=app, codename=codename))
+    u = Utilisateur.objects.create_user(email=email, password="pass", first_name="Test", last_name=nom_role)
+    u.groups.add(groupe)
+    return u
+
+
+class RoleConsultationAccesTests(_DonneesPagesMixin, TestCase):
+    """RG-U10 : lecture selon les droits cochés, tous départements, 403 sur toute action."""
+
+    ACTIONS_CANDIDATURES = [
+        ("candidatures:candidat_recherche", {}),
+        ("candidatures:candidat_creer", {}),
+        ("candidatures:candidat_modifier", {"pk": "candidat_recue"}),
+        ("candidatures:candidature_creer", {"candidat_pk": "candidat_libre"}),
+        ("candidatures:candidature_modifier", {"pk": "cand_recue"}),
+        ("candidatures:candidats_informer", {}),
+        ("candidatures:candidature_informer", {"pk": "cand_traitement"}),
+        ("candidatures:candidature_preselectionner", {"pk": "cand_recue"}),
+        ("candidatures:candidature_planifier_entretien", {"pk": "cand_traitement"}),
+        ("candidatures:candidature_accorder", {"pk": "cand_traitement"}),
+        ("candidatures:candidature_refuser", {"pk": "cand_recue"}),
+        ("candidatures:candidature_rediriger", {"pk": "cand_recue"}),
+    ]
+
+    def _client(self, utilisateur):
+        self.client.logout()
+        self.client.force_login(utilisateur)
+        return self.client
+
+    def _code(self, nom, params, methode="get"):
+        try:
+            return getattr(self.client, methode)(self._url(nom, params)).status_code
+        except Exception as exc:  # noqa: BLE001
+            return f"500 {type(exc).__name__}"
+
+    def test_view_candidature_lecture_tous_departements_et_403_ailleurs(self):
+        self._client(_utilisateur_consultation("aud@test.bf", "Lecteur", ["candidatures.view_candidature"]))
+        liste = self.client.get(reverse("candidatures:candidature_list"))
+        self.assertEqual(liste.status_code, 200)
+        self.assertIn(self.cand_b, list(liste.context["object_list"]))
+        self.assertIn(self.cand_recue, list(liste.context["object_list"]))
+        self.assertEqual(self._code("candidatures:candidature_detail", {"pk": "cand_b"}), 200)
+        ecarts = []
+        for nom, params in self.ACTIONS_CANDIDATURES:
+            for methode in ("get", "post"):
+                obtenu = self._code(nom, params, methode)
+                if obtenu != 403:
+                    ecarts.append(f"{nom} {methode} → {obtenu}")
+        for nom, params in [
+            ("candidatures:candidat_detail", {"pk": "candidat_recue"}),
+            ("candidatures:piece_telecharger", {"pk": "piece_a"}),
+            ("offres:offre_list", {}), ("offres:besoin_list", {}),
+            ("stages:stage_list", {}), ("stages:vivier", {}), ("stages:vivier_export_csv", {}),
+            ("stages:rapport_telecharger", {"pk": "stage_fini"}),
+        ]:
+            obtenu = self._code(nom, params)
+            if obtenu != 403:
+                ecarts.append(f"{nom} → {obtenu}")
+        self.assertFalse(ecarts, "\n".join(ecarts))
+
+    def test_pieces_jointes_seulement_avec_le_droit(self):
+        url_piece = reverse("candidatures:piece_telecharger", args=[self.piece_a.pk])
+        self._client(_utilisateur_consultation("sans@test.bf", "SansPieces", ["candidatures.view_candidature"]))
+        fiche = self.client.get(reverse("candidatures:candidature_detail", args=[self.cand_recue.pk]))
+        self.assertIsNone(fiche.context["pieces"])
+        self.assertNotContains(fiche, url_piece)
+        self.assertEqual(self.client.get(url_piece).status_code, 403)
+
+        self._client(_utilisateur_consultation(
+            "avec@test.bf", "AvecPieces", ["candidatures.view_candidature", "candidatures.telecharger_pieces_jointes"]
+        ))
+        fiche = self.client.get(reverse("candidatures:candidature_detail", args=[self.cand_recue.pk]))
+        self.assertContains(fiche, url_piece)
+        self.assertEqual(self.client.get(url_piece).status_code, 200)
+
+    def test_pieces_masquees_sur_la_fiche_stage_sans_le_droit(self):
+        self._client(_utilisateur_consultation("st@test.bf", "Stages", ["stages.view_stage"]))
+        fiche = self.client.get(reverse("stages:stage_detail", args=[self.stage_cours.pk]))
+        self.assertEqual(fiche.status_code, 200)
+        self.assertIsNone(fiche.context["pieces"])
+        self.assertNotContains(fiche, "/candidatures/pieces/")
+        self.assertNotContains(fiche, reverse("candidatures:candidature_detail", args=[self.stage_cours.candidature.pk]))
+
+    def test_vivier_export_et_rapport_selon_les_droits(self):
+        self._client(_utilisateur_consultation("v@test.bf", "Vivier", ["stages.consulter_vivier"]))
+        vivier = self.client.get(reverse("stages:vivier"))
+        self.assertEqual(vivier.status_code, 200)
+        self.assertNotContains(vivier, reverse("stages:vivier_export_csv"))
+        self.assertNotContains(vivier, reverse("stages:rapport_telecharger", args=[self.stage_fini.pk]))
+        self.assertEqual(self.client.get(reverse("stages:vivier_export_csv")).status_code, 403)
+
+        self._client(_utilisateur_consultation(
+            "v2@test.bf", "Vivier2", ["stages.consulter_vivier", "stages.exporter_vivier", "stages.telecharger_rapports"]
+        ))
+        self.assertEqual(self.client.get(reverse("stages:vivier_export_csv")).status_code, 200)
+        self.assertEqual(
+            self.client.get(reverse("stages:rapport_telecharger", args=[self.stage_fini.pk])).status_code, 200
+        )
+
+    def test_role_desactive_n_ouvre_aucun_acces(self):
+        self._client(_utilisateur_consultation(
+            "off@test.bf", "Ancien", ["candidatures.view_candidature", "stages.view_stage"], actif=False
+        ))
+        for nom in ["candidatures:candidature_list", "stages:stage_list", "suivi:notification_list"]:
+            with self.subTest(url=nom):
+                self.assertEqual(self.client.get(reverse(nom)).status_code, 403)
+
+    def test_filtre_departement_sur_la_liste_des_stages(self):
+        self._client(_utilisateur_consultation("f@test.bf", "Filtre", ["stages.view_stage"]))
+        reponse = self.client.get(reverse("stages:stage_list"), {"departement": self.dept_b.pk})
+        stages = list(reponse.context["object_list"])
+        self.assertTrue(stages)
+        self.assertTrue(all(s.candidature.departement == self.dept_b for s in stages))
+
+    def test_notifications_ouvertes_sans_droit(self):
+        self._client(_utilisateur_consultation("n@test.bf", "Aucun", []))
+        self.assertEqual(self.client.get(reverse("suivi:notification_list")).status_code, 200)
+
+
 class TelechargementsTests(_DonneesPagesMixin, TestCase):
 
     def test_piece_jointe_servie_en_pdf(self):

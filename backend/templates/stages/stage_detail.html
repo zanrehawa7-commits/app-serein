@@ -9,7 +9,7 @@
             <i class="bi bi-mortarboard me-2"></i>Stage — {{ stage.candidature.candidat }}
         </h4>
         <p class="text-muted small mb-0">
-            Candidature <a href="{% url 'candidatures:candidature_detail' stage.candidature.pk %}">{{ stage.candidature.reference }}</a>
+            Candidature {% if peut_voir_candidature %}<a href="{% url 'candidatures:candidature_detail' stage.candidature.pk %}">{{ stage.candidature.reference }}</a>{% else %}{{ stage.candidature.reference }}{% endif %}
             &nbsp;·&nbsp;{{ stage.candidature.departement.nom }}
         </p>
     </div>
@@ -93,7 +93,7 @@
         <div class="card border-0 shadow-sm h-100">
             <div class="card-header bg-white border-bottom py-2 d-flex justify-content-between align-items-center">
                 <h6 class="mb-0 fw-semibold"><i class="bi bi-folder2-open me-1"></i>Dossier du candidat</h6>
-                <a href="{% url 'candidatures:candidature_detail' cand.pk %}" class="small">Voir la candidature</a>
+                {% if peut_voir_candidature %}<a href="{% url 'candidatures:candidature_detail' cand.pk %}" class="small">Voir la candidature</a>{% endif %}
             </div>
             <div class="card-body">
                 <dl class="row mb-0">
@@ -131,6 +131,7 @@
                     <dd class="col-sm-7">{{ cand.duree_souhaitee }} mois</dd>
                 </dl>
 
+{% if peut_telecharger_pieces %}
                 <h6 class="small fw-semibold mt-3 mb-2">Pièces jointes</h6>
                 {% for piece in pieces %}
                 <div class="d-flex align-items-center justify-content-between border-top py-1">
@@ -148,6 +149,7 @@
                 {% empty %}
                 <p class="text-muted small mb-0">Aucune pièce jointe.</p>
                 {% endfor %}
+{% endif %}
             </div>
         </div>
         {% endwith %}
@@ -175,7 +177,7 @@
             {% if stage.rapport %}
             <dt class="col-sm-4 text-muted small">Rapport</dt>
             <dd class="col-sm-8">
-                {% if role != "Secrétaire" %}
+                {% if peut_telecharger_rapport %}
                 <a href="{% url 'stages:rapport_telecharger' stage.pk %}" class="btn btn-sm btn-outline-primary">
                     <i class="bi bi-file-earmark-pdf me-1"></i>Télécharger
                 </a>

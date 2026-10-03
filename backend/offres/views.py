@@ -7,7 +7,7 @@ from django.urls import reverse
 from django.views import View
 from django.views.generic import DetailView, ListView
 
-from comptes.permissions import RoleRequisMixin, _role_utilisateur
+from comptes.permissions import ConsultationMixin, RoleRequisMixin, _role_utilisateur, a_acces
 from suivi.models import Historique
 
 from .forms import BesoinForm, OffreForm, ParametreOffreForm, PublicationForm
@@ -41,8 +41,9 @@ def _verifier_dept_responsable(request, besoin):
 
 # ─── Besoins ──────────────────────────────────────────────────────────────────
 
-class BesoinListView(RoleRequisMixin, ListView):
+class BesoinListView(ConsultationMixin, ListView):
     roles = _ROLES_TOUS
+    permission_consultation = "offres.view_besoin"
     model = Besoin
     template_name = "offres/besoin_list.html"
     context_object_name = "besoins"
@@ -88,8 +89,9 @@ class BesoinListView(RoleRequisMixin, ListView):
         return ctx
 
 
-class BesoinDetailView(RoleRequisMixin, DetailView):
+class BesoinDetailView(ConsultationMixin, DetailView):
     roles = _ROLES_TOUS
+    permission_consultation = "offres.view_besoin"
     model = Besoin
     template_name = "offres/besoin_detail.html"
     context_object_name = "besoin"
@@ -219,8 +221,9 @@ class BesoinAnnulerView(RoleRequisMixin, View):
 
 # ─── Offres ───────────────────────────────────────────────────────────────────
 
-class OffreListView(RoleRequisMixin, ListView):
+class OffreListView(ConsultationMixin, ListView):
     roles = _ROLES_TOUS
+    permission_consultation = "offres.view_offre"
     model = Offre
     template_name = "offres/offre_list.html"
     context_object_name = "offres"
@@ -269,8 +272,9 @@ class OffreListView(RoleRequisMixin, ListView):
         return ctx
 
 
-class OffreDetailView(RoleRequisMixin, DetailView):
+class OffreDetailView(ConsultationMixin, DetailView):
     roles = _ROLES_TOUS
+    permission_consultation = "offres.view_offre"
     model = Offre
     template_name = "offres/offre_detail.html"
     context_object_name = "offre"
@@ -290,7 +294,9 @@ class OffreDetailView(RoleRequisMixin, DetailView):
         ctx = super().get_context_data(**kwargs)
         offre = self.object
         ctx["historiques"] = _get_historique(offre)
-        ctx["publications"] = offre.publications.select_related("canal").order_by("-date_publication")
+        ctx["peut_voir_publications"] = a_acces(self.request.user, _ROLES_TOUS, "offres.view_publication")
+        if ctx["peut_voir_publications"]:
+            ctx["publications"] = offre.publications.select_related("canal").order_by("-date_publication")
         ctx["role"] = _role_utilisateur(self.request.user)
         ctx["places_restantes"] = offre.places_restantes()
         if offre.statut == StatutOffre.OUVERTE and _role_utilisateur(self.request.user) == "Secrétaire":
