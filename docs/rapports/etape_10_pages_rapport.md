@@ -37,7 +37,7 @@ Créé une fois par classe (`setUpTestData`) :
 - département B : candidature avec pièce jointe, stage en cours, stage terminé hors vivier avec rapport ;
 - une notification par utilisateur.
 
-Les PDF sont écrits dans un dossier temporaire supprimé en fin de classe (voir constat n° 6).
+Les PDF sont écrits dans le dossier temporaire de `settings_test` (voir constat n° 6, corrigé).
 
 ### Les tests
 

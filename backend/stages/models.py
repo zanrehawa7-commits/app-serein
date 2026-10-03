@@ -1,12 +1,13 @@
 from django.conf import settings
 from django.core.exceptions import ValidationError
-from django.core.files.storage import FileSystemStorage
 from django.db import models
+
+from commun.stockage import StockagePrive
 
 
 
 def _get_stockage_rapport():
-    return FileSystemStorage(location=settings.FICHIERS_PRIVES_ROOT, base_url=None)
+    return StockagePrive()
 
 
 class StatutStage(models.TextChoices):

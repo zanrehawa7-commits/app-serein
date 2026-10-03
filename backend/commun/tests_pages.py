@@ -11,16 +11,12 @@ Toute nouvelle route doit être ajoutée à MATRICE (test_toutes_les_routes_sont
 """
 
 import datetime
-import shutil
-import tempfile
 from io import StringIO
-from unittest import mock
 
 from django.contrib.auth.models import Group
 from django.core.files.base import ContentFile
-from django.core.files.storage import FileSystemStorage
 from django.core.management import call_command
-from django.test import TestCase, override_settings
+from django.test import TestCase
 from django.urls import URLResolver, get_resolver, reverse
 from django.utils import timezone
 
@@ -166,32 +162,7 @@ def _routes_nommees():
 
 
 class _DonneesPagesMixin:
-    """Jeu de données réaliste partagé ; fichiers privés dans un dossier temporaire."""
-
-    @classmethod
-    def setUpClass(cls):
-        # Le stockage privé est instancié au chargement des modèles : override_settings
-        # seul ne suffit pas, on remplace aussi le stockage des deux champs. Le réglage
-        # reste nécessaire : PieceJointeTelechargerView lit FICHIERS_PRIVES_ROOT directement.
-        cls._dossier_fichiers = tempfile.mkdtemp()
-        stockage = FileSystemStorage(location=cls._dossier_fichiers, base_url=None)
-        cls._patchs = [
-            mock.patch.object(PieceJointe._meta.get_field("fichier"), "storage", stockage),
-            mock.patch.object(Stage._meta.get_field("rapport"), "storage", stockage),
-        ]
-        for p in cls._patchs:
-            p.start()
-        cls._reglages = override_settings(FICHIERS_PRIVES_ROOT=cls._dossier_fichiers)
-        cls._reglages.enable()
-        super().setUpClass()
-
-    @classmethod
-    def tearDownClass(cls):
-        super().tearDownClass()
-        cls._reglages.disable()
-        for p in cls._patchs:
-            p.stop()
-        shutil.rmtree(cls._dossier_fichiers, ignore_errors=True)
+    """Jeu de données réaliste partagé (fichiers dans le dossier temporaire de settings_test)."""
 
     @classmethod
     def setUpTestData(cls):

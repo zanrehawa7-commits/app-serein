@@ -1,8 +1,48 @@
+import tempfile
 from datetime import date
+from pathlib import Path
 
-from django.test import SimpleTestCase
+from django.conf import settings
+from django.core.files.base import ContentFile
+from django.test import SimpleTestCase, override_settings
 
+from candidatures.models import PieceJointe
+from commun.test_runner import _fichiers
 from commun.utils import ajouter_mois
+from stages.models import Stage
+
+
+class StockagePriveTests(SimpleTestCase):
+    """Les tests n'écrivent jamais dans le vrai dossier des fichiers privés."""
+
+    def test_settings_test_pointe_hors_du_vrai_dossier(self):
+        reel = Path(settings.FICHIERS_PRIVES_ROOT_REEL).resolve()
+        test = Path(settings.FICHIERS_PRIVES_ROOT).resolve()
+        self.assertNotEqual(test, reel)
+        self.assertNotIn(reel, test.parents)
+
+    def test_stockages_suivent_le_reglage_a_l_execution(self):
+        stockages = [
+            PieceJointe._meta.get_field("fichier").storage,
+            Stage._meta.get_field("rapport").storage,
+        ]
+        with tempfile.TemporaryDirectory() as autre:
+            with override_settings(FICHIERS_PRIVES_ROOT=autre):
+                for stockage in stockages:
+                    with self.subTest(stockage=stockage):
+                        self.assertEqual(Path(stockage.location), Path(autre).resolve())
+
+    def test_ecriture_dans_le_dossier_de_test_seulement(self):
+        reel = settings.FICHIERS_PRIVES_ROOT_REEL
+        avant = _fichiers(reel)
+        stockage = PieceJointe._meta.get_field("fichier").storage
+        nom = stockage.save("candidatures/test/sonde.pdf", ContentFile(b"%PDF-1.4"))
+        try:
+            chemin = Path(stockage.path(nom)).resolve()
+            self.assertIn(Path(settings.FICHIERS_PRIVES_ROOT).resolve(), chemin.parents)
+            self.assertEqual(_fichiers(reel), avant)
+        finally:
+            stockage.delete(nom)
 
 
 class AjouterMoisTests(SimpleTestCase):
