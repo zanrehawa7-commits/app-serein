@@ -796,6 +796,10 @@ class DossierCandidatRGE8Tests(_DeuxDepartementsMixin, TestCase):
             date_fin=self.stage_b_vivier.date_debut + datetime.timedelta(days=3),
             motif_interruption="Motif d'interruption privé",
         )
+        # Maître de stage : nom affiché, coordonnées jamais (RG-E8).
+        Personnel.objects.filter(pk=self.stage_b_vivier.maitre_stage_id).update(
+            email="maitre.b@serein.bf", telephone="70999999"
+        )
         self.url_piece = reverse("candidatures:piece_telecharger", args=[self.piece.pk])
         self.url_candidature = reverse("candidatures:candidature_detail", args=[cand.pk])
 
@@ -808,11 +812,11 @@ class DossierCandidatRGE8Tests(_DeuxDepartementsMixin, TestCase):
         reponse = self._detail()
         self.assertEqual(reponse.status_code, 200)
         for visible in ["70000003", "stagiaire@test.bf", "Licence 3", "Gestion financière", "Comptabilité",
-                        "15/20", reverse("stages:rapport_telecharger", args=[self.stage_b_vivier.pk])]:
+                        "15/20", "Jean Ilboudo", reverse("stages:rapport_telecharger", args=[self.stage_b_vivier.pk])]:
             with self.subTest(visible=visible):
                 self.assertContains(reponse, visible)
         for masque in [self.url_piece, "cv_stagiaire.pdf", self.url_candidature, "Secteur 15",
-                       "Ilboudo", "Commentaire interne confidentiel", "interruption privé",
+                       "maitre.b@serein.bf", "70999999", "Commentaire interne confidentiel", "interruption privé",
                        self.stage_b_vivier.candidature.reference]:
             with self.subTest(masque=masque):
                 self.assertNotContains(reponse, masque)

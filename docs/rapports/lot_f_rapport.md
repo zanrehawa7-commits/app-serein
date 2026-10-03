@@ -14,7 +14,7 @@
 | # | Question | Décision |
 |---|---|---|
 | 1 | Stage en cours dont le début (antérieur à la règle) sort de la disponibilité | Début vérifié seulement s'il est modifiable (stage à venir jamais démarré) ; fin toujours vérifiée |
-| 2 | Fiche d'un stage au vivier vue par le Responsable d'un autre département | Toute la fiche limitée aux colonnes du vivier (identité, téléphone, email, niveau, filière, établissement, type de stage, département, période, note, rapport) |
+| 2 | Fiche d'un stage au vivier vue par le Responsable d'un autre département | Toute la fiche limitée aux colonnes du vivier (identité, téléphone, email, niveau, filière, établissement, type de stage, département, période, maître de stage — nom uniquement, ajouté à la validation pour aligner sur la page Vivier et son export —, note, rapport) |
 | 3 | Nouvelle fin prévue déjà passée lors d'une reprise | Acceptée (régularisation) avec message : « Ce stage sera clôturé automatiquement à la prochaine exécution de la mise à jour quotidienne. » |
 
 ---
@@ -56,7 +56,7 @@
 | Responsable d'un autre département (stage au vivier) | Colonnes du vivier uniquement, sur un template dédié (`stage_detail_vivier.html`) |
 
 **Contrôle côté serveur** : pour le Responsable d'un autre département, la vue retourne avant de charger quoi
-que ce soit d'autre — pièces jointes, historique, maîtres de stage et périodes ne sont ni requêtés ni transmis
+que ce soit d'autre — pièces jointes, historique, historique des maîtres de stage et périodes ne sont ni requêtés ni transmis
 au template. Le téléchargement direct d'une pièce reste refusé (403).
 
 ---
@@ -78,5 +78,5 @@ interruption, fiche complète pour un autre département), les tests corresponda
 
 - Après ces migrations, relancer les tests **une fois sans `--keepdb`** : avec `--parallel`, les copies de la base
   de test sont réutilisées telles quelles et n'ont pas la nouvelle table.
-- La page Vivier et l'export CSV affichent aussi le **maître de stage** ; la fiche limitée (RG-E8) ne l'affiche
-  pas, conformément à la décision. La page Vivier n'affiche pas l'email (le CSV oui).
+- La fiche limitée (RG-E8) affiche exactement les colonnes du vivier, maître de stage compris (nom uniquement,
+  sans ses coordonnées). Seule différence restante : la page Vivier n'affiche pas l'email (le CSV oui).

@@ -50,6 +50,9 @@ Exactement les colonnes du vivier — ne rien ajouter ici sans mettre à jour RG
             <dt class="col-sm-4 text-muted small">Période du stage</dt>
             <dd class="col-sm-8">{{ stage.date_debut|date:"d/m/Y" }} – {{ stage.date_fin_reelle|default:stage.date_fin_prevue|date:"d/m/Y" }}</dd>
 
+            <dt class="col-sm-4 text-muted small">Maître de stage</dt>
+            <dd class="col-sm-8">{{ stage.maitre_stage }}</dd>
+
             <dt class="col-sm-4 text-muted small">Note</dt>
             <dd class="col-sm-8"><span class="badge bg-success">{{ stage.note }}/20</span></dd>
 
