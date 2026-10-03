@@ -29,7 +29,7 @@ from candidatures.models import (
     TypeDemande,
     TypePiece,
 )
-from comptes.models import Utilisateur
+from comptes.models import ProfilRole, Utilisateur
 from offres.models import Besoin, Offre, Publication, StatutBesoin, StatutOffre
 from referentiels.models import CanalPublication, Departement, Etablissement, Personnel, TypeStage
 from stages.models import AffectationMaitreStage, PeriodeInterruption, Stage, StatutStage
@@ -65,6 +65,9 @@ MATRICE = {
     "comptes:utilisateur_reinit_mdp": ((ADMIN,), 200, {"pk": "u_sec"}),
     "comptes:roles_list": ((ADMIN,), 200, {}),
     "comptes:permissions_role": ((ADMIN,), 200, {"role_nom": "=Secrétaire"}),
+    "comptes:role_consultation_creer": ((ADMIN,), 200, {}),
+    "comptes:role_consultation_modifier": ((ADMIN,), 200, {"pk": "role_audit"}),
+    "comptes:role_consultation_activer": ((ADMIN,), 302, {"pk": "role_audit"}),
     # ── referentiels ─────────────────────────────────────────────────────────
     "referentiels:departement_list": ((ADMIN,), 200, {}),
     "referentiels:departement_creer": ((ADMIN,), 200, {}),
@@ -221,6 +224,8 @@ class _DonneesPagesMixin:
             RESP: utilisateur("resp@test.bf", RESP, personnel=cls.resp_a),
         }
         cls.u_sec = cls.utilisateurs[SEC]
+        cls.role_audit = Group.objects.create(name="Auditeur")
+        ProfilRole.objects.create(groupe=cls.role_audit, description="Lecture")
         cls.notifs = {
             role: Notification.objects.create(destinataire=u, message="Test", lien="/")
             for role, u in cls.utilisateurs.items()

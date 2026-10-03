@@ -3,6 +3,7 @@ from django.contrib.auth import views as auth_views
 from django.contrib.auth.decorators import login_not_required
 from django.contrib.auth.models import Group, Permission
 from django.contrib.contenttypes.models import ContentType
+from django.db.models import Count, Q
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse_lazy
 from django.views import View
@@ -12,12 +13,20 @@ from commun.mixins import ListeMixin
 from .forms import (
     FormulaireConnexion,
     ReinitMotDePasseForm,
+    RoleConsultationForm,
     UtilisateurCreerForm,
     UtilisateurModifierForm,
 )
 from .models import Utilisateur
+from .services import (
+    RoleInterdit,
+    basculer_role_consultation,
+    creer_role_consultation,
+    modifier_role_consultation,
+)
 from .permissions import (
     APPS_LECTURE_SEULE_ADMINISTRATEUR,
+    ROLES_SYSTEME,
     RolePermMixin,
     RoleRequisMixin,
     _role_utilisateur,
@@ -304,6 +313,14 @@ class UtilisateurActiverView(RoleRequisMixin, View):
         if utilisateur == request.user:
             messages.error(request, "Vous ne pouvez pas désactiver votre propre compte.")
             return redirect("comptes:utilisateur_list")
+        groupe = utilisateur.groups.select_related("profil").first()
+        profil = getattr(groupe, "profil", None) if groupe else None
+        if not utilisateur.is_active and profil and not profil.actif:
+            messages.error(
+                request,
+                f"Le rôle « {groupe.name} » est désactivé : changez d'abord le rôle de cet utilisateur.",
+            )
+            return redirect("comptes:utilisateur_list")
         utilisateur.is_active = not utilisateur.is_active
         utilisateur.save(update_fields=["is_active"])
         action = "activé" if utilisateur.is_active else "désactivé"
@@ -358,9 +375,13 @@ class RolesListView(RoleRequisMixin, TemplateView):
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
-        ctx["groupes"] = Group.objects.filter(
-            name__in=["Administrateur", "Secrétaire", "Responsable"]
-        ).prefetch_related("permissions")
+        ctx["groupes"] = Group.objects.filter(name__in=ROLES_SYSTEME).prefetch_related("permissions")
+        ctx["roles_consultation"] = (
+            Group.objects.filter(profil__est_systeme=False)
+            .select_related("profil")
+            .annotate(nb_utilisateurs=Count("user", filter=Q(user__is_active=True)))
+            .order_by("name")
+        )
         return ctx
 
 
@@ -414,7 +435,7 @@ class PermissionsRoleView(RoleRequisMixin, View):
         return structure
 
     def get(self, request, role_nom):
-        groupe = get_object_or_404(Group, name=role_nom)
+        groupe = get_object_or_404(Group, name=role_nom, name__in=ROLES_SYSTEME)
         structure = self._build_structure(groupe)
         return render(request, self.template_name, {
             "groupe": groupe,
@@ -425,7 +446,7 @@ class PermissionsRoleView(RoleRequisMixin, View):
         })
 
     def post(self, request, role_nom):
-        groupe = get_object_or_404(Group, name=role_nom)
+        groupe = get_object_or_404(Group, name=role_nom, name__in=ROLES_SYSTEME)
         apps_codes = [code for code, _ in APPS_PERMISSIONS]
 
         selected_ids = set(
@@ -455,3 +476,95 @@ class PermissionsRoleView(RoleRequisMixin, View):
 
         messages.success(request, f"Permissions du rôle « {groupe.name} » mises à jour.")
         return redirect("comptes:permissions_role", role_nom=role_nom)
+
+
+# ─── Lot E — Rôles de consultation (lecture seule) ────────────────────────────
+
+def _groupe_consultation(pk):
+    """404 pour un rôle de base : il ne se modifie ni ne se désactive depuis ces écrans (RG-U8)."""
+    return get_object_or_404(Group.objects.select_related("profil"), pk=pk, profil__est_systeme=False)
+
+
+class RoleConsultationCreateView(RoleRequisMixin, View):
+    roles = ["Administrateur"]
+
+    def _afficher(self, request, form):
+        return render(request, _FORM_TPL, {
+            "form": form,
+            "titre": "Nouveau rôle de consultation",
+            "sous_titre": "Lecture seule : aucune action métier n'est possible avec ce rôle.",
+            "url_retour": reverse_lazy("comptes:roles_list"),
+        })
+
+    def get(self, request):
+        return self._afficher(request, RoleConsultationForm())
+
+    def post(self, request):
+        form = RoleConsultationForm(request.POST)
+        if not form.is_valid():
+            return self._afficher(request, form)
+        try:
+            groupe = creer_role_consultation(
+                form.cleaned_data["nom"], form.cleaned_data["description"], form.cleaned_data["droits"]
+            )
+        except RoleInterdit as e:
+            form.add_error(None, str(e))
+            return self._afficher(request, form)
+        messages.success(request, f"Rôle de consultation « {groupe.name} » créé.")
+        return redirect("comptes:roles_list")
+
+
+class RoleConsultationModifierView(RoleRequisMixin, View):
+    roles = ["Administrateur"]
+
+    def _afficher(self, request, form, groupe):
+        return render(request, _FORM_TPL, {
+            "form": form,
+            "titre": f"Modifier le rôle de consultation — {groupe.name}",
+            "sous_titre": "Lecture seule : aucune action métier n'est possible avec ce rôle.",
+            "url_retour": reverse_lazy("comptes:roles_list"),
+        })
+
+    def get(self, request, pk):
+        groupe = _groupe_consultation(pk)
+        droits = [
+            f"{app}.{code}"
+            for app, code in groupe.permissions.values_list("content_type__app_label", "codename")
+        ]
+        form = RoleConsultationForm(initial={
+            "nom": groupe.name, "description": groupe.profil.description, "droits": droits,
+        })
+        return self._afficher(request, form, groupe)
+
+    def post(self, request, pk):
+        groupe = _groupe_consultation(pk)
+        form = RoleConsultationForm(request.POST)
+        if not form.is_valid():
+            return self._afficher(request, form, groupe)
+        try:
+            modifier_role_consultation(
+                groupe, form.cleaned_data["nom"], form.cleaned_data["description"], form.cleaned_data["droits"]
+            )
+        except RoleInterdit as e:
+            form.add_error(None, str(e))
+            return self._afficher(request, form, groupe)
+        messages.success(request, "Rôle de consultation mis à jour.")
+        return redirect("comptes:roles_list")
+
+
+class RoleConsultationActiverView(RoleRequisMixin, View):
+    roles = ["Administrateur"]
+
+    def post(self, request, pk):
+        groupe = _groupe_consultation(pk)
+        try:
+            profil = basculer_role_consultation(groupe)
+        except RoleInterdit as e:
+            messages.error(request, str(e))
+            return redirect("comptes:roles_list")
+        etat = "activé" if profil.actif else "désactivé"
+        messages.success(request, f"Rôle « {groupe.name} » {etat}.")
+        return redirect("comptes:roles_list")
+
+    def get(self, request, pk):
+        return redirect("comptes:roles_list")

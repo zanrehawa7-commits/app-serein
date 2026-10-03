@@ -5,7 +5,7 @@
 {% block content %}
 <div class="mb-4">
     <h5 class="mb-0 fw-semibold"><i class="bi bi-shield-lock me-2 text-primary"></i>Rôles & permissions</h5>
-    <p class="text-muted small mb-0">Les 3 rôles sont fixes. Cliquez sur un rôle pour gérer ses permissions.</p>
+    <p class="text-muted small mb-0">Les 3 rôles de base sont fixes. Cliquez sur un rôle pour gérer ses permissions.</p>
 </div>
 
 <div class="row g-3">
@@ -30,5 +30,66 @@
         </div>
     </div>
     {% endfor %}
+</div>
+
+<div class="d-flex align-items-center gap-3 mt-5 mb-3">
+    <div>
+        <h6 class="mb-0 fw-semibold"><i class="bi bi-eye me-2 text-primary"></i>Rôles de consultation</h6>
+        <p class="text-muted small mb-0">Lecture seule : ces rôles ne peuvent effectuer aucune action métier.</p>
+    </div>
+    <a href="{% url 'comptes:role_consultation_creer' %}" class="btn btn-primary btn-sm ms-auto">
+        <i class="bi bi-plus-lg me-1"></i>Nouveau rôle de consultation
+    </a>
+</div>
+
+<div class="card border-0 shadow-sm">
+    <div class="card-body p-0">
+        {% if roles_consultation %}
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Rôle</th>
+                        <th>Description</th>
+                        <th class="text-center">Droits</th>
+                        <th class="text-center">Utilisateurs actifs</th>
+                        <th>Statut</th>
+                        <th class="text-end">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for role in roles_consultation %}
+                    <tr>
+                        <td class="fw-semibold">{{ role.name }}</td>
+                        <td class="small text-muted">{{ role.profil.description|default:"—" }}</td>
+                        <td class="text-center">{{ role.permissions.count }}</td>
+                        <td class="text-center">{{ role.nb_utilisateurs }}</td>
+                        <td>
+                            {% if role.profil.actif %}
+                            <span class="badge rounded-pill" style="background:#D5F5E3;color:#117A65;">Actif</span>
+                            {% else %}
+                            <span class="badge rounded-pill" style="background:#F0F0F0;color:#666;">Inactif</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-end text-nowrap">
+                            <a href="{% url 'comptes:role_consultation_modifier' role.pk %}" class="btn btn-sm btn-outline-primary py-0" title="Modifier">
+                                <i class="bi bi-pencil"></i>
+                            </a>
+                            <form method="post" action="{% url 'comptes:role_consultation_activer' role.pk %}" class="d-inline">
+                                {% csrf_token %}
+                                <button type="submit" class="btn btn-sm btn-outline-secondary py-0">
+                                    {% if role.profil.actif %}Désactiver{% else %}Activer{% endif %}
+                                </button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="text-center py-4 text-muted small">Aucun rôle de consultation.</div>
+        {% endif %}
+    </div>
 </div>
 {% endblock %}

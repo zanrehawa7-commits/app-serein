@@ -22,6 +22,34 @@ ROLE_CHOICES = [
 ]
 
 
+def choix_roles():
+    """Rôles attribuables : les 3 rôles de base puis les rôles de consultation actifs."""
+    consultation = Group.objects.filter(profil__est_systeme=False, profil__actif=True).order_by("name")
+    if not consultation.exists():
+        return ROLE_CHOICES
+    return ROLE_CHOICES + [
+        ("Rôles de consultation", [(g.name, g.name) for g in consultation]),
+    ]
+
+
+class RoleConsultationForm(forms.Form):
+    nom = forms.CharField(label="Nom du rôle", max_length=150)
+    description = forms.CharField(label="Description", widget=forms.Textarea(attrs={"rows": 2}), required=False)
+    droits = forms.MultipleChoiceField(
+        label="Droits de consultation",
+        required=False,
+        widget=forms.CheckboxSelectMultiple,
+        help_text="Lecture seule. Les pièces jointes des candidats (données personnelles) ne sont "
+                  "accessibles que si leur droit est coché.",
+    )
+
+    def __init__(self, *args, **kwargs):
+        from .permissions import DROITS_CONSULTATION
+        super().__init__(*args, **kwargs)
+        self.fields["droits"].choices = [(module, droits) for module, droits in DROITS_CONSULTATION]
+        self.helper = _helper()
+
+
 class FormulaireConnexion(AuthenticationForm):
     username = forms.EmailField(
         label="Adresse email",
@@ -85,6 +113,7 @@ class UtilisateurCreerForm(forms.ModelForm):
             actif=True, compte__isnull=True
         ).order_by("nom", "prenom")
         self.fields["personnel"].required = False
+        self.fields["role"].choices = choix_roles()
         self.fields["personnel"].label = "Personnel lié (obligatoire si rôle = Responsable)"
         self.fields["first_name"].required = True
         self.fields["last_name"].required = True
@@ -132,6 +161,7 @@ class UtilisateurModifierForm(forms.ModelForm):
             qs = Personnel.objects.filter(actif=True, compte__isnull=True)
         self.fields["personnel"].queryset = qs.order_by("nom", "prenom")
         self.fields["personnel"].required = False
+        self.fields["role"].choices = choix_roles()
         self.fields["personnel"].label = "Personnel lié (obligatoire si rôle = Responsable)"
         self.fields["first_name"].required = True
         self.fields["last_name"].required = True

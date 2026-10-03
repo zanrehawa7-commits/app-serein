@@ -383,3 +383,130 @@ class ProfilRoleTests(TestCase):
         self.assertFalse(a_acces(ancien, ["Administrateur"], "offres.view_offre"))
         self.assertTrue(a_acces(sec, ["Secrétaire"], "offres.view_besoin"))
         self.assertFalse(a_acces(sec, ["Administrateur"], "offres.view_offre"))
+
+
+# ─── Lot E2 : écran des rôles de consultation ─────────────────────────────────
+
+
+class RolesConsultationEcranTests(TestCase):
+
+    def setUp(self):
+        from io import StringIO
+        from django.core.management import call_command
+        call_command("init_donnees", stdout=StringIO())
+        self.admin = _creer_utilisateur("admin@serein.bf", "pass", groupe="Administrateur")
+        self.client.force_login(self.admin)
+
+    def _creer(self, **donnees):
+        valeurs = {"nom": "Auditeur", "description": "Audit interne", "droits": ["offres.view_offre"]}
+        valeurs.update(donnees)
+        return self.client.post(reverse("comptes:role_consultation_creer"), valeurs)
+
+    def test_creation_role_lecture_seule(self):
+        reponse = self._creer(droits=["offres.view_offre", "candidatures.telecharger_pieces_jointes"])
+        self.assertRedirects(reponse, reverse("comptes:roles_list"))
+        groupe = Group.objects.get(name="Auditeur")
+        self.assertEqual((groupe.profil.est_systeme, groupe.profil.actif), (False, True))
+        self.assertEqual(
+            sorted(groupe.permissions.values_list("codename", flat=True)),
+            ["telecharger_pieces_jointes", "view_offre"],
+        )
+
+    def test_droits_ecriture_refuses_cote_serveur(self):
+        for code in ["offres.add_offre", "candidatures.change_candidature", "stages.delete_stage"]:
+            with self.subTest(code=code):
+                reponse = self._creer(nom=f"Pirate {code}", droits=["offres.view_offre", code])
+                self.assertEqual(reponse.status_code, 200)
+                self.assertFalse(Group.objects.filter(name=f"Pirate {code}").exists())
+
+    def test_service_refuse_un_droit_hors_liste_blanche(self):
+        from comptes.services import RoleInterdit, creer_role_consultation
+        with self.assertRaisesMessage(RoleInterdit, "offres.add_offre"):
+            creer_role_consultation("Pirate", "", ["offres.view_offre", "offres.add_offre"])
+        self.assertFalse(Group.objects.filter(name="Pirate").exists())
+
+    def test_modification_ne_peut_pas_ajouter_d_ecriture(self):
+        self._creer()
+        groupe = Group.objects.get(name="Auditeur")
+        self.client.post(
+            reverse("comptes:role_consultation_modifier", args=[groupe.pk]),
+            {"nom": "Auditeur", "description": "", "droits": ["offres.view_offre", "offres.change_offre"]},
+        )
+        self.assertEqual(list(groupe.permissions.values_list("codename", flat=True)), ["view_offre"])
+
+    def test_nom_d_un_role_de_base_ou_existant_refuse(self):
+        self._creer()
+        for nom in ["secrétaire", "ADMINISTRATEUR", "auditeur"]:
+            with self.subTest(nom=nom):
+                reponse = self._creer(nom=nom)
+                self.assertEqual(reponse.status_code, 200)
+        self.assertEqual(Group.objects.filter(profil__est_systeme=False).count(), 1)
+
+    def test_roles_de_base_ni_modifiables_ni_desactivables(self):
+        for nom in ["Administrateur", "Secrétaire", "Responsable"]:
+            groupe = Group.objects.get(name=nom)
+            with self.subTest(role=nom):
+                self.assertEqual(
+                    self.client.get(reverse("comptes:role_consultation_modifier", args=[groupe.pk])).status_code, 404
+                )
+                self.assertEqual(
+                    self.client.post(
+                        reverse("comptes:role_consultation_modifier", args=[groupe.pk]),
+                        {"nom": "Renommé", "droits": []},
+                    ).status_code,
+                    404,
+                )
+                self.assertEqual(
+                    self.client.post(reverse("comptes:role_consultation_activer", args=[groupe.pk])).status_code, 404
+                )
+                groupe.refresh_from_db()
+                self.assertEqual((groupe.name, groupe.profil.actif), (nom, True))
+
+    def test_ecran_permissions_de_base_refuse_un_role_de_consultation(self):
+        self._creer()
+        url = reverse("comptes:permissions_role", args=["Auditeur"])
+        self.assertEqual(self.client.get(url).status_code, 404)
+        self.assertEqual(self.client.post(url, {"permissions": []}).status_code, 404)
+
+    def test_desactivation_refusee_tant_qu_un_utilisateur_actif(self):
+        self._creer()
+        groupe = Group.objects.get(name="Auditeur")
+        auditeur = _creer_utilisateur("aud@serein.bf", "pass", groupe="Auditeur")
+        url = reverse("comptes:role_consultation_activer", args=[groupe.pk])
+        self.client.post(url)
+        groupe.profil.refresh_from_db()
+        self.assertTrue(groupe.profil.actif)
+        auditeur.is_active = False
+        auditeur.save(update_fields=["is_active"])
+        self.client.post(url)
+        groupe.profil.refresh_from_db()
+        self.assertFalse(groupe.profil.actif)
+
+    def test_reactivation_utilisateur_refusee_si_role_desactive(self):
+        self._creer()
+        groupe = Group.objects.get(name="Auditeur")
+        auditeur = _creer_utilisateur("aud@serein.bf", "pass", groupe="Auditeur", is_active=False)
+        self.client.post(reverse("comptes:role_consultation_activer", args=[groupe.pk]))
+        self.client.post(reverse("comptes:utilisateur_activer", args=[auditeur.pk]))
+        auditeur.refresh_from_db()
+        self.assertFalse(auditeur.is_active)
+
+    def test_formulaire_utilisateur_propose_les_roles_de_consultation_actifs(self):
+        from comptes.forms import UtilisateurCreerForm
+        self._creer()
+        self._creer(nom="Ancien")
+        self.client.post(reverse("comptes:role_consultation_activer", args=[Group.objects.get(name="Ancien").pk]))
+        valeurs = []
+        for valeur, libelle in UtilisateurCreerForm().fields["role"].choices:
+            valeurs += [v for v, _ in libelle] if isinstance(libelle, (list, tuple)) else [valeur]
+        self.assertIn("Auditeur", valeurs)
+        self.assertNotIn("Ancien", valeurs)
+        self.assertTrue({"Administrateur", "Secrétaire", "Responsable"} <= set(valeurs))
+
+    def test_creation_utilisateur_avec_role_de_consultation(self):
+        self._creer()
+        self.client.post(reverse("comptes:utilisateur_creer"), {
+            "first_name": "Awa", "last_name": "Audit", "email": "awa@serein.bf", "telephone": "",
+            "role": "Auditeur", "password1": "MotDePasse!2026", "password2": "MotDePasse!2026",
+        })
+        self.assertEqual(Utilisateur.objects.get(email="awa@serein.bf").role, "Auditeur")
