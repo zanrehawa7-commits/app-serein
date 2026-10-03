@@ -37,13 +37,15 @@ GROUPES_PERMISSIONS = {
     },
 }
 
-TYPES_STAGE = [
-    "Stage de perfectionnement",
-    "Stage professionnel",
-    "Stage de géomètre expert",
-    "Stage d'immersion",
-    "Stage de fin d'études",
-]
+# Libellé → (durée min, durée max) en mois. Mêmes valeurs que la migration
+# referentiels/0004 : sur une base neuve, aucune ligne n'existe à compléter.
+TYPES_STAGE = {
+    "Stage de perfectionnement": (1, 3),
+    "Stage professionnel": (1, 6),
+    "Stage de géomètre expert": (3, 12),
+    "Stage d'immersion": (1, 2),
+    "Stage de fin d'études": (3, 6),
+}
 
 
 class Command(BaseCommand):
@@ -88,7 +90,11 @@ class Command(BaseCommand):
             self.stdout.write(f"    {len(perms_a_ajouter)} permission(s) attribuée(s).")
 
     def _creer_types_stage(self):
-        for libelle in TYPES_STAGE:
-            _, cree = TypeStage.objects.get_or_create(libelle=libelle)
+        for libelle, (duree_min, duree_max) in TYPES_STAGE.items():
+            # Les durées existantes ne sont jamais écrasées : l'admin a pu les modifier.
+            _, cree = TypeStage.objects.get_or_create(
+                libelle=libelle,
+                defaults={"duree_min_mois": duree_min, "duree_max_mois": duree_max},
+            )
             action = "créé" if cree else "déjà existant"
             self.stdout.write(f"  Type de stage '{libelle}' {action}.")
