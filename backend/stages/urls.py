@@ -11,6 +11,7 @@ urlpatterns = [
     path("stages/<int:pk>/", views.StageDetailView.as_view(), name="stage_detail"),
     path("stages/constituer/<int:candidature_pk>/", views.ConstituerStageView.as_view(), name="stage_constituer"),
     path("stages/<int:pk>/modifier/", views.ModifierStageView.as_view(), name="stage_modifier"),
+    path("stages/<int:pk>/demarrer/", views.DemarrerStageView.as_view(), name="stage_demarrer"),
     path("stages/<int:pk>/terminer/", views.TerminerStageView.as_view(), name="stage_terminer"),
     path("stages/<int:pk>/interrompre/", views.InterrompreStageView.as_view(), name="stage_interrompre"),
     path("stages/<int:pk>/reprendre/", views.ReprendreStageView.as_view(), name="stage_reprendre"),

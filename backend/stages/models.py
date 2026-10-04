@@ -50,6 +50,9 @@ class Stage(models.Model):
         verbose_name="rapport de stage",
     )
     date_evaluation = models.DateField(null=True, blank=True, verbose_name="date d'évaluation")
+    # RG-S15 : alertes envoyées une fois par échéance ; remises à False quand la date concernée change.
+    alerte_demarrage_envoyee = models.BooleanField(default=False, verbose_name="alerte « à démarrer » envoyée")
+    alerte_fin_envoyee = models.BooleanField(default=False, verbose_name="alerte « à terminer » envoyée")
     rappel_evaluation_envoye = models.BooleanField(
         default=False,
         verbose_name="rappel évaluation envoyé",

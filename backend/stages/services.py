@@ -67,8 +67,8 @@ def constituer_stage(candidature, date_debut, date_fin_prevue, maitre_stage, uti
         raise TransitionInterdite("Le maître de stage doit être actif.")
     _verifier_disponibilite(cand, date_debut, date_fin_prevue)
 
-    today = timezone.localdate()
-    statut = StatutStage.EN_COURS if date_debut <= today else StatutStage.A_VENIR
+    # RG-S2 : toujours « À venir », même si le début est passé ; seul le Responsable démarre (RG-S14).
+    statut = StatutStage.A_VENIR
 
     from .models import AffectationMaitreStage
     stage = Stage.objects.create(
@@ -135,10 +135,12 @@ def modifier_stage(stage, date_fin_prevue, maitre_stage, utilisateur, date_debut
         if date_debut != s.date_debut:
             changements.append(f"début : {s.date_debut} → {date_debut}")
             s.date_debut = date_debut
+            s.alerte_demarrage_envoyee = False  # RG-S15 : nouvelle échéance
 
     if date_fin_prevue != s.date_fin_prevue:
         changements.append(f"fin prévue : {s.date_fin_prevue} → {date_fin_prevue}")
         s.date_fin_prevue = date_fin_prevue
+        s.alerte_fin_envoyee = False
 
     maitre_change = maitre_stage.pk != s.maitre_stage_id
     if maitre_change:
@@ -160,6 +162,37 @@ def modifier_stage(stage, date_fin_prevue, maitre_stage, utilisateur, date_debut
             affecte_par=utilisateur,
         )
 
+    return s
+
+
+@transaction.atomic
+def demarrer_stage(stage, utilisateur, aujourd_hui=None):
+    """
+    RG-S14 : A_VENIR → EN_COURS, par le Responsable, à partir de la date de démarrage effective.
+    Une fin prévue déjà dépassée n'empêche pas le démarrage (régularisation ; l'alerte « à terminer » suivra).
+    """
+    from suivi.services import enregistrer_historique, notifier
+    from .models import Stage as S, StatutStage
+
+    if aujourd_hui is None:
+        aujourd_hui = timezone.localdate()
+
+    s = S.objects.select_for_update().select_related("candidature__candidat").get(pk=stage.pk)
+    if s.statut != StatutStage.A_VENIR:
+        raise TransitionInterdite(
+            f"Seul un stage à venir peut être démarré (statut actuel « {s.get_statut_display()} »)."
+        )
+    demarrage = s.date_demarrage_effective()
+    if demarrage > aujourd_hui:
+        raise TransitionInterdite(f"Le stage ne peut être démarré qu'à partir du {demarrage:%d/%m/%Y}.")
+
+    s.statut = StatutStage.EN_COURS
+    s.save(update_fields=["statut"])
+    enregistrer_historique(s, utilisateur, StatutStage.A_VENIR, StatutStage.EN_COURS, "Stage démarré.")
+
+    secs = _secretaires_actives()
+    if secs:
+        notifier(secs, f"Stage de {s.candidature.candidat} démarré.", f"/stages/{s.pk}/")
     return s
 
 
@@ -274,7 +307,13 @@ def reprendre_stage(stage, date_reprise, date_fin_prevue, motif, utilisateur, au
     s.date_fin_prevue = date_fin_prevue
     s.date_fin_reelle = None
     s.motif_interruption = ""
-    s.save(update_fields=["statut", "date_fin_prevue", "date_fin_reelle", "motif_interruption"])
+    # RG-S15 : nouvelle date de démarrage et nouvelle fin prévue → les alertes repartent.
+    s.alerte_demarrage_envoyee = False
+    s.alerte_fin_envoyee = False
+    s.save(update_fields=[
+        "statut", "date_fin_prevue", "date_fin_reelle", "motif_interruption",
+        "alerte_demarrage_envoyee", "alerte_fin_envoyee",
+    ])
 
     enregistrer_historique(
         s, utilisateur, StatutStage.INTERROMPU, nouveau,
@@ -351,54 +390,30 @@ def evaluer_stage(stage, note, vivier, utilisateur, rapport_file=None, aujourd_h
     return s
 
 
-# ─── Fonctions pour la commande automatique ───────────────────────────────────
+# ─── RG-S15 : échéances (alertes et tableaux de bord — aucun changement de statut) ─
+
+DELAI_ALERTE_JOURS = 3
 
 
-@transaction.atomic
-def demarrer_stage_auto(stage, aujourd_hui):
-    """A_VENIR → EN_COURS si date_debut <= aujourd_hui. Retourne True si transition faite."""
-    from suivi.services import enregistrer_historique
-    from .models import Stage as S, StatutStage
-
-    s = S.objects.select_for_update().get(pk=stage.pk)
-    # Stage repris avec une date future : il démarre à la reprise, pas à son début d'origine.
-    if s.statut != StatutStage.A_VENIR or s.date_demarrage_effective() > aujourd_hui:
-        return False
-
-    s.statut = StatutStage.EN_COURS
-    s.save(update_fields=["statut"])
-    enregistrer_historique(
-        s, None, StatutStage.A_VENIR, StatutStage.EN_COURS,
-        "Démarrage automatique (Système).",
-    )
-    return True
+def stages_a_demarrer(aujourd_hui, departement=None):
+    """Stages « À venir » dont la date de démarrage effective est demain ou déjà passée."""
+    from .models import Stage, StatutStage
+    qs = Stage.objects.filter(statut=StatutStage.A_VENIR).select_related(
+        "candidature__candidat", "candidature__departement"
+    ).order_by("date_debut")
+    if departement is not None:
+        qs = qs.filter(candidature__departement=departement)
+    limite = aujourd_hui + datetime.timedelta(days=1)
+    return [s for s in qs if s.date_demarrage_effective() <= limite]
 
 
-@transaction.atomic
-def cloturer_stage_auto(stage, aujourd_hui):
-    """EN_COURS → TERMINE si date_fin_prevue < aujourd_hui. Retourne True si transition faite."""
-    from suivi.services import enregistrer_historique, notifier
-    from .models import Stage as S, StatutStage
-
-    s = S.objects.select_for_update().get(pk=stage.pk)
-    if s.statut != StatutStage.EN_COURS or s.date_fin_prevue >= aujourd_hui:
-        return False
-
-    s.statut = StatutStage.TERMINE
-    s.date_fin_reelle = s.date_fin_prevue
-    s.save(update_fields=["statut", "date_fin_reelle"])
-    enregistrer_historique(
-        s, None, StatutStage.EN_COURS, StatutStage.TERMINE,
-        "Clôture automatique (Système).",
-    )
-
-    resp = _responsable_departement(s.candidature.departement)
-    if resp:
-        lien = f"/stages/{s.pk}/"
-        notifier(
-            [resp],
-            f"Stage terminé : {s.candidature.candidat} — à évaluer.",
-            lien,
-        )
-
-    return True
+def stages_a_terminer(aujourd_hui, departement=None):
+    """Stages « En cours » dont la fin prévue est dans 72 h ou moins, y compris dépassée."""
+    from .models import Stage, StatutStage
+    qs = Stage.objects.filter(
+        statut=StatutStage.EN_COURS,
+        date_fin_prevue__lte=aujourd_hui + datetime.timedelta(days=DELAI_ALERTE_JOURS),
+    ).select_related("candidature__candidat", "candidature__departement").order_by("date_fin_prevue")
+    if departement is not None:
+        qs = qs.filter(candidature__departement=departement)
+    return list(qs)

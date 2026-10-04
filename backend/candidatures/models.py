@@ -172,6 +172,11 @@ class Candidature(models.Model):
     commentaire = models.TextField(blank=True, verbose_name="commentaire")
     candidat_informe = models.BooleanField(default=False, verbose_name="candidat informé")
     date_information = models.DateTimeField(null=True, blank=True, verbose_name="date d'information")
+    # RG-S15 : disponibilité expirant dans 72 h — candidature en cours (Responsable) / accordée sans stage (Secrétaires).
+    alerte_disponibilite_envoyee = models.BooleanField(default=False, verbose_name="alerte disponibilité envoyée")
+    alerte_disponibilite_stage_envoyee = models.BooleanField(
+        default=False, verbose_name="alerte disponibilité sans stage envoyée"
+    )
     alerte_entretien_envoyee = models.BooleanField(
         default=False, verbose_name="alerte entretien envoyée"
     )

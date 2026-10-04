@@ -1,4 +1,5 @@
 import datetime
+import itertools
 from django.contrib.auth.models import Group
 from django.core.files.base import ContentFile
 from django.test import TestCase
@@ -18,8 +19,6 @@ from .services import (
     modifier_stage,
     terminer_stage,
     interrompre_stage,
-    demarrer_stage_auto,
-    cloturer_stage_auto,
     debut_modifiable,
     evaluer_stage,
     peut_evaluer,
@@ -66,8 +65,11 @@ def _type_stage():
     return ts
 
 
+_TELEPHONES = itertools.count(70111111)
+
+
 def _candidat():
-    return Candidat.objects.create(nom="Ouedraogo", prenom="Fatou", telephone="70111111")
+    return Candidat.objects.create(nom="Ouedraogo", prenom="Fatou", telephone=str(next(_TELEPHONES)))
 
 
 def _candidature_accordee(dept, maitre=None):
@@ -115,11 +117,14 @@ class ConstituerStageTests(TestCase):
         self.assertEqual(stage.statut, StatutStage.A_VENIR)
         self.assertEqual(stage.candidature, self.cand)
 
-    def test_creation_en_cours_si_debut_passe(self):
-        debut = timezone.localdate() - datetime.timedelta(days=5)
-        fin = debut + datetime.timedelta(days=60)
-        stage = constituer_stage(self.cand, debut, fin, self.maitre, self.sec)
-        self.assertEqual(stage.statut, StatutStage.EN_COURS)
+    def test_creation_toujours_a_venir_meme_si_debut_passe(self):
+        """RG-S2 : seul le Responsable démarre un stage (RG-S14), même si son début est passé."""
+        for decalage in (-5, 0):
+            with self.subTest(decalage=decalage):
+                cand = _candidature_accordee(self.dept) if decalage else self.cand
+                debut = timezone.localdate() + datetime.timedelta(days=decalage)
+                stage = constituer_stage(cand, debut, debut + datetime.timedelta(days=60), self.maitre, self.sec)
+                self.assertEqual(stage.statut, StatutStage.A_VENIR)
 
     def test_refuse_si_statut_pas_accordee(self):
         self.cand.statut = StatutCandidature.RECUE
@@ -262,95 +267,30 @@ class InterrompreStageTests(TestCase):
 # ─── Commande automatique ─────────────────────────────────────────────────────
 
 
-class DemarrerStageAutoTests(TestCase):
+class AucuneTransitionAutomatiqueTests(TestCase):
+    """Décision du directeur de mémoire : le système alerte, il ne change jamais un statut."""
+
     def setUp(self):
         self.dept = _dept()
         self.maitre = _membre(self.dept)
-        self.sec = _secretaire()
 
-    def _stage(self, debut, fin, statut=None):
-        cand = _candidature_accordee(self.dept)
-        stage = constituer_stage(cand, debut, fin, self.maitre, self.sec)
-        if statut and stage.statut != statut:
-            stage.statut = statut
-            stage.save(update_fields=["statut"])
-        return stage
-
-    def test_demarre_si_date_atteinte(self):
-        debut = datetime.date(2025, 1, 1)
-        fin = datetime.date(2025, 6, 30)
-        stage = self._stage(debut, fin, StatutStage.A_VENIR)
-        result = demarrer_stage_auto(stage, datetime.date(2025, 1, 1))
-        self.assertTrue(result)
-        stage.refresh_from_db()
-        self.assertEqual(stage.statut, StatutStage.EN_COURS)
-
-    def test_ne_demarre_pas_si_futur(self):
-        debut = timezone.localdate() + datetime.timedelta(days=365)
-        fin = debut + datetime.timedelta(days=180)
-        stage = self._stage(debut, fin, StatutStage.A_VENIR)
-        result = demarrer_stage_auto(stage, timezone.localdate())
-        self.assertFalse(result)
-        stage.refresh_from_db()
-        self.assertEqual(stage.statut, StatutStage.A_VENIR)
-
-
-class CloturerStageAutoTests(TestCase):
-    def setUp(self):
-        self.dept = _dept()
-        self.maitre = _membre(self.dept)
-        self.sec = _secretaire()
-
-    def _stage_en_cours(self, debut, fin):
-        cand = _candidature_accordee(self.dept)
-        stage = Stage.objects.create(
-            candidature=cand,
-            maitre_stage=self.maitre,
-            date_debut=debut,
-            date_fin_prevue=fin,
-            statut=StatutStage.EN_COURS,
+    def _stage(self, statut, debut, fin):
+        return Stage.objects.create(
+            candidature=_candidature_accordee(self.dept), maitre_stage=self.maitre,
+            date_debut=debut, date_fin_prevue=fin, statut=statut,
         )
-        return stage
 
-    def test_cloture_si_date_depasse(self):
-        debut = datetime.date(2025, 1, 1)
-        fin = datetime.date(2025, 3, 31)
-        stage = self._stage_en_cours(debut, fin)
-        result = cloturer_stage_auto(stage, datetime.date(2025, 4, 1))
-        self.assertTrue(result)
-        stage.refresh_from_db()
-        self.assertEqual(stage.statut, StatutStage.TERMINE)
-        self.assertEqual(stage.date_fin_reelle, fin)
-
-    def test_ne_cloture_pas_si_date_non_atteinte(self):
-        debut = datetime.date(2025, 1, 1)
-        fin = datetime.date(2025, 6, 30)
-        stage = self._stage_en_cours(debut, fin)
-        result = cloturer_stage_auto(stage, datetime.date(2025, 3, 1))
-        self.assertFalse(result)
-        stage.refresh_from_db()
-        self.assertEqual(stage.statut, StatutStage.EN_COURS)
-
-    def test_serveur_arrete_a_venir_devient_termine(self):
-        """Si le serveur n'a pas tourné, un stage A_VENIR dont début et fin sont passés
-        doit être d'abord démarré puis clôturé dans la même exécution."""
-        debut = datetime.date(2025, 1, 1)
-        fin = datetime.date(2025, 3, 31)
-        cand = _candidature_accordee(self.dept)
-        stage = Stage.objects.create(
-            candidature=cand,
-            maitre_stage=self.maitre,
-            date_debut=debut,
-            date_fin_prevue=fin,
-            statut=StatutStage.A_VENIR,
-        )
-        aujourd_hui = datetime.date(2025, 4, 15)
-        demarrer_stage_auto(stage, aujourd_hui)
-        stage.refresh_from_db()
-        self.assertEqual(stage.statut, StatutStage.EN_COURS)
-        cloturer_stage_auto(stage, aujourd_hui)
-        stage.refresh_from_db()
-        self.assertEqual(stage.statut, StatutStage.TERMINE)
+    def test_la_commande_quotidienne_ne_change_aucun_statut(self):
+        from io import StringIO
+        from django.core.management import call_command
+        jour = timezone.localdate()
+        a_venir = self._stage(StatutStage.A_VENIR, jour - datetime.timedelta(days=90), jour - datetime.timedelta(days=10))
+        en_cours = self._stage(StatutStage.EN_COURS, jour - datetime.timedelta(days=90), jour - datetime.timedelta(days=10))
+        call_command("alerter_echeances", "--date", (jour + datetime.timedelta(days=30)).isoformat(), stdout=StringIO())
+        a_venir.refresh_from_db()
+        en_cours.refresh_from_db()
+        self.assertEqual((a_venir.statut, en_cours.statut), (StatutStage.A_VENIR, StatutStage.EN_COURS))
+        self.assertIsNone(en_cours.date_fin_reelle)
 
 
 # ─── Désactiver membre — maître de stage actif (Complément 5) ─────────────────
@@ -636,7 +576,7 @@ class RappelEvaluationCommandTests(TestCase):
         stage.save(update_fields=["date_fin_reelle"])
 
         out = StringIO()
-        call_command("mettre_a_jour_stages", stdout=out)
+        call_command("alerter_echeances", stdout=out)
         stage.refresh_from_db()
         self.assertTrue(stage.rappel_evaluation_envoye)
 
@@ -649,7 +589,7 @@ class RappelEvaluationCommandTests(TestCase):
         stage.save(update_fields=["date_fin_reelle"])
 
         out = StringIO()
-        call_command("mettre_a_jour_stages", stdout=out)
+        call_command("alerter_echeances", stdout=out)
         stage.refresh_from_db()
         self.assertFalse(stage.rappel_evaluation_envoye)
 
@@ -1081,19 +1021,21 @@ class RepriseStageTests(TestCase):
 
     # ── Cohérence avec la commande quotidienne et l'évaluation ──────────────
 
-    def test_reprise_future_demarre_a_la_date_de_reprise(self):
+    def test_reprise_future_reste_a_venir_jusqu_au_demarrage_manuel(self):
+        from io import StringIO
+        from django.core.management import call_command
         self._reprendre(self._jour(5), self._jour(60))
-        self.assertFalse(demarrer_stage_auto(self.stage, self.aujourd_hui))
-        self.assertFalse(demarrer_stage_auto(self.stage, self._jour(4)))
-        self.assertTrue(demarrer_stage_auto(self.stage, self._jour(5)))
+        call_command("alerter_echeances", "--date", self._jour(10).isoformat(), stdout=StringIO())
         self.stage.refresh_from_db()
-        self.assertEqual(self.stage.statut, StatutStage.EN_COURS)
+        self.assertEqual(self.stage.statut, StatutStage.A_VENIR)
 
-    def test_reprise_avec_fin_passee_cloturee_par_la_commande(self):
+    def test_reprise_avec_fin_passee_reste_en_cours(self):
+        from io import StringIO
+        from django.core.management import call_command
         self._reprendre(self._jour(-9), self._jour(-1))
-        self.assertTrue(cloturer_stage_auto(self.stage, self.aujourd_hui))
+        call_command("alerter_echeances", stdout=StringIO())
         self.stage.refresh_from_db()
-        self.assertEqual((self.stage.statut, self.stage.date_fin_reelle), (StatutStage.TERMINE, self._jour(-1)))
+        self.assertEqual((self.stage.statut, self.stage.date_fin_reelle), (StatutStage.EN_COURS, None))
 
     def test_repris_puis_termine_est_evaluable(self):
         self._reprendre(self._jour(-5), self._jour(60))
@@ -1118,14 +1060,14 @@ class RepriseStageTests(TestCase):
         self.stage.refresh_from_db()
         self.assertEqual(self.stage.statut, StatutStage.EN_COURS)
         self.assertContains(reponse, "Périodes d")
-        self.assertNotContains(reponse, "clôturé automatiquement")
+        self.assertNotContains(reponse, "pensez à terminer ce stage")
 
     def test_vue_reprise_fin_passee_message_information(self):
         reponse = self._post(
             date_reprise=self._jour(-9), date_fin_prevue=self._jour(-1), motif_reprise="Régularisation"
         )
         self.assertContains(
-            reponse, "Ce stage sera clôturé automatiquement à la prochaine exécution de la mise à jour quotidienne."
+            reponse, "La fin prévue est déjà dépassée : pensez à terminer ce stage, rien ne se fait automatiquement."
         )
 
     def test_vue_dates_invalides_formulaire_reaffiche(self):
@@ -1161,3 +1103,245 @@ class MigrationPeriodesStagesInterrompusTests(TestCase):
             (periode.date_debut, periode.date_fin, periode.motif_interruption),
             (stage.date_fin_reelle, None, "Ancien motif"),
         )
+
+
+# ─── RG-S14 : démarrage manuel d'un stage ─────────────────────────────────────
+
+
+class DemarrerStageTests(TestCase):
+
+    def setUp(self):
+        from .services import demarrer_stage
+        self.demarrer_stage = demarrer_stage
+        self.dept = _dept()
+        self.maitre = _membre(self.dept, "Zongo")
+        self.sec = _secretaire()
+        self.resp = _responsable(self.dept)
+        self.aujourd_hui = timezone.localdate()
+
+    def _jour(self, n):
+        return self.aujourd_hui + datetime.timedelta(days=n)
+
+    def _stage(self, debut, fin):
+        return constituer_stage(_candidature_accordee(self.dept), debut, fin, self.maitre, self.sec)
+
+    def test_avant_la_date_refuse_avec_la_date_dans_le_message(self):
+        stage = self._stage(self._jour(3), self._jour(60))
+        with self.assertRaisesMessage(TransitionInterdite, f"à partir du {self._jour(3):%d/%m/%Y}"):
+            self.demarrer_stage(stage, self.resp)
+        stage.refresh_from_db()
+        self.assertEqual(stage.statut, StatutStage.A_VENIR)
+
+    def test_a_la_date_demarre_avec_historique_et_notification(self):
+        from suivi.models import Historique, Notification
+        stage = self._stage(self.aujourd_hui, self._jour(60))
+        self.demarrer_stage(stage, self.resp)
+        stage.refresh_from_db()
+        self.assertEqual(stage.statut, StatutStage.EN_COURS)
+        h = Historique.objects.filter(object_id=stage.pk).order_by("-pk").first()
+        self.assertEqual((h.ancien_statut, h.nouveau_statut, h.utilisateur), (StatutStage.A_VENIR, StatutStage.EN_COURS, self.resp))
+        notif = Notification.objects.get(destinataire=self.sec, message__contains="démarré")
+        self.assertEqual(notif.lien, f"/stages/{stage.pk}/")
+
+    def test_fin_prevue_depassee_demarrage_autorise(self):
+        """Régularisation : un stage oublié peut être démarré ; l'alerte « à terminer » suivra."""
+        stage = self._stage(self._jour(-60), self._jour(-5))
+        self.demarrer_stage(stage, self.resp)
+        stage.refresh_from_db()
+        self.assertEqual(stage.statut, StatutStage.EN_COURS)
+
+    def test_stage_non_a_venir_refuse(self):
+        stage = self._stage(self._jour(-10), self._jour(60))
+        self.demarrer_stage(stage, self.resp)
+        with self.assertRaisesMessage(TransitionInterdite, "Seul un stage à venir"):
+            self.demarrer_stage(stage, self.resp)
+
+    def test_reprise_future_demarrable_seulement_a_la_date_de_reprise(self):
+        stage = self._stage(self._jour(-30), self._jour(60))
+        self.demarrer_stage(stage, self.resp)
+        interrompre_stage(stage, self._jour(-10), "Maladie", self.resp)
+        reprendre_stage(stage, self._jour(5), self._jour(60), "Retour", self.resp)
+        with self.assertRaisesMessage(TransitionInterdite, f"{self._jour(5):%d/%m/%Y}"):
+            self.demarrer_stage(stage, self.resp)
+        self.demarrer_stage(stage, self.resp, aujourd_hui=self._jour(5))
+        stage.refresh_from_db()
+        self.assertEqual(stage.statut, StatutStage.EN_COURS)
+
+    def test_vue_bouton_seulement_a_partir_de_la_date(self):
+        self.client.force_login(self.resp)
+        futur = self._stage(self._jour(3), self._jour(60))
+        reponse = self.client.get(reverse("stages:stage_detail", args=[futur.pk]))
+        self.assertNotContains(reponse, reverse("stages:stage_demarrer", args=[futur.pk]))
+        self.assertContains(reponse, f"Démarrage possible à partir du {self._jour(3):%d/%m/%Y}")
+        pret = self._stage(self.aujourd_hui, self._jour(60))
+        reponse = self.client.get(reverse("stages:stage_detail", args=[pret.pk]))
+        self.assertContains(reponse, reverse("stages:stage_demarrer", args=[pret.pk]))
+
+    def test_vue_post_demarre_et_post_anticipe_refuse(self):
+        self.client.force_login(self.resp)
+        pret = self._stage(self.aujourd_hui, self._jour(60))
+        self.client.post(reverse("stages:stage_demarrer", args=[pret.pk]))
+        pret.refresh_from_db()
+        self.assertEqual(pret.statut, StatutStage.EN_COURS)
+        futur = self._stage(self._jour(3), self._jour(60))
+        reponse = self.client.post(reverse("stages:stage_demarrer", args=[futur.pk]), follow=True)
+        futur.refresh_from_db()
+        self.assertEqual(futur.statut, StatutStage.A_VENIR)
+        self.assertContains(reponse, "ne peut être démarré")
+
+
+# ─── RG-S15 : alertes d'échéances (alerter_echeances) ──────────────────────────
+
+
+class AlertesEcheancesTests(TestCase):
+    """Chaque alerte : envoyée une fois, pas renvoyée au second passage, renvoyée après changement de date."""
+
+    def setUp(self):
+        from suivi.models import Notification
+        self.Notification = Notification
+        self.dept = _dept("Informatique")
+        self.maitre = _membre(self.dept, "Zongo")
+        self.sec = _secretaire()
+        self.resp = _responsable(self.dept)
+        self.admin = _user("admin@test.com", "Administrateur")
+        self.jour = timezone.localdate()
+
+    def _j(self, n):
+        return self.jour + datetime.timedelta(days=n)
+
+    def _lancer(self):
+        from io import StringIO
+        from django.core.management import call_command
+        call_command("alerter_echeances", "--date", self.jour.isoformat(), stdout=StringIO())
+
+    def _notifs(self, user, mot):
+        return list(self.Notification.objects.filter(destinataire=user, message__contains=mot))
+
+    def _stage(self, statut, debut, fin, dept=None):
+        dept = dept or self.dept
+        maitre = self.maitre if dept == self.dept else _membre(dept, "Autre")
+        return Stage.objects.create(
+            candidature=_candidature_accordee(dept), maitre_stage=maitre,
+            date_debut=debut, date_fin_prevue=fin, statut=statut,
+        )
+
+    def _candidature(self, statut, fin_dispo, dept=None):
+        c = _candidature_accordee(dept or self.dept)
+        Candidature.objects.filter(pk=c.pk).update(
+            statut=statut, debut_disponibilite=self._j(-60), fin_disponibilite=fin_dispo
+        )
+        c.refresh_from_db()
+        return c
+
+    # a) stage à démarrer
+    def test_a_stage_a_demarrer(self):
+        stage = self._stage(StatutStage.A_VENIR, self._j(1), self._j(60))
+        pas_encore = self._stage(StatutStage.A_VENIR, self._j(3), self._j(60))
+        self._lancer()
+        notifs = self._notifs(self.resp, "à démarrer")
+        self.assertEqual(len(notifs), 1)
+        self.assertEqual(notifs[0].lien, reverse("stages:stage_detail", args=[stage.pk]))
+        self._lancer()
+        self.assertEqual(len(self._notifs(self.resp, "à démarrer")), 1)
+        modifier_stage(stage, self._j(60), self.maitre, self.sec, date_debut=self._j(0))
+        self._lancer()
+        self.assertEqual(len(self._notifs(self.resp, "à démarrer")), 2)
+        pas_encore.refresh_from_db()
+        self.assertFalse(pas_encore.alerte_demarrage_envoyee)
+
+    # b) stage à terminer (y compris fin dépassée), sans aucun changement de statut
+    def test_b_stage_a_terminer(self):
+        stage = self._stage(StatutStage.EN_COURS, self._j(-60), self._j(2))
+        depasse = self._stage(StatutStage.EN_COURS, self._j(-60), self._j(-4))
+        self._stage(StatutStage.EN_COURS, self._j(-60), self._j(5))
+        self._lancer()
+        liens = {n.lien for n in self._notifs(self.resp, "à terminer")}
+        self.assertEqual(liens, {reverse("stages:stage_detail", args=[s.pk]) for s in (stage, depasse)})
+        self._lancer()
+        self.assertEqual(len(self._notifs(self.resp, "à terminer")), 2)
+        modifier_stage(stage, self._j(3), self.maitre, self.sec)
+        self._lancer()
+        self.assertEqual(len(self._notifs(self.resp, "à terminer")), 3)
+        depasse.refresh_from_db()
+        self.assertEqual(depasse.statut, StatutStage.EN_COURS)
+
+    def test_reprise_remet_les_alertes_du_stage_a_zero(self):
+        stage = self._stage(StatutStage.EN_COURS, self._j(-60), self._j(1))
+        self._lancer()
+        interrompre_stage(stage, self._j(-1), "Absence", self.resp)
+        reprendre_stage(stage, self._j(0), self._j(2), "Retour", self.resp)
+        stage.refresh_from_db()
+        self.assertEqual((stage.alerte_demarrage_envoyee, stage.alerte_fin_envoyee), (False, False))
+        self._lancer()
+        self.assertEqual(len(self._notifs(self.resp, "à terminer")), 2)
+
+    # c) disponibilité qui expire — candidature en cours
+    def test_c_disponibilite_candidature_en_cours(self):
+        cand = self._candidature(StatutCandidature.RECUE, self._j(2))
+        self._candidature(StatutCandidature.EN_TRAITEMENT, self._j(-1))
+        self._candidature(StatutCandidature.RECUE, self._j(5))
+        self._lancer()
+        notifs = self._notifs(self.resp, "disponibilité")
+        self.assertEqual(len(notifs), 2)
+        self.assertIn(reverse("candidatures:candidature_detail", args=[cand.pk]), {n.lien for n in notifs})
+        self._lancer()
+        self.assertEqual(len(self._notifs(self.resp, "disponibilité")), 2)
+        cand.refresh_from_db()
+        self.assertEqual(cand.statut, StatutCandidature.RECUE)  # jamais de refus automatique
+
+    def test_c_redirection_realerte_le_nouveau_departement(self):
+        from candidatures.services import rediriger
+        autre = _dept("Comptabilité")
+        resp_autre = _user("resp2@test.com", "Responsable")
+        resp_autre.personnel = _membre(autre, "Sawadogo")
+        resp_autre.save(update_fields=["personnel"])
+        cand = self._candidature(StatutCandidature.RECUE, self._j(2))
+        self._lancer()
+        rediriger(cand, autre, "Profil comptable", self.resp)
+        self._lancer()
+        self.assertEqual(len(self._notifs(resp_autre, "disponibilité")), 1)
+
+    def test_c_repli_vers_les_administrateurs_sans_responsable(self):
+        sans_resp = _dept("Logistique")
+        self._candidature(StatutCandidature.RECUE, self._j(1), dept=sans_resp)
+        self._stage(StatutStage.A_VENIR, self._j(0), self._j(60), dept=sans_resp)
+        self._lancer()
+        self.assertEqual(len(self._notifs(self.admin, "disponibilité")), 1)
+        self.assertEqual(len(self._notifs(self.admin, "à démarrer")), 1)
+
+    # d) accordée sans stage
+    def test_d_accordee_sans_stage(self):
+        cand = self._candidature(StatutCandidature.ACCORDEE, self._j(3))
+        avec_stage = self._stage(StatutStage.A_VENIR, self._j(30), self._j(60))
+        Candidature.objects.filter(pk=avec_stage.candidature_id).update(fin_disponibilite=self._j(3))
+        self._lancer()
+        notifs = self._notifs(self.sec, "sans stage")
+        self.assertEqual([n.lien for n in notifs], [reverse("candidatures:candidature_detail", args=[cand.pk])])
+        self._lancer()
+        self.assertEqual(len(self._notifs(self.sec, "sans stage")), 1)
+
+    def test_modification_de_la_disponibilite_remet_les_alertes_a_zero(self):
+        from candidatures.services import modifier_candidature
+        cand = self._candidature(StatutCandidature.RECUE, self._j(2))
+        Candidature.objects.filter(pk=cand.pk).update(
+            alerte_disponibilite_envoyee=True, alerte_disponibilite_stage_envoyee=True
+        )
+        cand.refresh_from_db()
+        modifier_candidature(
+            cand, cand.departement, cand.type_stage, cand.type_demande,
+            cand.debut_disponibilite, self._j(1), cand.duree_souhaitee, utilisateur=self.sec,
+        )
+        cand.refresh_from_db()
+        self.assertEqual((cand.alerte_disponibilite_envoyee, cand.alerte_disponibilite_stage_envoyee), (False, False))
+
+    # e) rappel d'évaluation J+7 sur la date de fin réelle
+    def test_e_rappel_evaluation(self):
+        stage = self._stage(StatutStage.TERMINE, self._j(-90), self._j(-20))
+        Stage.objects.filter(pk=stage.pk).update(date_fin_reelle=self._j(-7))
+        recent = self._stage(StatutStage.TERMINE, self._j(-90), self._j(-20))
+        Stage.objects.filter(pk=recent.pk).update(date_fin_reelle=self._j(-6))
+        self._lancer()
+        notifs = self._notifs(self.resp, "pas encore été évalué")
+        self.assertEqual([n.lien for n in notifs], [reverse("stages:stage_detail", args=[stage.pk])])
+        self._lancer()
+        self.assertEqual(len(self._notifs(self.resp, "pas encore été évalué")), 1)

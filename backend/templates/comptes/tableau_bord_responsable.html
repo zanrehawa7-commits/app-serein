@@ -124,6 +124,52 @@
     </div>
 </div>
 
+<!-- Échéances (RG-S15) : rien n'est automatique, chaque ligne attend une action. -->
+<div class="row g-3 mb-4">
+    <div class="col-lg-4">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-header bg-white border-bottom py-2 d-flex justify-content-between">
+                <h6 class="mb-0 fw-semibold small"><i class="bi bi-play-circle me-1 text-primary"></i>Stages à démarrer</h6>
+                <span class="badge bg-primary">{{ stages_a_demarrer|length }}</span>
+            </div>
+            <ul class="list-group list-group-flush small">
+                {% for s in stages_a_demarrer %}
+                <li class="list-group-item"><a href="{% url 'stages:stage_detail' s.pk %}">{{ s.candidature.candidat }}</a>
+                    <span class="text-muted">— à partir du {{ s.date_demarrage_effective|date:"d/m/Y" }}</span></li>
+                {% empty %}<li class="list-group-item text-muted">Aucun stage à démarrer.</li>{% endfor %}
+            </ul>
+        </div>
+    </div>
+    <div class="col-lg-4">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-header bg-white border-bottom py-2 d-flex justify-content-between">
+                <h6 class="mb-0 fw-semibold small"><i class="bi bi-flag me-1 text-warning"></i>Stages à terminer (fin dépassée ou dans 72 h)</h6>
+                <span class="badge bg-warning text-dark">{{ stages_a_terminer|length }}</span>
+            </div>
+            <ul class="list-group list-group-flush small">
+                {% for s in stages_a_terminer %}
+                <li class="list-group-item"><a href="{% url 'stages:stage_detail' s.pk %}">{{ s.candidature.candidat }}</a>
+                    <span class="text-muted">— fin prévue le {{ s.date_fin_prevue|date:"d/m/Y" }}</span></li>
+                {% empty %}<li class="list-group-item text-muted">Aucun stage à terminer.</li>{% endfor %}
+            </ul>
+        </div>
+    </div>
+    <div class="col-lg-4">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-header bg-white border-bottom py-2 d-flex justify-content-between">
+                <h6 class="mb-0 fw-semibold small"><i class="bi bi-hourglass-split me-1 text-danger"></i>Disponibilités expirant dans 72 h</h6>
+                <span class="badge bg-danger">{{ disponibilites_expirantes|length }}</span>
+            </div>
+            <ul class="list-group list-group-flush small">
+                {% for c in disponibilites_expirantes %}
+                <li class="list-group-item"><a href="{% url 'candidatures:candidature_detail' c.pk %}">{{ c.reference }}</a> {{ c.candidat }}
+                    <span class="text-muted">— jusqu'au {{ c.fin_disponibilite|date:"d/m/Y" }}</span></li>
+                {% empty %}<li class="list-group-item text-muted">Aucune candidature concernée.</li>{% endfor %}
+            </ul>
+        </div>
+    </div>
+</div>
+
 <!-- Actions rapides + mes besoins récents -->
 <div class="row g-3">
     <div class="col-lg-4">

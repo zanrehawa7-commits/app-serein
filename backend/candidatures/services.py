@@ -1,6 +1,8 @@
+import datetime
 import re
 from django.db import transaction
 from django.utils import timezone
+from django.utils.dateparse import parse_date
 
 from commun.utils import ajouter_mois
 
@@ -262,6 +264,14 @@ def modifier_candidature(
         debut_original=candidature.debut_disponibilite,
     )
 
+    if isinstance(fin_disponibilite, str):
+        fin_disponibilite = parse_date(fin_disponibilite)
+    # RG-S15 : nouvelle échéance (ou nouveau Responsable) → les alertes de disponibilité repartent.
+    if fin_disponibilite != candidature.fin_disponibilite:
+        candidature.alerte_disponibilite_envoyee = False
+        candidature.alerte_disponibilite_stage_envoyee = False
+    elif departement != candidature.departement:
+        candidature.alerte_disponibilite_envoyee = False
     candidature.departement = departement
     candidature.type_stage = type_stage
     candidature.type_demande = type_demande
@@ -453,7 +463,8 @@ def rediriger(candidature, nouveau_departement, motif, utilisateur):
     cand.departement = nouveau_departement
     cand.candidat_informe = False
     cand.date_information = None
-    cand.save(update_fields=["departement", "candidat_informe", "date_information"])
+    cand.alerte_disponibilite_envoyee = False  # RG-S15 : le nouveau Responsable doit être alerté
+    cand.save(update_fields=["departement", "candidat_informe", "date_information", "alerte_disponibilite_envoyee"])
     TransfertCandidature.objects.create(
         candidature=cand,
         departement_source=ancien_dept,
@@ -493,3 +504,30 @@ def marquer_informe(candidature, utilisateur):
         "Candidat informé de la décision.",
     )
     return candidature
+
+
+# ─── RG-S15 : disponibilités expirant dans 72 h (alertes et tableaux de bord) ─────
+
+DELAI_ALERTE_JOURS = 3
+
+
+def candidatures_disponibilite_expirante(aujourd_hui, departement=None):
+    """Candidatures « Reçue » ou « En traitement » dont la disponibilité finit dans 72 h ou moins."""
+    from .models import Candidature, StatutCandidature
+    qs = Candidature.objects.filter(
+        statut__in=[StatutCandidature.RECUE, StatutCandidature.EN_TRAITEMENT],
+        fin_disponibilite__lte=aujourd_hui + datetime.timedelta(days=DELAI_ALERTE_JOURS),
+    ).select_related("candidat", "departement").order_by("fin_disponibilite")
+    if departement is not None:
+        qs = qs.filter(departement=departement)
+    return list(qs)
+
+
+def candidatures_accordees_sans_stage_expirantes(aujourd_hui):
+    """Candidatures « Accordée » sans stage constitué dont la disponibilité finit dans 72 h ou moins."""
+    from .models import Candidature, StatutCandidature
+    return list(Candidature.objects.filter(
+        statut=StatutCandidature.ACCORDEE,
+        stage__isnull=True,
+        fin_disponibilite__lte=aujourd_hui + datetime.timedelta(days=DELAI_ALERTE_JOURS),
+    ).select_related("candidat", "departement").order_by("fin_disponibilite"))

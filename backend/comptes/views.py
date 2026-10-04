@@ -187,6 +187,10 @@ class TableauBordSecretaireView(RoleRequisMixin, TemplateView):
             candidat_informe=False,
             statut__in=[StatutCandidature.ACCORDEE, StatutCandidature.REFUSEE],
         ).count()
+        # RG-S15 : mêmes critères que les alertes, indépendants des indicateurs « envoyée ».
+        from django.utils import timezone
+        from candidatures.services import candidatures_accordees_sans_stage_expirantes
+        ctx["accordees_sans_stage"] = candidatures_accordees_sans_stage_expirantes(timezone.localdate())
         return ctx
 
 
@@ -226,6 +230,13 @@ class TableauBordResponsableView(RoleRequisMixin, TemplateView):
                 note__isnull=True,
                 date_fin_reelle__lte=seuil,
             ).count()
+            # RG-S15 : échéances du département (mêmes critères que les alertes).
+            from candidatures.services import candidatures_disponibilite_expirante
+            from stages.services import stages_a_demarrer, stages_a_terminer
+            aujourd_hui = timezone.localdate()
+            ctx["stages_a_demarrer"] = stages_a_demarrer(aujourd_hui, dept)
+            ctx["stages_a_terminer"] = stages_a_terminer(aujourd_hui, dept)
+            ctx["disponibilites_expirantes"] = candidatures_disponibilite_expirante(aujourd_hui, dept)
         return ctx
 
 

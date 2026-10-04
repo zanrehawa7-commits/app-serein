@@ -5,7 +5,8 @@ from django.contrib.auth.models import Group, Permission
 from django.contrib.contenttypes.models import ContentType
 from django.core.management import call_command
 from django.db.models import ProtectedError
-from django.test import Client, TestCase
+from django.test import Client, TestCase, override_settings
+from django.utils import timezone
 from django.urls import reverse
 
 from comptes.models import Utilisateur
@@ -330,6 +331,33 @@ class DepartementResponsableFormTests(TestCase):
 
 
 # ─── Tests changement département interdit si responsable ─────────────────────
+
+@override_settings(DEBUG=True)
+class InitDemoScenariosAlertesTests(TestCase):
+    """init_demo prépare un cas de chaque alerte a) à e) (recette du lot G), sans doublon."""
+
+    def _commande(self, *args):
+        call_command(*args, stdout=StringIO())
+
+    def test_un_cas_de_chaque_alerte_et_idempotent(self):
+        from candidatures.models import Candidat
+        from stages.models import Stage, StatutStage
+        from suivi.models import Notification
+        self._commande("init_donnees")
+        self._commande("init_demo")
+        self._commande("init_demo")
+        self.assertEqual(Candidat.objects.filter(telephone__startswith="7900000").count(), 5)
+        demarrable = Stage.objects.get(candidature__candidat__telephone="79000001")
+        self.assertEqual(demarrable.statut, StatutStage.A_VENIR)
+        self.assertLessEqual(demarrable.date_demarrage_effective(), timezone.localdate())
+        self._commande("alerter_echeances")
+        for mot in ("à démarrer", "à terminer", "disponibilité du candidat", "sans stage", "pas encore été évalué"):
+            with self.subTest(alerte=mot):
+                self.assertEqual(Notification.objects.filter(message__contains=mot).count(), 1)
+        avant = Notification.objects.count()
+        self._commande("alerter_echeances")
+        self.assertEqual(Notification.objects.count(), avant)
+
 
 class PersonnelFormulaireActifTests(TestCase):
     """RG-P3 : le formulaire « Modifier » ne doit pas permettre de désactiver un responsable (bug de recette)."""
