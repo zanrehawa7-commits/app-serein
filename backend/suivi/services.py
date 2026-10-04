@@ -24,3 +24,15 @@ def notifier(destinataires, message, lien=""):
         Notification(destinataire=dest, message=message, lien=lien)
         for dest in destinataires
     ])
+
+
+def responsables_ou_administrateurs(departement):
+    """
+    Destinataires d'une alerte de département : ses Responsables actifs ; à défaut les
+    Administrateurs actifs (même repli que la redirection d'une candidature), pour ne pas la perdre.
+    """
+    from comptes.models import Utilisateur
+    responsables = list(Utilisateur.objects.filter(
+        groups__name="Responsable", is_active=True, personnel__departement=departement,
+    ))
+    return responsables or list(Utilisateur.objects.filter(groups__name="Administrateur", is_active=True))

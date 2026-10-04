@@ -135,10 +135,12 @@ def modifier_stage(stage, date_fin_prevue, maitre_stage, utilisateur, date_debut
         if date_debut != s.date_debut:
             changements.append(f"début : {s.date_debut} → {date_debut}")
             s.date_debut = date_debut
+            s.alerte_demarrage_envoyee = False  # RG-S15 : nouvelle échéance
 
     if date_fin_prevue != s.date_fin_prevue:
         changements.append(f"fin prévue : {s.date_fin_prevue} → {date_fin_prevue}")
         s.date_fin_prevue = date_fin_prevue
+        s.alerte_fin_envoyee = False
 
     maitre_change = maitre_stage.pk != s.maitre_stage_id
     if maitre_change:
@@ -305,7 +307,13 @@ def reprendre_stage(stage, date_reprise, date_fin_prevue, motif, utilisateur, au
     s.date_fin_prevue = date_fin_prevue
     s.date_fin_reelle = None
     s.motif_interruption = ""
-    s.save(update_fields=["statut", "date_fin_prevue", "date_fin_reelle", "motif_interruption"])
+    # RG-S15 : nouvelle date de démarrage et nouvelle fin prévue → les alertes repartent.
+    s.alerte_demarrage_envoyee = False
+    s.alerte_fin_envoyee = False
+    s.save(update_fields=[
+        "statut", "date_fin_prevue", "date_fin_reelle", "motif_interruption",
+        "alerte_demarrage_envoyee", "alerte_fin_envoyee",
+    ])
 
     enregistrer_historique(
         s, utilisateur, StatutStage.INTERROMPU, nouveau,
@@ -380,3 +388,32 @@ def evaluer_stage(stage, note, vivier, utilisateur, rapport_file=None, aujourd_h
     )
 
     return s
+
+
+# ─── RG-S15 : échéances (alertes et tableaux de bord — aucun changement de statut) ─
+
+DELAI_ALERTE_JOURS = 3
+
+
+def stages_a_demarrer(aujourd_hui, departement=None):
+    """Stages « À venir » dont la date de démarrage effective est demain ou déjà passée."""
+    from .models import Stage, StatutStage
+    qs = Stage.objects.filter(statut=StatutStage.A_VENIR).select_related(
+        "candidature__candidat", "candidature__departement"
+    ).order_by("date_debut")
+    if departement is not None:
+        qs = qs.filter(candidature__departement=departement)
+    limite = aujourd_hui + datetime.timedelta(days=1)
+    return [s for s in qs if s.date_demarrage_effective() <= limite]
+
+
+def stages_a_terminer(aujourd_hui, departement=None):
+    """Stages « En cours » dont la fin prévue est dans 72 h ou moins, y compris dépassée."""
+    from .models import Stage, StatutStage
+    qs = Stage.objects.filter(
+        statut=StatutStage.EN_COURS,
+        date_fin_prevue__lte=aujourd_hui + datetime.timedelta(days=DELAI_ALERTE_JOURS),
+    ).select_related("candidature__candidat", "candidature__departement").order_by("date_fin_prevue")
+    if departement is not None:
+        qs = qs.filter(candidature__departement=departement)
+    return list(qs)

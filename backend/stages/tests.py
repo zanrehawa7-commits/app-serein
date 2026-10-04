@@ -286,7 +286,7 @@ class AucuneTransitionAutomatiqueTests(TestCase):
         jour = timezone.localdate()
         a_venir = self._stage(StatutStage.A_VENIR, jour - datetime.timedelta(days=90), jour - datetime.timedelta(days=10))
         en_cours = self._stage(StatutStage.EN_COURS, jour - datetime.timedelta(days=90), jour - datetime.timedelta(days=10))
-        call_command("mettre_a_jour_stages", "--date", (jour + datetime.timedelta(days=30)).isoformat(), stdout=StringIO())
+        call_command("alerter_echeances", "--date", (jour + datetime.timedelta(days=30)).isoformat(), stdout=StringIO())
         a_venir.refresh_from_db()
         en_cours.refresh_from_db()
         self.assertEqual((a_venir.statut, en_cours.statut), (StatutStage.A_VENIR, StatutStage.EN_COURS))
@@ -576,7 +576,7 @@ class RappelEvaluationCommandTests(TestCase):
         stage.save(update_fields=["date_fin_reelle"])
 
         out = StringIO()
-        call_command("mettre_a_jour_stages", stdout=out)
+        call_command("alerter_echeances", stdout=out)
         stage.refresh_from_db()
         self.assertTrue(stage.rappel_evaluation_envoye)
 
@@ -589,7 +589,7 @@ class RappelEvaluationCommandTests(TestCase):
         stage.save(update_fields=["date_fin_reelle"])
 
         out = StringIO()
-        call_command("mettre_a_jour_stages", stdout=out)
+        call_command("alerter_echeances", stdout=out)
         stage.refresh_from_db()
         self.assertFalse(stage.rappel_evaluation_envoye)
 
@@ -1025,7 +1025,7 @@ class RepriseStageTests(TestCase):
         from io import StringIO
         from django.core.management import call_command
         self._reprendre(self._jour(5), self._jour(60))
-        call_command("mettre_a_jour_stages", "--date", self._jour(10).isoformat(), stdout=StringIO())
+        call_command("alerter_echeances", "--date", self._jour(10).isoformat(), stdout=StringIO())
         self.stage.refresh_from_db()
         self.assertEqual(self.stage.statut, StatutStage.A_VENIR)
 
@@ -1033,7 +1033,7 @@ class RepriseStageTests(TestCase):
         from io import StringIO
         from django.core.management import call_command
         self._reprendre(self._jour(-9), self._jour(-1))
-        call_command("mettre_a_jour_stages", stdout=StringIO())
+        call_command("alerter_echeances", stdout=StringIO())
         self.stage.refresh_from_db()
         self.assertEqual((self.stage.statut, self.stage.date_fin_reelle), (StatutStage.EN_COURS, None))
 
@@ -1188,3 +1188,160 @@ class DemarrerStageTests(TestCase):
         futur.refresh_from_db()
         self.assertEqual(futur.statut, StatutStage.A_VENIR)
         self.assertContains(reponse, "ne peut être démarré")
+
+
+# ─── RG-S15 : alertes d'échéances (alerter_echeances) ──────────────────────────
+
+
+class AlertesEcheancesTests(TestCase):
+    """Chaque alerte : envoyée une fois, pas renvoyée au second passage, renvoyée après changement de date."""
+
+    def setUp(self):
+        from suivi.models import Notification
+        self.Notification = Notification
+        self.dept = _dept("Informatique")
+        self.maitre = _membre(self.dept, "Zongo")
+        self.sec = _secretaire()
+        self.resp = _responsable(self.dept)
+        self.admin = _user("admin@test.com", "Administrateur")
+        self.jour = timezone.localdate()
+
+    def _j(self, n):
+        return self.jour + datetime.timedelta(days=n)
+
+    def _lancer(self):
+        from io import StringIO
+        from django.core.management import call_command
+        call_command("alerter_echeances", "--date", self.jour.isoformat(), stdout=StringIO())
+
+    def _notifs(self, user, mot):
+        return list(self.Notification.objects.filter(destinataire=user, message__contains=mot))
+
+    def _stage(self, statut, debut, fin, dept=None):
+        dept = dept or self.dept
+        maitre = self.maitre if dept == self.dept else _membre(dept, "Autre")
+        return Stage.objects.create(
+            candidature=_candidature_accordee(dept), maitre_stage=maitre,
+            date_debut=debut, date_fin_prevue=fin, statut=statut,
+        )
+
+    def _candidature(self, statut, fin_dispo, dept=None):
+        c = _candidature_accordee(dept or self.dept)
+        Candidature.objects.filter(pk=c.pk).update(
+            statut=statut, debut_disponibilite=self._j(-60), fin_disponibilite=fin_dispo
+        )
+        c.refresh_from_db()
+        return c
+
+    # a) stage à démarrer
+    def test_a_stage_a_demarrer(self):
+        stage = self._stage(StatutStage.A_VENIR, self._j(1), self._j(60))
+        pas_encore = self._stage(StatutStage.A_VENIR, self._j(3), self._j(60))
+        self._lancer()
+        notifs = self._notifs(self.resp, "à démarrer")
+        self.assertEqual(len(notifs), 1)
+        self.assertEqual(notifs[0].lien, reverse("stages:stage_detail", args=[stage.pk]))
+        self._lancer()
+        self.assertEqual(len(self._notifs(self.resp, "à démarrer")), 1)
+        modifier_stage(stage, self._j(60), self.maitre, self.sec, date_debut=self._j(0))
+        self._lancer()
+        self.assertEqual(len(self._notifs(self.resp, "à démarrer")), 2)
+        pas_encore.refresh_from_db()
+        self.assertFalse(pas_encore.alerte_demarrage_envoyee)
+
+    # b) stage à terminer (y compris fin dépassée), sans aucun changement de statut
+    def test_b_stage_a_terminer(self):
+        stage = self._stage(StatutStage.EN_COURS, self._j(-60), self._j(2))
+        depasse = self._stage(StatutStage.EN_COURS, self._j(-60), self._j(-4))
+        self._stage(StatutStage.EN_COURS, self._j(-60), self._j(5))
+        self._lancer()
+        liens = {n.lien for n in self._notifs(self.resp, "à terminer")}
+        self.assertEqual(liens, {reverse("stages:stage_detail", args=[s.pk]) for s in (stage, depasse)})
+        self._lancer()
+        self.assertEqual(len(self._notifs(self.resp, "à terminer")), 2)
+        modifier_stage(stage, self._j(3), self.maitre, self.sec)
+        self._lancer()
+        self.assertEqual(len(self._notifs(self.resp, "à terminer")), 3)
+        depasse.refresh_from_db()
+        self.assertEqual(depasse.statut, StatutStage.EN_COURS)
+
+    def test_reprise_remet_les_alertes_du_stage_a_zero(self):
+        stage = self._stage(StatutStage.EN_COURS, self._j(-60), self._j(1))
+        self._lancer()
+        interrompre_stage(stage, self._j(-1), "Absence", self.resp)
+        reprendre_stage(stage, self._j(0), self._j(2), "Retour", self.resp)
+        stage.refresh_from_db()
+        self.assertEqual((stage.alerte_demarrage_envoyee, stage.alerte_fin_envoyee), (False, False))
+        self._lancer()
+        self.assertEqual(len(self._notifs(self.resp, "à terminer")), 2)
+
+    # c) disponibilité qui expire — candidature en cours
+    def test_c_disponibilite_candidature_en_cours(self):
+        cand = self._candidature(StatutCandidature.RECUE, self._j(2))
+        self._candidature(StatutCandidature.EN_TRAITEMENT, self._j(-1))
+        self._candidature(StatutCandidature.RECUE, self._j(5))
+        self._lancer()
+        notifs = self._notifs(self.resp, "disponibilité")
+        self.assertEqual(len(notifs), 2)
+        self.assertIn(reverse("candidatures:candidature_detail", args=[cand.pk]), {n.lien for n in notifs})
+        self._lancer()
+        self.assertEqual(len(self._notifs(self.resp, "disponibilité")), 2)
+        cand.refresh_from_db()
+        self.assertEqual(cand.statut, StatutCandidature.RECUE)  # jamais de refus automatique
+
+    def test_c_redirection_realerte_le_nouveau_departement(self):
+        from candidatures.services import rediriger
+        autre = _dept("Comptabilité")
+        resp_autre = _user("resp2@test.com", "Responsable")
+        resp_autre.personnel = _membre(autre, "Sawadogo")
+        resp_autre.save(update_fields=["personnel"])
+        cand = self._candidature(StatutCandidature.RECUE, self._j(2))
+        self._lancer()
+        rediriger(cand, autre, "Profil comptable", self.resp)
+        self._lancer()
+        self.assertEqual(len(self._notifs(resp_autre, "disponibilité")), 1)
+
+    def test_c_repli_vers_les_administrateurs_sans_responsable(self):
+        sans_resp = _dept("Logistique")
+        self._candidature(StatutCandidature.RECUE, self._j(1), dept=sans_resp)
+        self._stage(StatutStage.A_VENIR, self._j(0), self._j(60), dept=sans_resp)
+        self._lancer()
+        self.assertEqual(len(self._notifs(self.admin, "disponibilité")), 1)
+        self.assertEqual(len(self._notifs(self.admin, "à démarrer")), 1)
+
+    # d) accordée sans stage
+    def test_d_accordee_sans_stage(self):
+        cand = self._candidature(StatutCandidature.ACCORDEE, self._j(3))
+        avec_stage = self._stage(StatutStage.A_VENIR, self._j(30), self._j(60))
+        Candidature.objects.filter(pk=avec_stage.candidature_id).update(fin_disponibilite=self._j(3))
+        self._lancer()
+        notifs = self._notifs(self.sec, "sans stage")
+        self.assertEqual([n.lien for n in notifs], [reverse("candidatures:candidature_detail", args=[cand.pk])])
+        self._lancer()
+        self.assertEqual(len(self._notifs(self.sec, "sans stage")), 1)
+
+    def test_modification_de_la_disponibilite_remet_les_alertes_a_zero(self):
+        from candidatures.services import modifier_candidature
+        cand = self._candidature(StatutCandidature.RECUE, self._j(2))
+        Candidature.objects.filter(pk=cand.pk).update(
+            alerte_disponibilite_envoyee=True, alerte_disponibilite_stage_envoyee=True
+        )
+        cand.refresh_from_db()
+        modifier_candidature(
+            cand, cand.departement, cand.type_stage, cand.type_demande,
+            cand.debut_disponibilite, self._j(1), cand.duree_souhaitee, utilisateur=self.sec,
+        )
+        cand.refresh_from_db()
+        self.assertEqual((cand.alerte_disponibilite_envoyee, cand.alerte_disponibilite_stage_envoyee), (False, False))
+
+    # e) rappel d'évaluation J+7 sur la date de fin réelle
+    def test_e_rappel_evaluation(self):
+        stage = self._stage(StatutStage.TERMINE, self._j(-90), self._j(-20))
+        Stage.objects.filter(pk=stage.pk).update(date_fin_reelle=self._j(-7))
+        recent = self._stage(StatutStage.TERMINE, self._j(-90), self._j(-20))
+        Stage.objects.filter(pk=recent.pk).update(date_fin_reelle=self._j(-6))
+        self._lancer()
+        notifs = self._notifs(self.resp, "pas encore été évalué")
+        self.assertEqual([n.lien for n in notifs], [reverse("stages:stage_detail", args=[stage.pk])])
+        self._lancer()
+        self.assertEqual(len(self._notifs(self.resp, "pas encore été évalué")), 1)
