@@ -331,6 +331,40 @@ class DepartementResponsableFormTests(TestCase):
 
 # ─── Tests changement département interdit si responsable ─────────────────────
 
+class PersonnelFormulaireActifTests(TestCase):
+    """RG-P3 : le formulaire « Modifier » ne doit pas permettre de désactiver un responsable (bug de recette)."""
+
+    def setUp(self):
+        self.admin = _creer_utilisateur("admin@serein.bf", is_superuser=True)
+        self.dept = Departement.objects.create(nom="Dept A")
+        self.responsable = Personnel.objects.create(nom="Kone", prenom="Ibrahim", departement=self.dept, actif=True)
+        self.dept.responsable = self.responsable
+        self.dept.save()
+        self.client.force_login(self.admin)
+
+    def _donnees(self, **valeurs):
+        donnees = {"nom": "Kone", "prenom": "Ibrahim", "fonction": "Chef", "telephone": "",
+                   "email": "", "departement": self.dept.pk}
+        donnees.update(valeurs)
+        return donnees
+
+    def test_modifier_un_responsable_ne_le_desactive_pas(self):
+        # « actif » décoché = absent du POST ; on l'envoie même explicitement à faux.
+        self.client.post(reverse("referentiels:personnel_modifier", kwargs={"pk": self.responsable.pk}),
+                         self._donnees(actif=""))
+        self.responsable.refresh_from_db()
+        self.assertTrue(self.responsable.actif)
+        self.assertEqual(self.responsable.fonction, "Chef")
+
+    def test_formulaire_sans_case_actif(self):
+        reponse = self.client.get(reverse("referentiels:personnel_modifier", kwargs={"pk": self.responsable.pk}))
+        self.assertNotIn("actif", reponse.context["form"].fields)
+
+    def test_creation_d_un_personnel_actif_par_defaut(self):
+        self.client.post(reverse("referentiels:personnel_creer"), self._donnees(nom="Nouveau", departement=""))
+        self.assertTrue(Personnel.objects.get(nom="Nouveau").actif)
+
+
 class PersonnelChangerDeptTests(TestCase):
 
     def setUp(self):

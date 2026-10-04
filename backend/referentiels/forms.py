@@ -66,7 +66,9 @@ class PersonnelForm(forms.ModelForm):
 
     class Meta:
         model = Personnel
-        fields = ["nom", "prenom", "fonction", "telephone", "email", "departement", "actif"]
+        # Pas de champ « actif » : l'activation passe uniquement par PersonnelDesactiverView, qui
+        # applique RG-P3 / RG-P4 (responsable de département, maître d'un stage en cours).
+        fields = ["nom", "prenom", "fonction", "telephone", "email", "departement"]
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
