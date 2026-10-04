@@ -828,6 +828,39 @@ class InterfaceConsultationTests(_DonneesPagesMixin, TestCase):
         self.assertEqual(types, {"stage"})
 
 
+class TableauxDeBordEcheancesTests(_DonneesPagesMixin, TestCase):
+    """RG-S15 : listes d'échéances des tableaux de bord (mêmes critères que les alertes)."""
+
+    def _contexte(self, role, url):
+        self.client.logout()
+        self.client.force_login(self.utilisateurs[role])
+        return self.client.get(reverse(url)).context
+
+    def test_responsable_echeances_de_son_departement(self):
+        Candidature.objects.filter(pk=self.cand_recue.pk).update(
+            debut_disponibilite=timezone.localdate() - datetime.timedelta(days=30), fin_disponibilite=timezone.localdate()
+        )
+        Stage.objects.filter(pk=self.stage_cours.pk).update(date_fin_prevue=timezone.localdate())
+        ctx = self._contexte(RESP, "comptes:tableau_bord_responsable")
+        self.assertIn(self.stage_a_venir, ctx["stages_a_demarrer"])
+        self.assertNotIn(self.stage_b_a_venir, ctx["stages_a_demarrer"])
+        self.assertIn(self.stage_cours, ctx["stages_a_terminer"])
+        self.assertIn(self.cand_recue, ctx["disponibilites_expirantes"])
+        self.assertNotIn(self.cand_b, ctx["disponibilites_expirantes"])
+
+    def test_secretaire_accordees_sans_stage(self):
+        Candidature.objects.filter(pk=self.cand_accordee.pk).update(
+            debut_disponibilite=timezone.localdate() - datetime.timedelta(days=30), fin_disponibilite=timezone.localdate()
+        )
+        ctx = self._contexte(SEC, "comptes:tableau_bord_secretaire")
+        self.assertEqual([c.pk for c in ctx["accordees_sans_stage"]], [self.cand_accordee.pk])
+
+    def test_les_listes_ne_dependent_pas_des_alertes_deja_envoyees(self):
+        Stage.objects.filter(pk=self.stage_a_venir.pk).update(alerte_demarrage_envoyee=True)
+        ctx = self._contexte(RESP, "comptes:tableau_bord_responsable")
+        self.assertIn(self.stage_a_venir, ctx["stages_a_demarrer"])
+
+
 class TelechargementsTests(_DonneesPagesMixin, TestCase):
 
     def test_piece_jointe_servie_en_pdf(self):
