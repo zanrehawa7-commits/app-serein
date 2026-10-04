@@ -164,6 +164,37 @@ def modifier_stage(stage, date_fin_prevue, maitre_stage, utilisateur, date_debut
 
 
 @transaction.atomic
+def demarrer_stage(stage, utilisateur, aujourd_hui=None):
+    """
+    RG-S14 : A_VENIR → EN_COURS, par le Responsable, à partir de la date de démarrage effective.
+    Une fin prévue déjà dépassée n'empêche pas le démarrage (régularisation ; l'alerte « à terminer » suivra).
+    """
+    from suivi.services import enregistrer_historique, notifier
+    from .models import Stage as S, StatutStage
+
+    if aujourd_hui is None:
+        aujourd_hui = timezone.localdate()
+
+    s = S.objects.select_for_update().select_related("candidature__candidat").get(pk=stage.pk)
+    if s.statut != StatutStage.A_VENIR:
+        raise TransitionInterdite(
+            f"Seul un stage à venir peut être démarré (statut actuel « {s.get_statut_display()} »)."
+        )
+    demarrage = s.date_demarrage_effective()
+    if demarrage > aujourd_hui:
+        raise TransitionInterdite(f"Le stage ne peut être démarré qu'à partir du {demarrage:%d/%m/%Y}.")
+
+    s.statut = StatutStage.EN_COURS
+    s.save(update_fields=["statut"])
+    enregistrer_historique(s, utilisateur, StatutStage.A_VENIR, StatutStage.EN_COURS, "Stage démarré.")
+
+    secs = _secretaires_actives()
+    if secs:
+        notifier(secs, f"Stage de {s.candidature.candidat} démarré.", f"/stages/{s.pk}/")
+    return s
+
+
+@transaction.atomic
 def terminer_stage(stage, date_fin_reelle, utilisateur):
     from suivi.services import enregistrer_historique, notifier
     from .models import Stage as S, StatutStage

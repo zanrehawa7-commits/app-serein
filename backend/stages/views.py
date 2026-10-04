@@ -31,6 +31,7 @@ from .models import Stage, StatutStage
 from .services import (
     TransitionInterdite,
     constituer_stage,
+    demarrer_stage,
     debut_modifiable,
     evaluer_stage,
     interrompre_stage,
@@ -157,6 +158,7 @@ class StageDetailView(ConsultationMixin, View):
         ).order_by("-date_affectation")
         _peut_eval, _ = peut_evaluer(stage) if stage.statut == StatutStage.TERMINE and role == "Responsable" else (False, None)
         peut_pieces = a_acces(request.user, _ROLES_LECTURE, "candidatures.telecharger_pieces_jointes")
+        demarrage = stage.date_demarrage_effective()
         return render(request, "stages/stage_detail.html", {
             "stage": stage,
             "historiques": historiques,
@@ -174,6 +176,12 @@ class StageDetailView(ConsultationMixin, View):
                 stage.statut in [StatutStage.A_VENIR, StatutStage.EN_COURS]
             ),
             "peut_terminer": role == "Responsable" and stage.statut == StatutStage.EN_COURS,
+            # RG-S14 : bouton affiché seulement à partir de la date de démarrage effective.
+            "date_demarrage": demarrage if stage.statut == StatutStage.A_VENIR else None,
+            "peut_demarrer": (
+                role == "Responsable" and stage.statut == StatutStage.A_VENIR
+                and demarrage <= timezone.localdate()
+            ),
             "peut_interrompre": (
                 role == "Responsable" and
                 stage.statut in [StatutStage.A_VENIR, StatutStage.EN_COURS]
@@ -298,6 +306,27 @@ class ModifierStageView(RoleRequisMixin, View):
             "stage": stage,
             "debut_modifiable": debut_modifiable(stage),
         })
+
+
+class DemarrerStageView(RoleRequisMixin, View):
+    """RG-S14 : démarrage manuel par le Responsable du département du stage (POST)."""
+    roles = ["Responsable"]
+
+    def post(self, request, pk):
+        stage = get_object_or_404(Stage.objects.select_related("candidature__departement"), pk=pk)
+        dept = _get_departement_utilisateur(request.user)
+        if dept is None or stage.candidature.departement != dept:
+            raise PermissionDenied
+        try:
+            demarrer_stage(stage, request.user)
+        except TransitionInterdite as e:
+            messages.error(request, str(e))
+        else:
+            messages.success(request, "Stage démarré.")
+        return redirect("stages:stage_detail", pk=pk)
+
+    def get(self, request, pk):
+        return redirect("stages:stage_detail", pk=pk)
 
 
 class TerminerStageView(RoleRequisMixin, View):

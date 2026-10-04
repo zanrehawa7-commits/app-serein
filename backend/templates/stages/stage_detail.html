@@ -19,6 +19,18 @@
             <i class="bi bi-pencil me-1"></i>Modifier
         </a>
         {% endif %}
+        {% if peut_demarrer %}
+        <form method="post" action="{% url 'stages:stage_demarrer' stage.pk %}" class="d-inline">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-primary btn-sm">
+                <i class="bi bi-play-fill me-1"></i>Démarrer le stage
+            </button>
+        </form>
+        {% elif date_demarrage and role == "Responsable" %}
+        <span class="badge text-bg-light border align-self-center">
+            <i class="bi bi-clock me-1"></i>Démarrage possible à partir du {{ date_demarrage|date:"d/m/Y" }}
+        </span>
+        {% endif %}
         {% if peut_terminer %}
         <a href="{% url 'stages:stage_terminer' stage.pk %}" class="btn btn-success btn-sm">
             <i class="bi bi-check-circle me-1"></i>Terminer

@@ -1103,3 +1103,88 @@ class MigrationPeriodesStagesInterrompusTests(TestCase):
             (periode.date_debut, periode.date_fin, periode.motif_interruption),
             (stage.date_fin_reelle, None, "Ancien motif"),
         )
+
+
+# ─── RG-S14 : démarrage manuel d'un stage ─────────────────────────────────────
+
+
+class DemarrerStageTests(TestCase):
+
+    def setUp(self):
+        from .services import demarrer_stage
+        self.demarrer_stage = demarrer_stage
+        self.dept = _dept()
+        self.maitre = _membre(self.dept, "Zongo")
+        self.sec = _secretaire()
+        self.resp = _responsable(self.dept)
+        self.aujourd_hui = timezone.localdate()
+
+    def _jour(self, n):
+        return self.aujourd_hui + datetime.timedelta(days=n)
+
+    def _stage(self, debut, fin):
+        return constituer_stage(_candidature_accordee(self.dept), debut, fin, self.maitre, self.sec)
+
+    def test_avant_la_date_refuse_avec_la_date_dans_le_message(self):
+        stage = self._stage(self._jour(3), self._jour(60))
+        with self.assertRaisesMessage(TransitionInterdite, f"à partir du {self._jour(3):%d/%m/%Y}"):
+            self.demarrer_stage(stage, self.resp)
+        stage.refresh_from_db()
+        self.assertEqual(stage.statut, StatutStage.A_VENIR)
+
+    def test_a_la_date_demarre_avec_historique_et_notification(self):
+        from suivi.models import Historique, Notification
+        stage = self._stage(self.aujourd_hui, self._jour(60))
+        self.demarrer_stage(stage, self.resp)
+        stage.refresh_from_db()
+        self.assertEqual(stage.statut, StatutStage.EN_COURS)
+        h = Historique.objects.filter(object_id=stage.pk).order_by("-pk").first()
+        self.assertEqual((h.ancien_statut, h.nouveau_statut, h.utilisateur), (StatutStage.A_VENIR, StatutStage.EN_COURS, self.resp))
+        notif = Notification.objects.get(destinataire=self.sec, message__contains="démarré")
+        self.assertEqual(notif.lien, f"/stages/{stage.pk}/")
+
+    def test_fin_prevue_depassee_demarrage_autorise(self):
+        """Régularisation : un stage oublié peut être démarré ; l'alerte « à terminer » suivra."""
+        stage = self._stage(self._jour(-60), self._jour(-5))
+        self.demarrer_stage(stage, self.resp)
+        stage.refresh_from_db()
+        self.assertEqual(stage.statut, StatutStage.EN_COURS)
+
+    def test_stage_non_a_venir_refuse(self):
+        stage = self._stage(self._jour(-10), self._jour(60))
+        self.demarrer_stage(stage, self.resp)
+        with self.assertRaisesMessage(TransitionInterdite, "Seul un stage à venir"):
+            self.demarrer_stage(stage, self.resp)
+
+    def test_reprise_future_demarrable_seulement_a_la_date_de_reprise(self):
+        stage = self._stage(self._jour(-30), self._jour(60))
+        self.demarrer_stage(stage, self.resp)
+        interrompre_stage(stage, self._jour(-10), "Maladie", self.resp)
+        reprendre_stage(stage, self._jour(5), self._jour(60), "Retour", self.resp)
+        with self.assertRaisesMessage(TransitionInterdite, f"{self._jour(5):%d/%m/%Y}"):
+            self.demarrer_stage(stage, self.resp)
+        self.demarrer_stage(stage, self.resp, aujourd_hui=self._jour(5))
+        stage.refresh_from_db()
+        self.assertEqual(stage.statut, StatutStage.EN_COURS)
+
+    def test_vue_bouton_seulement_a_partir_de_la_date(self):
+        self.client.force_login(self.resp)
+        futur = self._stage(self._jour(3), self._jour(60))
+        reponse = self.client.get(reverse("stages:stage_detail", args=[futur.pk]))
+        self.assertNotContains(reponse, reverse("stages:stage_demarrer", args=[futur.pk]))
+        self.assertContains(reponse, f"Démarrage possible à partir du {self._jour(3):%d/%m/%Y}")
+        pret = self._stage(self.aujourd_hui, self._jour(60))
+        reponse = self.client.get(reverse("stages:stage_detail", args=[pret.pk]))
+        self.assertContains(reponse, reverse("stages:stage_demarrer", args=[pret.pk]))
+
+    def test_vue_post_demarre_et_post_anticipe_refuse(self):
+        self.client.force_login(self.resp)
+        pret = self._stage(self.aujourd_hui, self._jour(60))
+        self.client.post(reverse("stages:stage_demarrer", args=[pret.pk]))
+        pret.refresh_from_db()
+        self.assertEqual(pret.statut, StatutStage.EN_COURS)
+        futur = self._stage(self._jour(3), self._jour(60))
+        reponse = self.client.post(reverse("stages:stage_demarrer", args=[futur.pk]), follow=True)
+        futur.refresh_from_db()
+        self.assertEqual(futur.statut, StatutStage.A_VENIR)
+        self.assertContains(reponse, "ne peut être démarré")

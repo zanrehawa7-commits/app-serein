@@ -175,6 +175,7 @@ MATRICE = {
     "stages:stage_detail": (TOUS, 200, {"pk": "stage_cours"}),
     "stages:stage_constituer": ((SEC,), 200, {"candidature_pk": "cand_accordee"}),
     "stages:stage_modifier": ((SEC,), 200, {"pk": "stage_cours"}),
+    "stages:stage_demarrer": ((RESP,), 302, {"pk": "stage_a_venir"}),
     "stages:stage_terminer": ((RESP,), 200, {"pk": "stage_cours"}),
     "stages:stage_interrompre": ((RESP,), 200, {"pk": "stage_cours"}),
     "stages:stage_evaluer": ((RESP,), 200, {"pk": "stage_fini"}),
@@ -184,7 +185,7 @@ MATRICE = {
 
 # Toutes les actions réservées au Responsable et liées à un département (besoin, candidature, stage).
 # Constituer / modifier un stage (dont le maître de stage) sont réservés à la Secrétaire : 403 par rôle.
-def _actions_responsable(besoin, candidature, stage, stage_termine, stage_interrompu):
+def _actions_responsable(besoin, candidature, stage, stage_termine, stage_interrompu, stage_a_venir):
     return [
         ("offres:besoin_modifier", {"pk": besoin}),
         ("offres:besoin_annuler", {"pk": besoin}),
@@ -193,6 +194,7 @@ def _actions_responsable(besoin, candidature, stage, stage_termine, stage_interr
         ("candidatures:candidature_accorder", {"pk": candidature}),
         ("candidatures:candidature_refuser", {"pk": candidature}),
         ("candidatures:candidature_rediriger", {"pk": candidature}),
+        ("stages:stage_demarrer", {"pk": stage_a_venir}),
         ("stages:stage_terminer", {"pk": stage}),
         ("stages:stage_interrompre", {"pk": stage}),
         ("stages:stage_evaluer", {"pk": stage_termine}),
@@ -201,10 +203,10 @@ def _actions_responsable(besoin, candidature, stage, stage_termine, stage_interr
 
 
 ACTIONS_RESPONSABLE_DEPT_A = _actions_responsable(
-    "besoin_libre", "cand_recue", "stage_cours", "stage_fini", "stage_interrompu"
+    "besoin_libre", "cand_recue", "stage_cours", "stage_fini", "stage_interrompu", "stage_a_venir"
 )
 ACTIONS_RESPONSABLE_DEPT_B = _actions_responsable(
-    "besoin_b", "cand_b", "stage_b", "stage_b_fini", "stage_b_interrompu"
+    "besoin_b", "cand_b", "stage_b", "stage_b_fini", "stage_b_interrompu", "stage_b_a_venir"
 )
 
 _PDF = b"%PDF-1.4 test etape 10"
@@ -382,6 +384,16 @@ class _DonneesPagesMixin:
 
         cls.stage_interrompu = stage_interrompu("Zida", cls.dept_a, cls.maitre_a)
         cls.stage_b_interrompu = stage_interrompu("Nikiema", cls.dept_b, cls.maitre_b)
+
+        # À venir, début atteint : démarrable par le Responsable du département (RG-S14).
+        cls.stage_a_venir = stage(
+            candidature(candidat("Ouattara"), cls.dept_a, StatutCandidature.ACCORDEE), cls.maitre_a,
+            StatutStage.A_VENIR,
+        )
+        cls.stage_b_a_venir = stage(
+            candidature(candidat("Kientega"), cls.dept_b, StatutCandidature.ACCORDEE), cls.maitre_b,
+            StatutStage.A_VENIR,
+        )
 
     def _url(self, nom, params, role=None):
         kwargs = {}
@@ -611,6 +623,7 @@ class ResponsableSansDepartementTests(_DonneesPagesMixin, TestCase):
                     ecarts.append(f"{nom:50} {methode:4} obtenu {obtenu}")
         self.assertFalse(ecarts, "\n" + "\n".join(ecarts))
         self.assertEqual(Stage.objects.get(pk=self.stage_cours.pk).statut, StatutStage.EN_COURS)
+        self.assertEqual(Stage.objects.get(pk=self.stage_a_venir.pk).statut, StatutStage.A_VENIR)
         self.assertEqual(Stage.objects.get(pk=self.stage_fini.pk).note, 15)
         self.assertEqual(Candidature.objects.get(pk=self.cand_recue.pk).statut, StatutCandidature.RECUE)
         self.assertEqual(Besoin.objects.get(pk=self.besoin_libre.pk).statut, StatutBesoin.ENVOYE)
