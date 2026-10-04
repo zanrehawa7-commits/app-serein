@@ -44,7 +44,7 @@
 | RG21 | — | À COMPLÉTER | — | — |
 | **RG22** | **RG22** | Maître de stage = personnel actif du même département que la candidature. | Certain | `stages/models.py`, `stages/services.py` |
 | RG23 | — | À COMPLÉTER | — | — |
-| RG24 | — | À COMPLÉTER | — | — |
+| **RG24** | **RG-S8 / RG-S9 → RG-S14, RG-S15** | Transitions automatiques des stages : **remplacée par décision du directeur de mémoire** (lot G) — le système alerte, le Responsable démarre et termine. | Indiqué | `stages/services.py`, `alerter_echeances` |
 | RG25 | — | À COMPLÉTER | — | — |
 | RG26 | — | À COMPLÉTER | — | — |
 | RG27 | — | À COMPLÉTER | — | — |
@@ -57,7 +57,7 @@
 | RG34 | — | À COMPLÉTER | — | — |
 | RG35 | — | À COMPLÉTER | — | — |
 
-**Bilan** : 9 / 35 renseignées (6 certaines, 1 indiquée, 2 à confirmer) — 26 à compléter à partir du cahier des charges.
+**Bilan** : 10 / 35 renseignées (6 certaines, 2 indiquées, 2 à confirmer) — 25 à compléter à partir du cahier des charges.
 
 ## Règles du code sans numéro du cahier connu
 
@@ -71,9 +71,10 @@ pendant le développement).
 | RG-R3 | Écrans Référentiels réservés à l'Administrateur. | Décision étape 10 |
 | RG-N4 | Exception assumée : `notification_lire` accepte le GET. | Décision étape 10 |
 | RG-E1 à RG-E4, RG-E6 | Note 1–20, vivier si note ≥ 12, verrouillage 30 jours, rapport non verrouillé, vivier consultable. | Étape 9 |
-| RG-S1 à RG-S10 | Constitution, transitions et automatisation des stages. | Étape 8 |
+| RG-S1 à RG-S10 | Constitution et transitions des stages ; RG-S2, RG-S8 à RG-S10 modifiées au lot G (plus d'automatisme). | Étape 8, lot G |
 | RG-S11 | Dates du stage dans la disponibilité du candidat (bloquant). | Lot F (directeur de mémoire) |
 | RG-S12, RG-S13 | Reprise d'un stage interrompu ; périodes d'interruption conservées. | Lot F (directeur de mémoire) |
+| RG-S14, RG-S15 | Démarrage manuel d'un stage ; alertes d'échéance (aucun changement automatique de statut). | Lot G (directeur de mémoire) |
 | RG-O9 | Fermer l'offre → le besoin lié PRIS_EN_CHARGE passe à CLOTURE (état final), historique + notification. | Spécification de l'étape 5, implémentée au lot fix/besoin-cloture |
 | RG-R1, RG-R2 | Suppression → désactivation si utilisé ; durée min ≤ max. | Étapes 4 / lot B |
 | RG-P1 à RG-P7 | Règles sur le personnel et les responsables de département. | Lot A |

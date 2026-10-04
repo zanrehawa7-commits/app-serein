@@ -1,6 +1,6 @@
 # Stage Track — Export pour la modélisation UML
 
-> Extrait **du code source** (commit de référence : `8596072` + lot `fix/besoin-cloture`, 2026-10-03), pour mettre à jour les
+> Extrait **du code source** (commit de référence : `f04e794`, mis à jour le 2026-10-04), pour mettre à jour les
 > diagrammes de classes, d'états et de cas d'utilisation du rapport.
 >
 > - Section 1 : générée par introspection des modèles Django (`_meta`) — champs, relations, contraintes,
@@ -330,6 +330,8 @@ Table `candidatures_candidature` · tri par défaut : -date_depot
 | `commentaire` | TextField | facultatif (vide) | — |
 | `candidat_informe` | BooleanField | obligatoire | `False` |
 | `date_information` | DateTimeField | facultatif (NULL) | — |
+| `alerte_disponibilite_envoyee` | BooleanField | obligatoire | `False` |
+| `alerte_disponibilite_stage_envoyee` | BooleanField | obligatoire | `False` |
 | `alerte_entretien_envoyee` | BooleanField | obligatoire | `False` |
 | `date_depot` | DateTimeField | automatique | date/heure de création |
 
@@ -422,6 +424,8 @@ Table `stages_stage` · tri par défaut : -date_debut
 | `vivier` | BooleanField | obligatoire | `False` |
 | `rapport` | FileField (max 100, stockage StockagePrive) | facultatif (NULL) | — |
 | `date_evaluation` | DateField | facultatif (NULL) | — |
+| `alerte_demarrage_envoyee` | BooleanField | obligatoire | `False` |
+| `alerte_fin_envoyee` | BooleanField | obligatoire | `False` |
 | `rappel_evaluation_envoye` | BooleanField | obligatoire | `False` |
 
 Relations :
@@ -636,17 +640,18 @@ Actions sans changement de statut :
 
 | Départ | Arrivée | Fonction de service | Rôle | Type |
 |---|---|---|---|---|
-| — (création depuis une candidature `ACCORDEE`) | `A_VENIR` si début futur, sinon `EN_COURS` | `stages.services.constituer_stage` | Secrétaire | manuelle |
+| — (création depuis une candidature `ACCORDEE`) | `A_VENIR`, **toujours** (même si le début est passé — RG-S2) | `stages.services.constituer_stage` | Secrétaire | manuelle |
 | `A_VENIR`, `EN_COURS` | (inchangé : dates, maître de stage) | `stages.services.modifier_stage` | Secrétaire | manuelle |
-| `A_VENIR` | `EN_COURS` | `stages.services.demarrer_stage_auto` (date de démarrage effective ≤ aujourd'hui) | Système (`mettre_a_jour_stages`) | automatique |
+| `A_VENIR` | `EN_COURS` | `stages.services.demarrer_stage` (si date de démarrage effective ≤ aujourd'hui ; fin dépassée autorisée — RG-S14) | Responsable (son département) | manuelle |
 | `EN_COURS` | `TERMINE` | `stages.services.terminer_stage` | Responsable (son département) | manuelle |
-| `EN_COURS` | `TERMINE` | `stages.services.cloturer_stage_auto` (date de fin prévue dépassée) | Système (`mettre_a_jour_stages`) | automatique |
 | `A_VENIR`, `EN_COURS` | `INTERROMPU` (crée une `PeriodeInterruption`) | `stages.services.interrompre_stage` | Responsable (son département) | manuelle |
 | `INTERROMPU` | `EN_COURS` si reprise passée ou du jour, sinon `A_VENIR` (complète la `PeriodeInterruption`) | `stages.services.reprendre_stage` | Responsable (son département) | manuelle |
 | `TERMINE` | `TERMINE` (note, vivier, rapport) | `stages.services.evaluer_stage` (modifiable 30 jours, `peut_evaluer`) | Responsable (son département) | manuelle |
 
 - Date de démarrage effective : `Stage.date_demarrage_effective()` = date de la dernière reprise, sinon `date_debut`.
 - `TERMINE` est final pour le statut ; seule l'évaluation le modifie encore (30 jours après `date_evaluation`).
+- **Aucune transition automatique** (lot G, décision du directeur de mémoire) : le Système n'émet que des
+  alertes (RG-S15) ; un stage reste `A_VENIR` ou `EN_COURS` après ses dates tant que le Responsable n'agit pas.
 
 ---
 
@@ -828,6 +833,7 @@ département (RG-U5).
 - Consulter le vivier de talents — *tous départements* (`stages:vivier`)
 - Exporter le vivier (CSV) — *tous départements* (`stages:vivier_export_csv`)
 - Consulter un stage (dossier du candidat) — *son département ; autre département seulement si stage au vivier (lecture limitée, RG-E8)* (`stages:stage_detail`)
+- Démarrer un stage — *son département* (`stages:stage_demarrer`)
 - Terminer un stage — *son département* (`stages:stage_terminer`)
 - Interrompre un stage — *son département* (`stages:stage_interrompre`)
 - Évaluer un stage (note, vivier, rapport) — *son département* (`stages:stage_evaluer`)
@@ -870,9 +876,14 @@ Lecture seule, tous départements. Chaque cas n'est ouvert que si le droit indiq
 
 ### Système (commandes planifiées)
 
-- Démarrer automatiquement les stages à venir — `stages.services.demarrer_stage_auto`
-- Clôturer automatiquement les stages dont la date de fin est dépassée (et notifier le Responsable) — `stages.services.cloturer_stage_auto`
-- Rappeler au Responsable d'évaluer un stage terminé depuis 7 jours — commande `mettre_a_jour_stages`
+Le Système **alerte, il ne change jamais un statut** (RG-S15). Commande `alerter_echeances` :
+
+- Alerter le Responsable d'un stage à démarrer (démarrage effectif ≤ demain)
+- Alerter le Responsable d'un stage à terminer (fin prévue ≤ J+3, y compris dépassée)
+- Alerter le Responsable d'une candidature dont la disponibilité expire (≤ J+3)
+- Alerter les Secrétaires d'une candidature accordée sans stage dont la disponibilité expire (≤ J+3)
+- Rappeler au Responsable d'évaluer un stage terminé depuis 7 jours
+- (Sans Responsable dans le département : alertes aux Administrateurs)
 - Alerter les Secrétaires d'un entretien dans moins de 48 h, candidat non informé — commande `alerter_entretiens`
 
 ### Relations « include » / « extend » (vérifiées dans le code)
@@ -1022,18 +1033,20 @@ de référence.
 |---|---|---|
 | RG22 | Maître de stage = personnel actif du même département que la candidature. | `stages/models.py` + services |
 | RG-S1 | Constitution : candidature ACCORDEE, aucun stage existant, maître actif même département. | `stages/services.py` |
-| RG-S2 | Statut à la création : date_debut ≤ aujourd'hui → EN_COURS ; sinon → A_VENIR. | `stages/services.py` |
+| RG-S2 | Statut à la création : **toujours À venir**, même si la date de début est passée ou du jour (décision du directeur de mémoire, lot G). Le stage est démarré par le Responsable (RG-S14). | `stages/services.py` (`constituer_stage`) |
 | RG-S3 | date_fin_prevue > date_debut (`CheckConstraint` + `clean()`). | `stages/models.py` |
 | RG-S4 | Modification : A_VENIR ou EN_COURS uniquement. date_debut modifiable seulement si A_VENIR. | `stages/services.py` |
 | RG-S5 | Terminer : EN_COURS → TERMINE. date_fin_reelle ∈ [date_debut, aujourd'hui]. | `stages/services.py` |
 | RG-S6 | Interrompre : A_VENIR ou EN_COURS → INTERROMPU. Motif obligatoire. | `stages/services.py` |
 | RG-S7 | Historique des maîtres : `AffectationMaitreStage` créée à la constitution et à chaque changement de maître (pas de doublon si seule la date change). | `stages/services.py` |
-| RG-S8 | Démarrage automatique (`mettre_a_jour_stages`) : A_VENIR → EN_COURS si date_debut ≤ aujourd'hui. Exécuté AVANT les clôtures. | `stages/services.py` |
-| RG-S9 | Clôture automatique : EN_COURS → TERMINE si date_fin_prevue < aujourd'hui. Notifie le Responsable du département. | `stages/services.py` |
-| RG-S10 | Rappel évaluation automatique : TERMINE + note=null + date_fin ≤ aujourd'hui-7j + rappel_evaluation_envoye=False → notif Responsable + flag posé (idempotent). | `stages/management/commands/mettre_a_jour_stages.py` |
+| RG-S8 | **Plus aucun démarrage automatique** : un stage À venir reste À venir tant que le Responsable ne l'a pas démarré (RG-S14). Le système alerte la veille de la date de démarrage effective (RG-S15 a). | `stages/services.py` |
+| RG-S9 | **Plus aucune clôture automatique** : un stage En cours reste En cours après sa date de fin prévue, jusqu'à ce que le Responsable le termine. Le système alerte 72 h avant la fin prévue, et si elle est dépassée (RG-S15 b). | `stages/services.py` |
+| RG-S10 | Rappel d'évaluation : stage TERMINE, non noté, `date_fin_reelle` (saisie par le Responsable) ≤ aujourd'hui − 7 jours → notification au Responsable (repli : Administrateurs), une seule fois (`rappel_evaluation_envoye`). | `stages/management/commands/alerter_echeances.py` |
 | RG-S11 | Dates du stage dans la disponibilité du candidat : `date_debut ≥ debut_disponibilite` et `date_fin_prevue ≤ fin_disponibilite`, **bloquant** (formulaire + service), message avec la période du candidat. À la modification, le début n'est vérifié que s'il est modifiable (stage à venir jamais démarré) ; la fin l'est toujours. Stages existants inchangés : la règle s'applique à leur prochaine modification. | `stages/services.py` (`erreurs_disponibilite`), `stages/forms.py` |
-| RG-S12 | **Reprise d'un stage interrompu** (Responsable du département du stage uniquement) : INTERROMPU → EN_COURS si la date de reprise est passée ou du jour, A_VENIR si elle est future. Date de reprise ≥ date d'interruption ; nouvelle fin prévue > date de reprise et ≤ fin de disponibilité du candidat ; motif obligatoire. `date_fin_reelle` remise à vide. Historique + notification aux Secrétaires. Une fin prévue déjà passée est acceptée (régularisation) : message d'information, clôture par la mise à jour quotidienne. Ensuite le cycle normal s'applique : démarrage automatique à la date de reprise (pas au début d'origine), clôture, évaluation. Après reprise, la date de début n'est plus modifiable ; terminer / interrompre exigent une date ≥ date de reprise. | `stages/services.py` (`reprendre_stage`, `date_demarrage_effective`) |
+| RG-S12 | **Reprise d'un stage interrompu** (Responsable du département du stage uniquement) : INTERROMPU → EN_COURS si la date de reprise est passée ou du jour, A_VENIR si elle est future. Date de reprise ≥ date d'interruption ; nouvelle fin prévue > date de reprise et ≤ fin de disponibilité du candidat ; motif obligatoire. `date_fin_reelle` remise à vide. Historique + notification aux Secrétaires. Une fin prévue déjà passée est acceptée (régularisation) : message invitant à terminer le stage (rien n'est automatique). Un stage repris « À venir » doit être démarré par le Responsable, à partir de la date de reprise (RG-S14). Après reprise, la date de début n'est plus modifiable ; terminer / interrompre exigent une date ≥ date de reprise. | `stages/services.py` (`reprendre_stage`, `date_demarrage_effective`) |
 | RG-S13 | **Périodes d'interruption** (`PeriodeInterruption`) : créée à chaque interruption (date, motif, auteur), complétée à la reprise (date, motif, auteur). Toutes les périodes sont conservées et affichées sur la fiche stage. Une seule période ouverte par stage (contrainte en base). Les stages interrompus avant le lot F ont reçu leur période ouverte (migration 0006). Un stage à venir peut être interrompu avant sa date de début. | `stages/models.py`, `stages/services.py` |
+| RG-S14 | **Démarrage manuel** (Responsable du département du stage uniquement ; 403 pour tout autre rôle ou département) : À venir → En cours, seulement si `date_demarrage_effective()` ≤ aujourd'hui (sinon message avec la date). Bouton affiché à partir de cette date. Un stage dont la fin prévue est déjà dépassée peut quand même être démarré (régularisation) ; l'alerte « à terminer » suivra. Historique + notification aux Secrétaires. | `stages/services.py` (`demarrer_stage`) |
+| RG-S15 | **Alertes d'échéance** (commande quotidienne `alerter_echeances`, option `--date`) — le système **alerte, il ne change jamais un statut** ; chaque alerte est envoyée **une fois** par échéance, avec un lien vers la fiche, et repart si la date concernée change (modification ou reprise du stage, modification ou redirection de la candidature) : a) stage À venir, démarrage effectif ≤ demain → Responsable ; b) stage En cours, fin prévue ≤ aujourd'hui + 3 jours (y compris dépassée) → Responsable ; c) candidature Reçue / En traitement, fin de disponibilité ≤ aujourd'hui + 3 jours → Responsable (jamais de refus automatique) ; d) candidature Accordée sans stage, fin de disponibilité ≤ aujourd'hui + 3 jours → Secrétaires ; e) rappel d'évaluation (RG-S10). Sans Responsable dans le département : Administrateurs. Mêmes critères affichés sur les tableaux de bord (Responsable : a, b, c ; Secrétaire : d). | `stages/management/commands/alerter_echeances.py`, `stages/services.py`, `candidatures/services.py` |
 
 ---
 
@@ -1071,7 +1084,7 @@ de référence.
 | Durées des 5 types de stage | Créés par `init_donnees` sans duree_min/max → à compléter via l'interface Administrateur. |
 | Filtre "partenaire" sur listes | Accessible à tous les rôles pour l'instant. |
 | Fréquence cron `alerter_entretiens` | Toutes les 2 h provisoire. |
-| Fréquence cron `mettre_a_jour_stages` | 1×/nuit provisoire. |
+| Fréquence cron `alerter_echeances` | 1×/jour provisoire (remplace `mettre_a_jour_stages`, lot G). |
 | Accès AffectationMaitreStage aux Admins | Masqué pour l'instant. |
 | Notifications email SMTP | Non implémentées ; uniquement in-app. |
 
@@ -1121,7 +1134,7 @@ de référence.
 | RG21 | — | À COMPLÉTER | — | — |
 | **RG22** | **RG22** | Maître de stage = personnel actif du même département que la candidature. | Certain | `stages/models.py`, `stages/services.py` |
 | RG23 | — | À COMPLÉTER | — | — |
-| RG24 | — | À COMPLÉTER | — | — |
+| **RG24** | **RG-S8 / RG-S9 → RG-S14, RG-S15** | Transitions automatiques des stages : **remplacée par décision du directeur de mémoire** (lot G) — le système alerte, le Responsable démarre et termine. | Indiqué | `stages/services.py`, `alerter_echeances` |
 | RG25 | — | À COMPLÉTER | — | — |
 | RG26 | — | À COMPLÉTER | — | — |
 | RG27 | — | À COMPLÉTER | — | — |
@@ -1134,7 +1147,7 @@ de référence.
 | RG34 | — | À COMPLÉTER | — | — |
 | RG35 | — | À COMPLÉTER | — | — |
 
-**Bilan** : 9 / 35 renseignées (6 certaines, 1 indiquée, 2 à confirmer) — 26 à compléter à partir du cahier des charges.
+**Bilan** : 10 / 35 renseignées (6 certaines, 2 indiquées, 2 à confirmer) — 25 à compléter à partir du cahier des charges.
 
 #### Règles du code sans numéro du cahier connu
 
@@ -1148,9 +1161,10 @@ pendant le développement).
 | RG-R3 | Écrans Référentiels réservés à l'Administrateur. | Décision étape 10 |
 | RG-N4 | Exception assumée : `notification_lire` accepte le GET. | Décision étape 10 |
 | RG-E1 à RG-E4, RG-E6 | Note 1–20, vivier si note ≥ 12, verrouillage 30 jours, rapport non verrouillé, vivier consultable. | Étape 9 |
-| RG-S1 à RG-S10 | Constitution, transitions et automatisation des stages. | Étape 8 |
+| RG-S1 à RG-S10 | Constitution et transitions des stages ; RG-S2, RG-S8 à RG-S10 modifiées au lot G (plus d'automatisme). | Étape 8, lot G |
 | RG-S11 | Dates du stage dans la disponibilité du candidat (bloquant). | Lot F (directeur de mémoire) |
 | RG-S12, RG-S13 | Reprise d'un stage interrompu ; périodes d'interruption conservées. | Lot F (directeur de mémoire) |
+| RG-S14, RG-S15 | Démarrage manuel d'un stage ; alertes d'échéance (aucun changement automatique de statut). | Lot G (directeur de mémoire) |
 | RG-O9 | Fermer l'offre → le besoin lié PRIS_EN_CHARGE passe à CLOTURE (état final), historique + notification. | Spécification de l'étape 5, implémentée au lot fix/besoin-cloture |
 | RG-R1, RG-R2 | Suppression → désactivation si utilisé ; durée min ≤ max. | Étapes 4 / lot B |
 | RG-P1 à RG-P7 | Règles sur le personnel et les responsables de département. | Lot A |
@@ -1166,7 +1180,7 @@ Liste complète et à jour : [`REGLES_GESTION.md`](REGLES_GESTION.md).
 
 | Commande | Rôle (texte d'aide du code) | Fréquence prévue | Options |
 |---|---|---|---|
-| `mettre_a_jour_stages` | « Démarre les stages à venir et clôture les stages en cours dont la date est dépassée. » + rappels d'évaluation J+7 | 1×/nuit (provisoire) | `--date AAAA-MM-JJ` |
+| `alerter_echeances` | « Alertes d'échéances (RG-S15) : stages à démarrer / à terminer, disponibilités expirant dans 72 h, rappels d'évaluation. Ne change jamais un statut : le système alerte, il ne décide pas. » | 1×/jour (provisoire) | `--date AAAA-MM-JJ` |
 | `alerter_entretiens` | « Envoie une alerte aux Secrétaires pour les entretiens dans moins de 48 h dont le candidat n'a pas encore été informé. » | toutes les 2 h (provisoire) | — |
 
 - Les deux commandes sont idempotentes. **La fréquence n'est pas dans le code** (aucune configuration cron dans
