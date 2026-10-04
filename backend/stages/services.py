@@ -67,8 +67,8 @@ def constituer_stage(candidature, date_debut, date_fin_prevue, maitre_stage, uti
         raise TransitionInterdite("Le maître de stage doit être actif.")
     _verifier_disponibilite(cand, date_debut, date_fin_prevue)
 
-    today = timezone.localdate()
-    statut = StatutStage.EN_COURS if date_debut <= today else StatutStage.A_VENIR
+    # RG-S2 : toujours « À venir », même si le début est passé ; seul le Responsable démarre (RG-S14).
+    statut = StatutStage.A_VENIR
 
     from .models import AffectationMaitreStage
     stage = Stage.objects.create(
@@ -349,56 +349,3 @@ def evaluer_stage(stage, note, vivier, utilisateur, rapport_file=None, aujourd_h
     )
 
     return s
-
-
-# ─── Fonctions pour la commande automatique ───────────────────────────────────
-
-
-@transaction.atomic
-def demarrer_stage_auto(stage, aujourd_hui):
-    """A_VENIR → EN_COURS si date_debut <= aujourd_hui. Retourne True si transition faite."""
-    from suivi.services import enregistrer_historique
-    from .models import Stage as S, StatutStage
-
-    s = S.objects.select_for_update().get(pk=stage.pk)
-    # Stage repris avec une date future : il démarre à la reprise, pas à son début d'origine.
-    if s.statut != StatutStage.A_VENIR or s.date_demarrage_effective() > aujourd_hui:
-        return False
-
-    s.statut = StatutStage.EN_COURS
-    s.save(update_fields=["statut"])
-    enregistrer_historique(
-        s, None, StatutStage.A_VENIR, StatutStage.EN_COURS,
-        "Démarrage automatique (Système).",
-    )
-    return True
-
-
-@transaction.atomic
-def cloturer_stage_auto(stage, aujourd_hui):
-    """EN_COURS → TERMINE si date_fin_prevue < aujourd_hui. Retourne True si transition faite."""
-    from suivi.services import enregistrer_historique, notifier
-    from .models import Stage as S, StatutStage
-
-    s = S.objects.select_for_update().get(pk=stage.pk)
-    if s.statut != StatutStage.EN_COURS or s.date_fin_prevue >= aujourd_hui:
-        return False
-
-    s.statut = StatutStage.TERMINE
-    s.date_fin_reelle = s.date_fin_prevue
-    s.save(update_fields=["statut", "date_fin_reelle"])
-    enregistrer_historique(
-        s, None, StatutStage.EN_COURS, StatutStage.TERMINE,
-        "Clôture automatique (Système).",
-    )
-
-    resp = _responsable_departement(s.candidature.departement)
-    if resp:
-        lien = f"/stages/{s.pk}/"
-        notifier(
-            [resp],
-            f"Stage terminé : {s.candidature.candidat} — à évaluer.",
-            lien,
-        )
-
-    return True

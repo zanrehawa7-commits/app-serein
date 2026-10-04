@@ -1,4 +1,5 @@
 import datetime
+import itertools
 from django.contrib.auth.models import Group
 from django.core.files.base import ContentFile
 from django.test import TestCase
@@ -18,8 +19,6 @@ from .services import (
     modifier_stage,
     terminer_stage,
     interrompre_stage,
-    demarrer_stage_auto,
-    cloturer_stage_auto,
     debut_modifiable,
     evaluer_stage,
     peut_evaluer,
@@ -66,8 +65,11 @@ def _type_stage():
     return ts
 
 
+_TELEPHONES = itertools.count(70111111)
+
+
 def _candidat():
-    return Candidat.objects.create(nom="Ouedraogo", prenom="Fatou", telephone="70111111")
+    return Candidat.objects.create(nom="Ouedraogo", prenom="Fatou", telephone=str(next(_TELEPHONES)))
 
 
 def _candidature_accordee(dept, maitre=None):
@@ -115,11 +117,14 @@ class ConstituerStageTests(TestCase):
         self.assertEqual(stage.statut, StatutStage.A_VENIR)
         self.assertEqual(stage.candidature, self.cand)
 
-    def test_creation_en_cours_si_debut_passe(self):
-        debut = timezone.localdate() - datetime.timedelta(days=5)
-        fin = debut + datetime.timedelta(days=60)
-        stage = constituer_stage(self.cand, debut, fin, self.maitre, self.sec)
-        self.assertEqual(stage.statut, StatutStage.EN_COURS)
+    def test_creation_toujours_a_venir_meme_si_debut_passe(self):
+        """RG-S2 : seul le Responsable démarre un stage (RG-S14), même si son début est passé."""
+        for decalage in (-5, 0):
+            with self.subTest(decalage=decalage):
+                cand = _candidature_accordee(self.dept) if decalage else self.cand
+                debut = timezone.localdate() + datetime.timedelta(days=decalage)
+                stage = constituer_stage(cand, debut, debut + datetime.timedelta(days=60), self.maitre, self.sec)
+                self.assertEqual(stage.statut, StatutStage.A_VENIR)
 
     def test_refuse_si_statut_pas_accordee(self):
         self.cand.statut = StatutCandidature.RECUE
@@ -262,95 +267,30 @@ class InterrompreStageTests(TestCase):
 # ─── Commande automatique ─────────────────────────────────────────────────────
 
 
-class DemarrerStageAutoTests(TestCase):
+class AucuneTransitionAutomatiqueTests(TestCase):
+    """Décision du directeur de mémoire : le système alerte, il ne change jamais un statut."""
+
     def setUp(self):
         self.dept = _dept()
         self.maitre = _membre(self.dept)
-        self.sec = _secretaire()
 
-    def _stage(self, debut, fin, statut=None):
-        cand = _candidature_accordee(self.dept)
-        stage = constituer_stage(cand, debut, fin, self.maitre, self.sec)
-        if statut and stage.statut != statut:
-            stage.statut = statut
-            stage.save(update_fields=["statut"])
-        return stage
-
-    def test_demarre_si_date_atteinte(self):
-        debut = datetime.date(2025, 1, 1)
-        fin = datetime.date(2025, 6, 30)
-        stage = self._stage(debut, fin, StatutStage.A_VENIR)
-        result = demarrer_stage_auto(stage, datetime.date(2025, 1, 1))
-        self.assertTrue(result)
-        stage.refresh_from_db()
-        self.assertEqual(stage.statut, StatutStage.EN_COURS)
-
-    def test_ne_demarre_pas_si_futur(self):
-        debut = timezone.localdate() + datetime.timedelta(days=365)
-        fin = debut + datetime.timedelta(days=180)
-        stage = self._stage(debut, fin, StatutStage.A_VENIR)
-        result = demarrer_stage_auto(stage, timezone.localdate())
-        self.assertFalse(result)
-        stage.refresh_from_db()
-        self.assertEqual(stage.statut, StatutStage.A_VENIR)
-
-
-class CloturerStageAutoTests(TestCase):
-    def setUp(self):
-        self.dept = _dept()
-        self.maitre = _membre(self.dept)
-        self.sec = _secretaire()
-
-    def _stage_en_cours(self, debut, fin):
-        cand = _candidature_accordee(self.dept)
-        stage = Stage.objects.create(
-            candidature=cand,
-            maitre_stage=self.maitre,
-            date_debut=debut,
-            date_fin_prevue=fin,
-            statut=StatutStage.EN_COURS,
+    def _stage(self, statut, debut, fin):
+        return Stage.objects.create(
+            candidature=_candidature_accordee(self.dept), maitre_stage=self.maitre,
+            date_debut=debut, date_fin_prevue=fin, statut=statut,
         )
-        return stage
 
-    def test_cloture_si_date_depasse(self):
-        debut = datetime.date(2025, 1, 1)
-        fin = datetime.date(2025, 3, 31)
-        stage = self._stage_en_cours(debut, fin)
-        result = cloturer_stage_auto(stage, datetime.date(2025, 4, 1))
-        self.assertTrue(result)
-        stage.refresh_from_db()
-        self.assertEqual(stage.statut, StatutStage.TERMINE)
-        self.assertEqual(stage.date_fin_reelle, fin)
-
-    def test_ne_cloture_pas_si_date_non_atteinte(self):
-        debut = datetime.date(2025, 1, 1)
-        fin = datetime.date(2025, 6, 30)
-        stage = self._stage_en_cours(debut, fin)
-        result = cloturer_stage_auto(stage, datetime.date(2025, 3, 1))
-        self.assertFalse(result)
-        stage.refresh_from_db()
-        self.assertEqual(stage.statut, StatutStage.EN_COURS)
-
-    def test_serveur_arrete_a_venir_devient_termine(self):
-        """Si le serveur n'a pas tourné, un stage A_VENIR dont début et fin sont passés
-        doit être d'abord démarré puis clôturé dans la même exécution."""
-        debut = datetime.date(2025, 1, 1)
-        fin = datetime.date(2025, 3, 31)
-        cand = _candidature_accordee(self.dept)
-        stage = Stage.objects.create(
-            candidature=cand,
-            maitre_stage=self.maitre,
-            date_debut=debut,
-            date_fin_prevue=fin,
-            statut=StatutStage.A_VENIR,
-        )
-        aujourd_hui = datetime.date(2025, 4, 15)
-        demarrer_stage_auto(stage, aujourd_hui)
-        stage.refresh_from_db()
-        self.assertEqual(stage.statut, StatutStage.EN_COURS)
-        cloturer_stage_auto(stage, aujourd_hui)
-        stage.refresh_from_db()
-        self.assertEqual(stage.statut, StatutStage.TERMINE)
+    def test_la_commande_quotidienne_ne_change_aucun_statut(self):
+        from io import StringIO
+        from django.core.management import call_command
+        jour = timezone.localdate()
+        a_venir = self._stage(StatutStage.A_VENIR, jour - datetime.timedelta(days=90), jour - datetime.timedelta(days=10))
+        en_cours = self._stage(StatutStage.EN_COURS, jour - datetime.timedelta(days=90), jour - datetime.timedelta(days=10))
+        call_command("mettre_a_jour_stages", "--date", (jour + datetime.timedelta(days=30)).isoformat(), stdout=StringIO())
+        a_venir.refresh_from_db()
+        en_cours.refresh_from_db()
+        self.assertEqual((a_venir.statut, en_cours.statut), (StatutStage.A_VENIR, StatutStage.EN_COURS))
+        self.assertIsNone(en_cours.date_fin_reelle)
 
 
 # ─── Désactiver membre — maître de stage actif (Complément 5) ─────────────────
@@ -1081,19 +1021,21 @@ class RepriseStageTests(TestCase):
 
     # ── Cohérence avec la commande quotidienne et l'évaluation ──────────────
 
-    def test_reprise_future_demarre_a_la_date_de_reprise(self):
+    def test_reprise_future_reste_a_venir_jusqu_au_demarrage_manuel(self):
+        from io import StringIO
+        from django.core.management import call_command
         self._reprendre(self._jour(5), self._jour(60))
-        self.assertFalse(demarrer_stage_auto(self.stage, self.aujourd_hui))
-        self.assertFalse(demarrer_stage_auto(self.stage, self._jour(4)))
-        self.assertTrue(demarrer_stage_auto(self.stage, self._jour(5)))
+        call_command("mettre_a_jour_stages", "--date", self._jour(10).isoformat(), stdout=StringIO())
         self.stage.refresh_from_db()
-        self.assertEqual(self.stage.statut, StatutStage.EN_COURS)
+        self.assertEqual(self.stage.statut, StatutStage.A_VENIR)
 
-    def test_reprise_avec_fin_passee_cloturee_par_la_commande(self):
+    def test_reprise_avec_fin_passee_reste_en_cours(self):
+        from io import StringIO
+        from django.core.management import call_command
         self._reprendre(self._jour(-9), self._jour(-1))
-        self.assertTrue(cloturer_stage_auto(self.stage, self.aujourd_hui))
+        call_command("mettre_a_jour_stages", stdout=StringIO())
         self.stage.refresh_from_db()
-        self.assertEqual((self.stage.statut, self.stage.date_fin_reelle), (StatutStage.TERMINE, self._jour(-1)))
+        self.assertEqual((self.stage.statut, self.stage.date_fin_reelle), (StatutStage.EN_COURS, None))
 
     def test_repris_puis_termine_est_evaluable(self):
         self._reprendre(self._jour(-5), self._jour(60))
@@ -1118,14 +1060,14 @@ class RepriseStageTests(TestCase):
         self.stage.refresh_from_db()
         self.assertEqual(self.stage.statut, StatutStage.EN_COURS)
         self.assertContains(reponse, "Périodes d")
-        self.assertNotContains(reponse, "clôturé automatiquement")
+        self.assertNotContains(reponse, "pensez à terminer ce stage")
 
     def test_vue_reprise_fin_passee_message_information(self):
         reponse = self._post(
             date_reprise=self._jour(-9), date_fin_prevue=self._jour(-1), motif_reprise="Régularisation"
         )
         self.assertContains(
-            reponse, "Ce stage sera clôturé automatiquement à la prochaine exécution de la mise à jour quotidienne."
+            reponse, "La fin prévue est déjà dépassée : pensez à terminer ce stage, rien ne se fait automatiquement."
         )
 
     def test_vue_dates_invalides_formulaire_reaffiche(self):

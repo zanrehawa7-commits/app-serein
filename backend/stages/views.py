@@ -444,7 +444,7 @@ class ReprendreStageView(RoleRequisMixin, View):
         if form.cleaned_data["date_fin_prevue"] < timezone.localdate():
             messages.info(
                 request,
-                "Ce stage sera clôturé automatiquement à la prochaine exécution de la mise à jour quotidienne.",
+                "La fin prévue est déjà dépassée : pensez à terminer ce stage, rien ne se fait automatiquement.",
             )
         return redirect("stages:stage_detail", pk=pk)
 
