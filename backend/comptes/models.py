@@ -26,13 +26,13 @@ class Utilisateur(AbstractUser):
     username = None
     email = models.EmailField(unique=True, verbose_name="email")
     telephone = models.CharField(max_length=20, blank=True, verbose_name="téléphone")
-    membre = models.OneToOneField(
-        "referentiels.Membre",
+    personnel = models.OneToOneField(
+        "referentiels.Personnel",
         on_delete=models.PROTECT,
         null=True,
         blank=True,
         related_name="compte",
-        verbose_name="membre associé",
+        verbose_name="personnel associé",
     )
 
     USERNAME_FIELD = "email"
@@ -52,3 +52,28 @@ class Utilisateur(AbstractUser):
     def role(self):
         groupe = self.groups.first()
         return groupe.name if groupe else None
+
+
+class ProfilRole(models.Model):
+    """
+    Complète un Group Django. Les 3 rôles de base sont « système » (est_systeme) ; les autres
+    sont des rôles de consultation, en lecture seule (RG-U8).
+    """
+
+    groupe = models.OneToOneField(
+        "auth.Group",
+        on_delete=models.CASCADE,
+        related_name="profil",
+        verbose_name="groupe",
+    )
+    description = models.TextField(blank=True, verbose_name="description")
+    actif = models.BooleanField(default=True, verbose_name="actif")
+    est_systeme = models.BooleanField(default=False, verbose_name="rôle système")
+
+    class Meta:
+        verbose_name = "Profil de rôle"
+        verbose_name_plural = "Profils de rôle"
+        ordering = ["-est_systeme", "groupe__name"]
+
+    def __str__(self):
+        return self.groupe.name

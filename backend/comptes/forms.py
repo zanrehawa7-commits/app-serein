@@ -22,6 +22,34 @@ ROLE_CHOICES = [
 ]
 
 
+def choix_roles():
+    """Rôles attribuables : les 3 rôles de base puis les rôles de consultation actifs."""
+    consultation = Group.objects.filter(profil__est_systeme=False, profil__actif=True).order_by("name")
+    if not consultation.exists():
+        return ROLE_CHOICES
+    return ROLE_CHOICES + [
+        ("Rôles de consultation", [(g.name, g.name) for g in consultation]),
+    ]
+
+
+class RoleConsultationForm(forms.Form):
+    nom = forms.CharField(label="Nom du rôle", max_length=150)
+    description = forms.CharField(label="Description", widget=forms.Textarea(attrs={"rows": 2}), required=False)
+    droits = forms.MultipleChoiceField(
+        label="Droits de consultation",
+        required=False,
+        widget=forms.CheckboxSelectMultiple,
+        help_text="Lecture seule. Les pièces jointes des candidats (données personnelles) ne sont "
+                  "accessibles que si leur droit est coché.",
+    )
+
+    def __init__(self, *args, **kwargs):
+        from .permissions import DROITS_CONSULTATION
+        super().__init__(*args, **kwargs)
+        self.fields["droits"].choices = [(module, droits) for module, droits in DROITS_CONSULTATION]
+        self.helper = _helper()
+
+
 class FormulaireConnexion(AuthenticationForm):
     username = forms.EmailField(
         label="Adresse email",
@@ -76,16 +104,17 @@ class UtilisateurCreerForm(forms.ModelForm):
 
     class Meta:
         model = Utilisateur
-        fields = ["first_name", "last_name", "email", "telephone", "membre"]
+        fields = ["first_name", "last_name", "email", "telephone", "personnel"]
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        from referentiels.models import Membre
-        self.fields["membre"].queryset = Membre.objects.filter(
+        from referentiels.models import Personnel
+        self.fields["personnel"].queryset = Personnel.objects.filter(
             actif=True, compte__isnull=True
         ).order_by("nom", "prenom")
-        self.fields["membre"].required = False
-        self.fields["membre"].label = "Membre lié (obligatoire si rôle = Responsable)"
+        self.fields["personnel"].required = False
+        self.fields["role"].choices = choix_roles()
+        self.fields["personnel"].label = "Personnel lié (obligatoire si rôle = Responsable)"
         self.fields["first_name"].required = True
         self.fields["last_name"].required = True
         self.helper = _helper("Créer le compte")
@@ -93,11 +122,11 @@ class UtilisateurCreerForm(forms.ModelForm):
     def clean(self):
         cleaned = super().clean()
         role = cleaned.get("role")
-        membre = cleaned.get("membre")
+        personnel = cleaned.get("personnel")
         p1 = cleaned.get("password1")
         p2 = cleaned.get("password2")
-        if role == "Responsable" and not membre:
-            self.add_error("membre", "Obligatoire pour le rôle Responsable.")
+        if role == "Responsable" and not personnel:
+            self.add_error("personnel", "Obligatoire pour le rôle Responsable.")
         if p1 and p2 and p1 != p2:
             self.add_error("password2", "Les mots de passe ne correspondent pas.")
         return cleaned
@@ -117,42 +146,54 @@ class UtilisateurModifierForm(forms.ModelForm):
 
     class Meta:
         model = Utilisateur
-        fields = ["first_name", "last_name", "email", "telephone", "membre", "is_active"]
+        fields = ["first_name", "last_name", "email", "telephone", "personnel", "is_active"]
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, utilisateur_connecte=None, **kwargs):
         super().__init__(*args, **kwargs)
         from django.db.models import Q
-        from referentiels.models import Membre
+        from referentiels.models import Personnel
         instance = self.instance
-        if instance and instance.pk and instance.membre_id:
-            qs = Membre.objects.filter(actif=True).filter(
-                Q(compte__isnull=True) | Q(pk=instance.membre_id)
+        if instance and instance.pk and instance.personnel_id:
+            qs = Personnel.objects.filter(actif=True).filter(
+                Q(compte__isnull=True) | Q(pk=instance.personnel_id)
             )
         else:
-            qs = Membre.objects.filter(actif=True, utilisateur__isnull=True)
-        self.fields["membre"].queryset = qs.order_by("nom", "prenom")
-        self.fields["membre"].required = False
-        self.fields["membre"].label = "Membre lié (obligatoire si rôle = Responsable)"
+            qs = Personnel.objects.filter(actif=True, compte__isnull=True)
+        self.fields["personnel"].queryset = qs.order_by("nom", "prenom")
+        self.fields["personnel"].required = False
+        self.fields["role"].choices = choix_roles()
+        self.fields["personnel"].label = "Personnel lié (obligatoire si rôle = Responsable)"
         self.fields["first_name"].required = True
         self.fields["last_name"].required = True
         if instance and instance.pk:
             self.fields["role"].initial = instance.role or ""
+        # RG33 : on ne se désactive pas et on ne change pas son propre rôle (sinon perte d'accès).
+        # Champs « disabled » : Django ignore la valeur envoyée et garde celle de la base.
+        self.est_soi_meme = bool(utilisateur_connecte and instance.pk and instance.pk == utilisateur_connecte.pk)
+        if self.est_soi_meme:
+            for champ in ("is_active", "role"):
+                self.fields[champ].disabled = True
+                self.fields[champ].help_text = (
+                    "Vous ne pouvez pas désactiver votre propre compte ni changer votre propre rôle."
+                )
+            self.fields["role"].required = False
         self.helper = _helper()
 
     def clean(self):
         cleaned = super().clean()
         role = cleaned.get("role")
-        membre = cleaned.get("membre")
-        if role == "Responsable" and not membre:
-            self.add_error("membre", "Obligatoire pour le rôle Responsable.")
+        personnel = cleaned.get("personnel")
+        if role == "Responsable" and not personnel:
+            self.add_error("personnel", "Obligatoire pour le rôle Responsable.")
         return cleaned
 
     def save(self, commit=True):
         user = super().save(commit=False)
         if commit:
             user.save()
-            groupe = Group.objects.get(name=self.cleaned_data["role"])
-            user.groups.set([groupe])
+            if not self.est_soi_meme:
+                groupe = Group.objects.get(name=self.cleaned_data["role"])
+                user.groups.set([groupe])
         return user
 
 

@@ -2,13 +2,14 @@ import os
 import uuid
 from django.conf import settings
 from django.core.exceptions import ValidationError
-from django.core.files.storage import FileSystemStorage
 from django.db import models
+
+from commun.stockage import StockagePrive
 
 
 def _get_stockage_prive():
     """Stockage hors MEDIA_ROOT — les fichiers ne doivent jamais être servis via /media/."""
-    return FileSystemStorage(location=settings.FICHIERS_PRIVES_ROOT, base_url=None)
+    return StockagePrive()
 
 
 def _piece_upload_path(instance, filename):
@@ -33,6 +34,7 @@ class NiveauEtudes(models.TextChoices):
 class TypeDemande(models.TextChoices):
     SPONTANEE = "SPONTANEE", "Spontanée"
     SUITE_OFFRE = "SUITE_OFFRE", "Suite à une offre"
+    AUTRE = "AUTRE", "Autre"
 
 
 class StatutCandidature(models.TextChoices):
@@ -58,16 +60,23 @@ class TypePiece(models.TextChoices):
     AUTRE = "AUTRE", "Autre"
 
 
+_TAILLE_MAX_PIECE = 3 * 1024 * 1024  # 3 Mo
+
+
 def _valider_piece_jointe(fichier):
-    extensions_autorisees = [".pdf", ".jpg", ".jpeg", ".png"]
     ext = os.path.splitext(fichier.name)[1].lower()
-    if ext not in extensions_autorisees:
+    if ext != ".pdf":
         raise ValidationError(
-            f"Extension non autorisée : {ext}. Formats acceptés : pdf, jpg, jpeg, png."
+            f"Extension non autorisée : {ext}. Seul le format PDF est accepté."
         )
-    taille_max = 5 * 1024 * 1024  # 5 Mo
-    if fichier.size > taille_max:
-        raise ValidationError("La taille du fichier ne doit pas dépasser 5 Mo.")
+    if fichier.size > _TAILLE_MAX_PIECE:
+        raise ValidationError("La taille du fichier ne doit pas dépasser 3 Mo.")
+    # Vérification du contenu réel (magic bytes PDF)
+    fichier.seek(0)
+    magic = fichier.read(4)
+    fichier.seek(0)
+    if magic != b"%PDF":
+        raise ValidationError("Le fichier n'est pas un PDF valide.")
 
 
 class Candidat(models.Model):
@@ -163,6 +172,14 @@ class Candidature(models.Model):
     commentaire = models.TextField(blank=True, verbose_name="commentaire")
     candidat_informe = models.BooleanField(default=False, verbose_name="candidat informé")
     date_information = models.DateTimeField(null=True, blank=True, verbose_name="date d'information")
+    # RG-S15 : disponibilité expirant dans 72 h — candidature en cours (Responsable) / accordée sans stage (Secrétaires).
+    alerte_disponibilite_envoyee = models.BooleanField(default=False, verbose_name="alerte disponibilité envoyée")
+    alerte_disponibilite_stage_envoyee = models.BooleanField(
+        default=False, verbose_name="alerte disponibilité sans stage envoyée"
+    )
+    alerte_entretien_envoyee = models.BooleanField(
+        default=False, verbose_name="alerte entretien envoyée"
+    )
     date_depot = models.DateTimeField(auto_now_add=True, verbose_name="date de dépôt")
 
     class Meta:
@@ -176,11 +193,12 @@ class Candidature(models.Model):
                 condition=models.Q(statut__in=["RECUE", "EN_TRAITEMENT"]),
                 name="candidature_unique_active_par_candidat",
             ),
-            # RG09 : offre obligatoire si SUITE_OFFRE, interdite si SPONTANEE
+            # RG09 : offre obligatoire si SUITE_OFFRE, interdite si SPONTANEE ou AUTRE
             models.CheckConstraint(
                 condition=(
                     models.Q(type_demande="SUITE_OFFRE", offre__isnull=False)
                     | models.Q(type_demande="SPONTANEE", offre__isnull=True)
+                    | models.Q(type_demande="AUTRE", offre__isnull=True)
                 ),
                 name="candidature_offre_coherente_type_demande",
             ),
@@ -199,11 +217,11 @@ class Candidature(models.Model):
                 raise ValidationError(
                     {"fin_disponibilite": "La fin de disponibilité doit être postérieure au début."}
                 )
-        # RG09
+        # RG09 : offre obligatoire si SUITE_OFFRE, interdite si SPONTANEE ou AUTRE
         if self.type_demande == TypeDemande.SUITE_OFFRE and not self.offre_id:
             raise ValidationError({"offre": "Une offre est obligatoire pour une candidature suite à une offre."})
-        if self.type_demande == TypeDemande.SPONTANEE and self.offre_id:
-            raise ValidationError({"offre": "Une candidature spontanée ne doit pas être liée à une offre."})
+        if self.type_demande in (TypeDemande.SPONTANEE, TypeDemande.AUTRE) and self.offre_id:
+            raise ValidationError({"offre": "Ce type de demande ne doit pas être lié à une offre."})
 
     def save(self, *args, **kwargs):
         if not self.reference:
@@ -224,6 +242,45 @@ class Candidature(models.Model):
         else:
             numero = 1
         return f"CAND-{annee}-{numero:04d}"
+
+
+class TransfertCandidature(models.Model):
+    candidature = models.ForeignKey(
+        Candidature,
+        on_delete=models.CASCADE,
+        related_name="transferts",
+        verbose_name="candidature",
+    )
+    departement_source = models.ForeignKey(
+        "referentiels.Departement",
+        on_delete=models.PROTECT,
+        related_name="+",
+        verbose_name="département source",
+    )
+    departement_cible = models.ForeignKey(
+        "referentiels.Departement",
+        on_delete=models.PROTECT,
+        related_name="+",
+        verbose_name="département cible",
+    )
+    motif = models.TextField(verbose_name="motif")
+    realise_par = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        verbose_name="réalisé par",
+    )
+    date_transfert = models.DateTimeField(auto_now_add=True, verbose_name="date de transfert")
+
+    class Meta:
+        verbose_name = "Transfert de candidature"
+        verbose_name_plural = "Transferts de candidature"
+        ordering = ["-date_transfert"]
+
+    def __str__(self):
+        return f"Transfert {self.candidature.reference} → {self.departement_cible}"
 
 
 class PieceJointe(models.Model):
@@ -251,6 +308,16 @@ class PieceJointe(models.Model):
         verbose_name = "Pièce jointe"
         verbose_name_plural = "Pièces jointes"
         ordering = ["type_piece"]
+        # Données personnelles : droit distinct pour les rôles de consultation (RG-U10).
+        permissions = [("telecharger_pieces_jointes", "Télécharger les pièces jointes des candidats")]
+        constraints = [
+            # Un seul exemplaire de chaque type par candidature (sauf AUTRE, illimité)
+            models.UniqueConstraint(
+                fields=["candidature", "type_piece"],
+                condition=~models.Q(type_piece="AUTRE"),
+                name="piecejointe_unique_type_par_candidature",
+            ),
+        ]
 
     def __str__(self):
         return f"{self.get_type_piece_display()} — {self.candidature.reference}"

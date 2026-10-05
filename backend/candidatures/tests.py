@@ -1,12 +1,12 @@
 import io
 from django.contrib.auth.models import Group
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.test import TestCase, override_settings
+from django.test import TestCase
 from django.urls import reverse
 
 from comptes.models import Utilisateur
 from offres.models import Offre, StatutOffre
-from referentiels.models import Departement, TypeStage, Membre
+from referentiels.models import Departement, TypeStage, Personnel
 
 from .models import Candidat, Candidature, PieceJointe, StatutCandidature, TypeDemande, TypePiece
 from .services import (
@@ -26,9 +26,6 @@ from .services import (
     refuser,
 )
 from .models import MotifRefus
-
-import tempfile, os
-from pathlib import Path
 
 
 def _fake_pdf(name="cv.pdf"):
@@ -99,8 +96,8 @@ def _offre_factory(dept, ts, statut=StatutOffre.OUVERTE):
         titre="Offre test",
         description="Description test",
         profil_recherche="Profil test",
-        date_debut="2026-10-01",
-        date_fin="2026-12-31",
+        date_debut="2027-03-01",
+        date_fin="2027-06-01",
         nombre_places=3,
         statut=statut,
     )
@@ -119,12 +116,12 @@ def _setup_base():
     adm.groups.add(g_adm)
 
     dept = Departement.objects.create(nom="Informatique", actif=True)
-    ts = TypeStage.objects.create(libelle="Stage pro", actif=True)
+    ts = TypeStage.objects.create(libelle="Stage pro", actif=True, duree_min_mois=1, duree_max_mois=6)
 
-    membre = Membre.objects.create(nom="Responsable", prenom="R", departement=dept, actif=True)
+    membre = Personnel.objects.create(nom="Responsable", prenom="R", departement=dept, actif=True)
     res = Utilisateur.objects.create_user(email="res@test.com", password="pass", first_name="Res")
     res.groups.add(g_res)
-    res.membre = membre
+    res.personnel = membre
     res.save()
 
     candidat = creer_candidat("Test", "Candidat", "70999999")
@@ -134,7 +131,6 @@ def _setup_base():
 # ─── RG07 — candidature active unique ─────────────────────────────────────────
 
 
-@override_settings(FICHIERS_PRIVES_ROOT=tempfile.mkdtemp())
 class RG07Tests(TestCase):
     def setUp(self):
         self.sec, self.adm, self.res, self.dept, self.ts, self.candidat = _setup_base()
@@ -143,8 +139,8 @@ class RG07Tests(TestCase):
     def test_rg07_bloque_deuxieme_candidature_active(self):
         creer_candidature(
             candidat=self.candidat, departement=self.dept, type_stage=self.ts,
-            type_demande=TypeDemande.SPONTANEE, debut_disponibilite="2026-10-01",
-            fin_disponibilite="2026-12-31", duree_souhaitee=2,
+            type_demande=TypeDemande.SPONTANEE, debut_disponibilite="2027-03-01",
+            fin_disponibilite="2027-06-01", duree_souhaitee=2,
             pieces_data=self.pieces, utilisateur=self.sec,
         )
         with self.assertRaises(CandidatureActiveExistante):
@@ -169,7 +165,7 @@ class RG09Tests(TestCase):
         c = Candidature(
             candidat=self.candidat, departement=self.dept, type_stage=self.ts,
             type_demande=TypeDemande.SUITE_OFFRE, offre=None,
-            debut_disponibilite="2026-10-01", fin_disponibilite="2026-12-31",
+            debut_disponibilite="2027-03-01", fin_disponibilite="2027-06-01",
             duree_souhaitee=2,
         )
         with self.assertRaises(ValidationError):
@@ -181,7 +177,7 @@ class RG09Tests(TestCase):
         c = Candidature(
             candidat=self.candidat, departement=self.dept, type_stage=self.ts,
             type_demande=TypeDemande.SPONTANEE, offre=offre,
-            debut_disponibilite="2026-10-01", fin_disponibilite="2026-12-31",
+            debut_disponibilite="2027-03-01", fin_disponibilite="2027-06-01",
             duree_souhaitee=2,
         )
         with self.assertRaises(ValidationError):
@@ -189,16 +185,15 @@ class RG09Tests(TestCase):
 
     def test_suite_offre_non_ouverte_form_invalide(self):
         """Le formulaire ne doit pas proposer d'offre non OUVERTE."""
-        from .forms import CandidatureForm
+        from .forms import CandidatureCreerForm
         offre_fermee = _offre_factory(self.dept, self.ts, statut=StatutOffre.FERMEE)
-        form = CandidatureForm()
+        form = CandidatureCreerForm()
         self.assertNotIn(offre_fermee, form.fields["offre"].queryset)
 
 
 # ─── Création candidature ─────────────────────────────────────────────────────
 
 
-@override_settings(FICHIERS_PRIVES_ROOT=tempfile.mkdtemp())
 class CreationCandidatureTests(TestCase):
     def setUp(self):
         self.sec, self.adm, self.res, self.dept, self.ts, self.candidat = _setup_base()
@@ -207,8 +202,8 @@ class CreationCandidatureTests(TestCase):
         pieces = [{"type_piece": TypePiece.CV, "fichier": _fake_pdf(), "nom_original": "cv.pdf"}]
         c = creer_candidature(
             candidat=self.candidat, departement=self.dept, type_stage=self.ts,
-            type_demande=TypeDemande.SPONTANEE, debut_disponibilite="2026-10-01",
-            fin_disponibilite="2026-12-31", duree_souhaitee=2,
+            type_demande=TypeDemande.SPONTANEE, debut_disponibilite="2027-03-01",
+            fin_disponibilite="2027-06-01", duree_souhaitee=2,
             pieces_data=pieces, utilisateur=self.sec,
         )
         from django.contrib.contenttypes.models import ContentType
@@ -222,15 +217,15 @@ class CreationCandidatureTests(TestCase):
         pieces = [{"type_piece": TypePiece.CV, "fichier": _fake_pdf(), "nom_original": "cv.pdf"}]
         c1 = creer_candidature(
             candidat=self.candidat, departement=self.dept, type_stage=self.ts,
-            type_demande=TypeDemande.SPONTANEE, debut_disponibilite="2026-10-01",
-            fin_disponibilite="2026-12-31", duree_souhaitee=2,
+            type_demande=TypeDemande.SPONTANEE, debut_disponibilite="2027-03-01",
+            fin_disponibilite="2027-06-01", duree_souhaitee=2,
             pieces_data=pieces, utilisateur=self.sec,
         )
         candidat2 = creer_candidat("Zombre", "Z", "70000001")
         c2 = creer_candidature(
             candidat=candidat2, departement=self.dept, type_stage=self.ts,
-            type_demande=TypeDemande.SPONTANEE, debut_disponibilite="2026-10-01",
-            fin_disponibilite="2026-12-31", duree_souhaitee=2,
+            type_demande=TypeDemande.SPONTANEE, debut_disponibilite="2027-03-01",
+            fin_disponibilite="2027-06-01", duree_souhaitee=2,
             pieces_data=[{"type_piece": TypePiece.CV, "fichier": _fake_pdf(), "nom_original": "cv.pdf"}],
             utilisateur=self.sec,
         )
@@ -241,8 +236,8 @@ class CreationCandidatureTests(TestCase):
         pieces = [{"type_piece": TypePiece.CV, "fichier": _fake_pdf(), "nom_original": "cv.pdf"}]
         creer_candidature(
             candidat=self.candidat, departement=self.dept, type_stage=self.ts,
-            type_demande=TypeDemande.SPONTANEE, debut_disponibilite="2026-10-01",
-            fin_disponibilite="2026-12-31", duree_souhaitee=2,
+            type_demande=TypeDemande.SPONTANEE, debut_disponibilite="2027-03-01",
+            fin_disponibilite="2027-06-01", duree_souhaitee=2,
             pieces_data=pieces, utilisateur=self.sec,
         )
         self.assertTrue(Notification.objects.filter(destinataire__email="res@test.com").exists())
@@ -254,8 +249,8 @@ class CreationCandidatureTests(TestCase):
         pieces = [{"type_piece": TypePiece.CV, "fichier": _fake_pdf(), "nom_original": "cv.pdf"}]
         creer_candidature(
             candidat=candidat2, departement=dept2, type_stage=self.ts,
-            type_demande=TypeDemande.SPONTANEE, debut_disponibilite="2026-10-01",
-            fin_disponibilite="2026-12-31", duree_souhaitee=2,
+            type_demande=TypeDemande.SPONTANEE, debut_disponibilite="2027-03-01",
+            fin_disponibilite="2027-06-01", duree_souhaitee=2,
             pieces_data=pieces, utilisateur=self.sec,
         )
         self.assertTrue(Notification.objects.filter(destinataire__email="adm@test.com").exists())
@@ -293,15 +288,14 @@ class PieceJointeValidationTests(TestCase):
 # ─── Modification candidature ─────────────────────────────────────────────────
 
 
-@override_settings(FICHIERS_PRIVES_ROOT=tempfile.mkdtemp())
 class ModificationCandidatureTests(TestCase):
     def setUp(self):
         self.sec, self.adm, self.res, self.dept, self.ts, self.candidat = _setup_base()
         pieces = [{"type_piece": TypePiece.CV, "fichier": _fake_pdf(), "nom_original": "cv.pdf"}]
         self.candidature = creer_candidature(
             candidat=self.candidat, departement=self.dept, type_stage=self.ts,
-            type_demande=TypeDemande.SPONTANEE, debut_disponibilite="2026-10-01",
-            fin_disponibilite="2026-12-31", duree_souhaitee=2,
+            type_demande=TypeDemande.SPONTANEE, debut_disponibilite="2027-03-01",
+            fin_disponibilite="2027-06-01", duree_souhaitee=2,
             pieces_data=pieces, utilisateur=self.sec,
         )
 
@@ -317,15 +311,14 @@ class ModificationCandidatureTests(TestCase):
 # ─── Marquer informé ─────────────────────────────────────────────────────────
 
 
-@override_settings(FICHIERS_PRIVES_ROOT=tempfile.mkdtemp())
 class MarquerInformeTests(TestCase):
     def setUp(self):
         self.sec, self.adm, self.res, self.dept, self.ts, self.candidat = _setup_base()
         pieces = [{"type_piece": TypePiece.CV, "fichier": _fake_pdf(), "nom_original": "cv.pdf"}]
         self.candidature = creer_candidature(
             candidat=self.candidat, departement=self.dept, type_stage=self.ts,
-            type_demande=TypeDemande.SPONTANEE, debut_disponibilite="2026-10-01",
-            fin_disponibilite="2026-12-31", duree_souhaitee=2,
+            type_demande=TypeDemande.SPONTANEE, debut_disponibilite="2027-03-01",
+            fin_disponibilite="2027-06-01", duree_souhaitee=2,
             pieces_data=pieces, utilisateur=self.sec,
         )
         self.candidature.statut = StatutCandidature.ACCORDEE
@@ -345,7 +338,6 @@ class MarquerInformeTests(TestCase):
 # ─── places_restantes ─────────────────────────────────────────────────────────
 
 
-@override_settings(FICHIERS_PRIVES_ROOT=tempfile.mkdtemp())
 class PlacesRestantesTests(TestCase):
     def setUp(self):
         _, _, _, self.dept, self.ts, _ = _setup_base()
@@ -357,7 +349,7 @@ class PlacesRestantesTests(TestCase):
         candidature = creer_candidature(
             candidat=candidat, departement=self.dept, type_stage=self.ts,
             type_demande=TypeDemande.SUITE_OFFRE, offre=self.offre,
-            debut_disponibilite="2026-10-01", fin_disponibilite="2026-12-31", duree_souhaitee=2,
+            debut_disponibilite="2027-03-01", fin_disponibilite="2027-06-01", duree_souhaitee=2,
             pieces_data=[{"type_piece": TypePiece.CV, "fichier": _fake_pdf(), "nom_original": "cv.pdf"}],
             utilisateur=None,
         )
@@ -375,20 +367,19 @@ class AccesSecuriteTests(TestCase):
         self.sec, self.adm, self.res, self.dept, self.ts, self.candidat = _setup_base()
         # dept2 avec un responsable différent
         self.dept2 = Departement.objects.create(nom="Autre", actif=True)
-        membre2 = Membre.objects.create(nom="Res2", prenom="R", departement=self.dept2, actif=True)
+        membre2 = Personnel.objects.create(nom="Res2", prenom="R", departement=self.dept2, actif=True)
         g_res = Group.objects.get(name="Responsable")
         self.res2 = Utilisateur.objects.create_user(email="res2@test.com", password="pass")
         self.res2.groups.add(g_res)
-        self.res2.membre = membre2
+        self.res2.personnel = membre2
         self.res2.save()
 
-    @override_settings(FICHIERS_PRIVES_ROOT=tempfile.mkdtemp())
     def test_responsable_autre_dept_candidature_detail_403(self):
         pieces = [{"type_piece": TypePiece.CV, "fichier": _fake_pdf(), "nom_original": "cv.pdf"}]
         candidature = creer_candidature(
             candidat=self.candidat, departement=self.dept, type_stage=self.ts,
-            type_demande=TypeDemande.SPONTANEE, debut_disponibilite="2026-10-01",
-            fin_disponibilite="2026-12-31", duree_souhaitee=2,
+            type_demande=TypeDemande.SPONTANEE, debut_disponibilite="2027-03-01",
+            fin_disponibilite="2027-06-01", duree_souhaitee=2,
             pieces_data=pieces, utilisateur=self.sec,
         )
         self.client.force_login(self.res2)
@@ -423,13 +414,12 @@ def _candidature_factory(dept, ts, candidat, utilisateur, statut=StatutCandidatu
     return creer_candidature(
         candidat=candidat, departement=dept, type_stage=ts,
         type_demande=TypeDemande.SPONTANEE,
-        debut_disponibilite="2026-10-01", fin_disponibilite="2026-12-31", duree_souhaitee=2,
+        debut_disponibilite="2027-03-01", fin_disponibilite="2027-06-01", duree_souhaitee=2,
         pieces_data=[{"type_piece": TypePiece.CV, "fichier": _fake_pdf(), "nom_original": "cv.pdf"}],
         utilisateur=utilisateur,
     )
 
 
-@override_settings(FICHIERS_PRIVES_ROOT=tempfile.mkdtemp())
 class PreselectionnerTests(TestCase):
     def setUp(self):
         self.sec, self.adm, self.res, self.dept, self.ts, self.candidat = _setup_base()
@@ -465,7 +455,6 @@ class PreselectionnerTests(TestCase):
         self.assertEqual(response.status_code, 403)
 
 
-@override_settings(FICHIERS_PRIVES_ROOT=tempfile.mkdtemp())
 class PlanifierEntretienTests(TestCase):
     def setUp(self):
         self.sec, self.adm, self.res, self.dept, self.ts, self.candidat = _setup_base()
@@ -498,7 +487,6 @@ class PlanifierEntretienTests(TestCase):
             planifier_entretien(self.cand, timezone.now() + timezone.timedelta(days=5), self.res)
 
 
-@override_settings(FICHIERS_PRIVES_ROOT=tempfile.mkdtemp())
 class AccorderTests(TestCase):
     def setUp(self):
         self.sec, self.adm, self.res, self.dept, self.ts, self.candidat = _setup_base()
@@ -529,7 +517,7 @@ class AccorderTests(TestCase):
         cand2 = creer_candidature(
             candidat=candidat2, departement=self.dept, type_stage=self.ts,
             type_demande=TypeDemande.SUITE_OFFRE, offre=offre,
-            debut_disponibilite="2026-10-01", fin_disponibilite="2026-12-31", duree_souhaitee=2,
+            debut_disponibilite="2027-03-01", fin_disponibilite="2027-06-01", duree_souhaitee=2,
             pieces_data=[{"type_piece": TypePiece.CV, "fichier": _fake_pdf(), "nom_original": "cv.pdf"}],
             utilisateur=self.sec,
         )
@@ -540,7 +528,7 @@ class AccorderTests(TestCase):
         cand3 = creer_candidature(
             candidat=candidat3, departement=self.dept, type_stage=self.ts,
             type_demande=TypeDemande.SUITE_OFFRE, offre=offre,
-            debut_disponibilite="2026-10-01", fin_disponibilite="2026-12-31", duree_souhaitee=2,
+            debut_disponibilite="2027-03-01", fin_disponibilite="2027-06-01", duree_souhaitee=2,
             pieces_data=[{"type_piece": TypePiece.CV, "fichier": _fake_pdf(), "nom_original": "cv.pdf"}],
             utilisateur=self.sec,
         )
@@ -558,7 +546,7 @@ class AccorderTests(TestCase):
         cand_accordee = creer_candidature(
             candidat=candidat_quota, departement=self.dept, type_stage=self.ts,
             type_demande=TypeDemande.SUITE_OFFRE, offre=offre,
-            debut_disponibilite="2026-10-01", fin_disponibilite="2026-12-31", duree_souhaitee=2,
+            debut_disponibilite="2027-03-01", fin_disponibilite="2027-06-01", duree_souhaitee=2,
             pieces_data=[{"type_piece": TypePiece.CV, "fichier": _fake_pdf(), "nom_original": "cv.pdf"}],
             utilisateur=self.sec,
         )
@@ -569,7 +557,7 @@ class AccorderTests(TestCase):
         cand_dep = creer_candidature(
             candidat=candidat_depassement, departement=self.dept, type_stage=self.ts,
             type_demande=TypeDemande.SUITE_OFFRE, offre=offre,
-            debut_disponibilite="2026-10-01", fin_disponibilite="2026-12-31", duree_souhaitee=2,
+            debut_disponibilite="2027-03-01", fin_disponibilite="2027-06-01", duree_souhaitee=2,
             pieces_data=[{"type_piece": TypePiece.CV, "fichier": _fake_pdf(), "nom_original": "cv.pdf"}],
             utilisateur=self.sec,
         )
@@ -583,7 +571,6 @@ class AccorderTests(TestCase):
         self.assertEqual(cand_dep.statut, StatutCandidature.ACCORDEE)
 
 
-@override_settings(FICHIERS_PRIVES_ROOT=tempfile.mkdtemp())
 class RefuserTests(TestCase):
     def setUp(self):
         self.sec, self.adm, self.res, self.dept, self.ts, self.candidat = _setup_base()
@@ -618,17 +605,16 @@ class RefuserTests(TestCase):
         self.assertEqual(response.status_code, 403)
 
 
-@override_settings(FICHIERS_PRIVES_ROOT=tempfile.mkdtemp())
 class RedirigerTests(TestCase):
     def setUp(self):
         self.sec, self.adm, self.res, self.dept, self.ts, self.candidat = _setup_base()
         self.cand = _candidature_factory(self.dept, self.ts, self.candidat, self.sec)
         self.dept2 = Departement.objects.create(nom="Marketing", actif=True)
-        membre2 = Membre.objects.create(nom="Resp2", prenom="R2", departement=self.dept2, actif=True)
+        membre2 = Personnel.objects.create(nom="Resp2", prenom="R2", departement=self.dept2, actif=True)
         g_res = Group.objects.get(name="Responsable")
         self.res2 = Utilisateur.objects.create_user(email="res2@test.com", password="pass")
         self.res2.groups.add(g_res)
-        self.res2.membre = membre2
+        self.res2.personnel = membre2
         self.res2.save()
 
     def test_rediriger_ok(self):
@@ -669,3 +655,398 @@ class RedirigerTests(TestCase):
         })
         self.cand.refresh_from_db()
         self.assertEqual(self.cand.departement, self.dept2)
+
+
+# ─── Lot B — Nouveaux tests ────────────────────────────────────────────────────
+
+
+class TypeDemandAUTRETests(TestCase):
+    """AUTRE : offre interdite, contrainte RG09 respectée."""
+
+    def setUp(self):
+        _, _, _, self.dept, self.ts, self.candidat = _setup_base()
+
+    def test_autre_sans_offre_valide(self):
+        from django.core.exceptions import ValidationError
+        c = Candidature(
+            candidat=self.candidat, departement=self.dept, type_stage=self.ts,
+            type_demande=TypeDemande.AUTRE, offre=None,
+            debut_disponibilite="2027-03-01", fin_disponibilite="2027-06-01",
+            duree_souhaitee=2,
+        )
+        c.clean()  # ne doit pas lever d'exception
+
+    def test_autre_avec_offre_invalide(self):
+        from django.core.exceptions import ValidationError
+        offre = _offre_factory(self.dept, self.ts)
+        c = Candidature(
+            candidat=self.candidat, departement=self.dept, type_stage=self.ts,
+            type_demande=TypeDemande.AUTRE, offre=offre,
+            debut_disponibilite="2027-03-01", fin_disponibilite="2027-06-01",
+            duree_souhaitee=2,
+        )
+        with self.assertRaises(ValidationError):
+            c.clean()
+
+
+class PieceJointePDFSeulementTests(TestCase):
+    """_valider_piece_jointe : PDF uniquement, 3 Mo, magic bytes."""
+
+    def _valider(self, fichier):
+        from .models import _valider_piece_jointe
+        return _valider_piece_jointe(fichier)
+
+    def test_pdf_valide_accepte(self):
+        self._valider(_fake_pdf())  # ne doit pas lever
+
+    def test_jpg_refuse(self):
+        from django.core.exceptions import ValidationError
+        jpg = SimpleUploadedFile("photo.jpg", b"%PDF" + b"fake", content_type="image/jpeg")
+        # Extension .jpg → refusée même si magic OK
+        with self.assertRaises(ValidationError):
+            self._valider(jpg)
+
+    def test_png_refuse(self):
+        from django.core.exceptions import ValidationError
+        png = SimpleUploadedFile("img.png", b"\x89PNG fake", content_type="image/png")
+        with self.assertRaises(ValidationError):
+            self._valider(png)
+
+    def test_fichier_trop_gros_3mo(self):
+        from django.core.exceptions import ValidationError
+        gros = SimpleUploadedFile("gros.pdf", b"%PDF" + b"0" * (3 * 1024 * 1024 + 1))
+        with self.assertRaises(ValidationError):
+            self._valider(gros)
+
+    def test_fichier_3mo_exact_accepte(self):
+        ok = SimpleUploadedFile("ok.pdf", b"%PDF" + b"0" * (3 * 1024 * 1024 - 4))
+        self._valider(ok)  # ne doit pas lever
+
+    def test_magic_bytes_invalides(self):
+        from django.core.exceptions import ValidationError
+        faux = SimpleUploadedFile("faux.pdf", b"PK\x03\x04 fake zip")
+        with self.assertRaises(ValidationError):
+            self._valider(faux)
+
+
+class ServiceValidationCandidatureTests(TestCase):
+    """_valider_candidature via creer_candidature / modifier_candidature."""
+
+    def setUp(self):
+        self.sec, _, _, self.dept, self.ts, self.candidat = _setup_base()
+        self.pieces = [{"type_piece": TypePiece.CV, "fichier": _fake_pdf(), "nom_original": "cv.pdf"}]
+
+    def _creer(self, **kwargs):
+        defaults = dict(
+            candidat=self.candidat, departement=self.dept, type_stage=self.ts,
+            type_demande=TypeDemande.SPONTANEE,
+            debut_disponibilite="2027-03-01", fin_disponibilite="2027-06-01",
+            duree_souhaitee=2, pieces_data=self.pieces, utilisateur=self.sec,
+        )
+        defaults.update(kwargs)
+        return creer_candidature(**defaults)
+
+    def test_debut_passe_creation_bloque(self):
+        from .services import ValidationCandidature
+        with self.assertRaises(ValidationCandidature):
+            self._creer(debut_disponibilite="2026-01-01", fin_disponibilite="2026-07-01")
+
+    def test_fin_dispo_plus_12_mois_bloque(self):
+        from .services import ValidationCandidature
+        with self.assertRaises(ValidationCandidature):
+            self._creer(fin_disponibilite="2028-04-01")  # > 2027-03-01 + 12 mois
+
+    def test_fin_dispo_exactement_12_mois_ok(self):
+        from commun.utils import ajouter_mois
+        from datetime import date
+        debut = date(2027, 3, 1)
+        fin = ajouter_mois(debut, 12)  # = 2028-03-01
+        self._creer(fin_disponibilite=fin.isoformat())
+
+    def test_duree_souhaitee_en_dessous_min_bloque(self):
+        from .services import ValidationCandidature
+        with self.assertRaises(ValidationCandidature):
+            self._creer(duree_souhaitee=0)
+
+    def test_duree_souhaitee_au_dessus_max_bloque(self):
+        from .services import ValidationCandidature
+        with self.assertRaises(ValidationCandidature):
+            self._creer(duree_souhaitee=7)  # ts.duree_max_mois = 6
+
+    def test_creation_sans_cv_bloque(self):
+        from .services import ValidationCandidature
+        with self.assertRaises(ValidationCandidature):
+            self._creer(
+                pieces_data=[{
+                    "type_piece": TypePiece.LETTRE_MOTIVATION,
+                    "fichier": _fake_pdf("lettre.pdf"),
+                    "nom_original": "lettre.pdf",
+                }]
+            )
+
+    def test_modification_debut_passe_si_inchange_ok(self):
+        """Modification sans changer debut_disponibilite : pas de refus même si date passée."""
+        cand = self._creer()
+        # Simuler une candidature avec un début passé en base
+        Candidature.objects.filter(pk=cand.pk).update(debut_disponibilite="2026-01-01")
+        cand.refresh_from_db()
+        from .services import modifier_candidature
+        # Ne doit pas lever ValidationCandidature (date inchangée)
+        modifier_candidature(
+            candidature=cand,
+            departement=self.dept,
+            type_stage=self.ts,
+            type_demande=TypeDemande.SPONTANEE,
+            debut_disponibilite=cand.debut_disponibilite,  # inchangé
+            fin_disponibilite="2026-07-01",
+            duree_souhaitee=2,
+            utilisateur=self.sec,
+        )
+
+    def test_modification_debut_passe_si_change_bloque(self):
+        """Modification avec un nouveau début passé → refusé."""
+        cand = self._creer()
+        from .services import modifier_candidature, ValidationCandidature
+        with self.assertRaises(ValidationCandidature):
+            modifier_candidature(
+                candidature=cand,
+                departement=self.dept,
+                type_stage=self.ts,
+                type_demande=TypeDemande.SPONTANEE,
+                debut_disponibilite="2026-01-01",  # nouveau début passé
+                fin_disponibilite="2026-07-01",
+                duree_souhaitee=2,
+                utilisateur=self.sec,
+            )
+
+
+class FormulaireCandidatureValidationTests(TestCase):
+    """Validations de CandidatureCreerForm et CandidatureModifierForm."""
+
+    def setUp(self):
+        self.sec, _, _, self.dept, self.ts, self.candidat = _setup_base()
+
+    def _form_data(self, **kwargs):
+        data = {
+            "departement": self.dept.pk,
+            "type_stage": self.ts.pk,
+            "type_demande": "SPONTANEE",
+            "debut_disponibilite": "2027-03-01",
+            "fin_disponibilite": "2027-06-01",
+            "duree_souhaitee": 2,
+            "commentaire": "",
+        }
+        data.update(kwargs)
+        return data
+
+    def test_debut_passe_invalide(self):
+        from .forms import CandidatureCreerForm
+        form = CandidatureCreerForm(self._form_data(debut_disponibilite="2026-01-01"))
+        self.assertFalse(form.is_valid())
+        self.assertIn("debut_disponibilite", form.errors)
+
+    def test_fin_plus_12_mois_invalide(self):
+        from .forms import CandidatureCreerForm
+        form = CandidatureCreerForm(self._form_data(fin_disponibilite="2028-05-01"))
+        self.assertFalse(form.is_valid())
+        self.assertIn("fin_disponibilite", form.errors)
+
+    def test_duree_hors_bornes_invalide(self):
+        from .forms import CandidatureCreerForm
+        form = CandidatureCreerForm(self._form_data(duree_souhaitee=10))  # max=6
+        self.assertFalse(form.is_valid())
+        self.assertIn("duree_souhaitee", form.errors)
+
+    def test_autre_avec_offre_invalide(self):
+        from .forms import CandidatureCreerForm
+        offre = _offre_factory(self.dept, self.ts)
+        form = CandidatureCreerForm(self._form_data(type_demande="AUTRE", offre=offre.pk))
+        self.assertFalse(form.is_valid())
+        self.assertIn("offre", form.errors)
+
+    def test_modifier_form_debut_inchange_passe_ok(self):
+        """CandidatureModifierForm : debut inchangé + passé → pas d'erreur."""
+        from .forms import CandidatureModifierForm
+        from datetime import date
+        cand = Candidature(
+            candidat=self.candidat, departement=self.dept, type_stage=self.ts,
+            type_demande="SPONTANEE",
+            debut_disponibilite=date(2026, 1, 1),
+            fin_disponibilite=date(2026, 7, 1),
+            duree_souhaitee=2,
+        )
+        form = CandidatureModifierForm(
+            self._form_data(debut_disponibilite="2026-01-01", fin_disponibilite="2026-07-01"),
+            instance=cand,
+        )
+        # Le seul champ invalide potentiel est fin > debut+12 mais 2026-07-01 <= 2027-01-01 ✓
+        # Et debut inchangé → pas d'erreur date passée
+        self.assertNotIn("debut_disponibilite", form.errors)
+
+
+class FormsetUnicitePiecesTests(TestCase):
+    """BasePieceJointeFormSet : CV obligatoire + un seul par type (sauf AUTRE)."""
+
+    def test_deux_cv_refuses(self):
+        from .forms import PieceJointeFormSet
+        data = {
+            "pieces-TOTAL_FORMS": "2",
+            "pieces-INITIAL_FORMS": "0",
+            "pieces-0-type_piece": TypePiece.CV,
+            "pieces-1-type_piece": TypePiece.CV,
+        }
+        files = {
+            "pieces-0-fichier": _fake_pdf("cv1.pdf"),
+            "pieces-1-fichier": _fake_pdf("cv2.pdf"),
+        }
+        fs = PieceJointeFormSet(data, files, prefix="pieces")
+        self.assertFalse(fs.is_valid())
+        self.assertTrue(any("seul" in str(e).lower() or "CV" in str(e) for e in fs.non_form_errors()))
+
+    def test_deux_autres_autorises(self):
+        from .forms import PieceJointeFormSet
+        data = {
+            "pieces-TOTAL_FORMS": "2",
+            "pieces-INITIAL_FORMS": "0",
+            "pieces-0-type_piece": TypePiece.CV,
+            "pieces-1-type_piece": TypePiece.AUTRE,
+        }
+        files = {
+            "pieces-0-fichier": _fake_pdf("cv.pdf"),
+            "pieces-1-fichier": _fake_pdf("autre.pdf"),
+        }
+        fs = PieceJointeFormSet(data, files, prefix="pieces")
+        self.assertTrue(fs.is_valid(), msg=str(fs.errors) + str(fs.non_form_errors()))
+
+
+# ─── Lot D — D1 : règle 72 h avant entretien ─────────────────────────────────
+
+
+class Entretien72hTests(TestCase):
+    def setUp(self):
+        self.sec, self.adm, self.res, self.dept, self.ts, self.candidat = _setup_base()
+        cand = _candidature_factory(self.dept, self.ts, self.candidat, self.sec)
+        preselectionner(cand, self.res)
+        self.cand = cand
+
+    def test_entretien_moins_72h_interdit(self):
+        from django.utils import timezone
+        dt = timezone.now() + timezone.timedelta(hours=24)
+        with self.assertRaises(TransitionInterdite):
+            planifier_entretien(self.cand, dt, self.res)
+
+    def test_entretien_plus_72h_accepte(self):
+        from django.utils import timezone
+        from suivi.models import Notification
+        dt = timezone.now() + timezone.timedelta(hours=73)
+        planifier_entretien(self.cand, dt, self.res)
+        self.cand.refresh_from_db()
+        self.assertEqual(self.cand.date_entretien, dt)
+
+    def test_form_entretien_moins_72h_invalide(self):
+        from .forms import EntretienForm
+        from django.utils import timezone
+        dt = timezone.now() + timezone.timedelta(hours=24)
+        form = EntretienForm(
+            {"date_entretien": dt.strftime("%Y-%m-%dT%H:%M")},
+        )
+        self.assertFalse(form.is_valid())
+        self.assertIn("date_entretien", form.errors)
+
+    def test_form_entretien_73h_valide(self):
+        from .forms import EntretienForm
+        from django.utils import timezone
+        dt = timezone.now() + timezone.timedelta(hours=73)
+        form = EntretienForm(
+            {"date_entretien": dt.strftime("%Y-%m-%dT%H:%M")},
+        )
+        self.assertTrue(form.is_valid(), msg=str(form.errors))
+
+
+# ─── Lot D — D2 : alerte secrétariat entretien < 48 h ────────────────────────
+
+
+class AlerterEntretiensCommandTests(TestCase):
+    def setUp(self):
+        self.sec, self.adm, self.res, self.dept, self.ts, self.candidat = _setup_base()
+
+    def _cand_avec_entretien(self, delta_heures):
+        from django.utils import timezone
+        cand = _candidature_factory(self.dept, self.ts, self.candidat, self.sec)
+        preselectionner(cand, self.res)
+        cand.date_entretien = timezone.now() + timezone.timedelta(hours=delta_heures)
+        cand.candidat_informe = False
+        cand.alerte_entretien_envoyee = False
+        cand.save(update_fields=["date_entretien", "candidat_informe", "alerte_entretien_envoyee"])
+        return cand
+
+    def test_alerte_envoyee_entretien_dans_24h(self):
+        from django.core.management import call_command
+        from io import StringIO
+        cand = self._cand_avec_entretien(24)
+        out = StringIO()
+        call_command("alerter_entretiens", stdout=out)
+        cand.refresh_from_db()
+        self.assertTrue(cand.alerte_entretien_envoyee)
+        self.assertIn("1 alerte", out.getvalue())
+
+    def test_pas_alerte_si_deja_envoyee(self):
+        from django.core.management import call_command
+        from io import StringIO
+        cand = self._cand_avec_entretien(24)
+        cand.alerte_entretien_envoyee = True
+        cand.save(update_fields=["alerte_entretien_envoyee"])
+        out = StringIO()
+        call_command("alerter_entretiens", stdout=out)
+        self.assertIn("0 alerte", out.getvalue())
+
+    def test_pas_alerte_si_candidat_informe(self):
+        from django.core.management import call_command
+        from io import StringIO
+        cand = self._cand_avec_entretien(24)
+        cand.candidat_informe = True
+        cand.save(update_fields=["candidat_informe"])
+        out = StringIO()
+        call_command("alerter_entretiens", stdout=out)
+        self.assertIn("0 alerte", out.getvalue())
+
+    def test_pas_alerte_si_entretien_lointain(self):
+        from django.core.management import call_command
+        from io import StringIO
+        cand = self._cand_avec_entretien(96)  # 4 jours — hors < 48 h
+        out = StringIO()
+        call_command("alerter_entretiens", stdout=out)
+        cand.refresh_from_db()
+        self.assertFalse(cand.alerte_entretien_envoyee)
+
+
+# ─── Lot D — D3 : TransfertCandidature ───────────────────────────────────────
+
+
+class TransfertCandidatureTests(TestCase):
+    def setUp(self):
+        self.sec, self.adm, self.res, self.dept, self.ts, self.candidat = _setup_base()
+        self.dept2 = Departement.objects.create(nom="RH", actif=True)
+        self.cand = _candidature_factory(self.dept, self.ts, self.candidat, self.sec)
+
+    def test_rediriger_cree_transfert(self):
+        from .models import TransfertCandidature
+        rediriger(self.cand, self.dept2, "Mieux adapté", self.res)
+        self.assertEqual(TransfertCandidature.objects.filter(candidature=self.cand).count(), 1)
+
+    def test_transfert_source_et_cible_corrects(self):
+        from .models import TransfertCandidature
+        rediriger(self.cand, self.dept2, "Test", self.res)
+        t = TransfertCandidature.objects.get(candidature=self.cand)
+        self.assertEqual(t.departement_source, self.dept)
+        self.assertEqual(t.departement_cible, self.dept2)
+        self.assertEqual(t.motif, "Test")
+        self.assertEqual(t.realise_par, self.res)
+
+    def test_deux_redirections_deux_transferts(self):
+        from .models import TransfertCandidature
+        dept3 = Departement.objects.create(nom="Comptabilité", actif=True)
+        rediriger(self.cand, self.dept2, "Premier", self.res)
+        self.cand.refresh_from_db()
+        rediriger(self.cand, dept3, "Deuxième", self.res)
+        self.assertEqual(TransfertCandidature.objects.filter(candidature=self.cand).count(), 2)

@@ -57,7 +57,7 @@
                             </a>
                         </td>
                         <td>{{ dept.responsable|default:"—" }}</td>
-                        <td><span class="badge bg-light text-dark">{{ dept.membres.count }}</span></td>
+                        <td><span class="badge bg-light text-dark">{{ dept.personnels.count }}</span></td>
                         <td>
                             {% if dept.actif %}
                             <span class="badge rounded-pill" style="background:#D5F5E3;color:#117A65;">Actif</span>

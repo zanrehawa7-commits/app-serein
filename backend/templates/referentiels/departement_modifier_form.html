@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% load crispy_forms_tags %}
+
+{% block title %}{{ titre }}{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center gap-3 mb-4">
+    <a href="{{ url_retour }}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left"></i></a>
+    <div>
+        <h5 class="mb-0 fw-semibold">{{ titre }}</h5>
+    </div>
+</div>
+
+{% if confirmation_requise %}
+<div class="alert alert-warning d-flex align-items-start gap-2" role="alert">
+    <i class="bi bi-exclamation-triangle-fill flex-shrink-0 mt-1"></i>
+    <div>
+        <strong>Remplacement de responsable</strong><br>
+        Le département a déjà pour responsable <strong>{{ ancien_responsable }}</strong>.
+        Le remplacer désactivera son compte utilisateur (s'il en a un) et notifiera les Administrateurs.
+        <form method="post" class="mt-2 d-inline">
+            {% csrf_token %}
+            {{ form.nom.as_hidden }}
+            {{ form.description.as_hidden }}
+            {{ form.actif.as_hidden }}
+            <input type="hidden" name="responsable" value="{{ form.cleaned_data.responsable.pk|default:'' }}">
+            <input type="hidden" name="confirmer_remplacement" value="1">
+            <button type="submit" class="btn btn-warning btn-sm">
+                <i class="bi bi-arrow-repeat me-1"></i>Confirmer le remplacement
+            </button>
+            <a href="{{ url_retour }}" class="btn btn-outline-secondary btn-sm ms-1">Annuler</a>
+        </form>
+    </div>
+</div>
+{% endif %}
+
+<div class="card border-0 shadow-sm" style="max-width:600px;">
+    <div class="card-body">
+        <form method="post">
+            {% csrf_token %}
+            {{ form|crispy }}
+            {% if not form.fields.responsable.queryset.exists %}
+            <div class="alert alert-info py-2 small mt-2">
+                <i class="bi bi-info-circle me-1"></i>
+                Aucun personnel actif dans ce département.
+                <a href="{% url 'referentiels:personnel_creer' %}?dept={{ object.pk }}" class="alert-link">Ajouter un personnel →</a>
+            </div>
+            {% endif %}
+            <button type="submit" class="btn btn-primary mt-2">Enregistrer</button>
+        </form>
+    </div>
+</div>
+{% endblock %}

@@ -9,7 +9,7 @@
             <i class="bi bi-mortarboard me-2"></i>Stage — {{ stage.candidature.candidat }}
         </h4>
         <p class="text-muted small mb-0">
-            Candidature <a href="{% url 'candidatures:candidature_detail' stage.candidature.pk %}">{{ stage.candidature.reference }}</a>
+            Candidature {% if peut_voir_candidature %}<a href="{% url 'candidatures:candidature_detail' stage.candidature.pk %}">{{ stage.candidature.reference }}</a>{% else %}{{ stage.candidature.reference }}{% endif %}
             &nbsp;·&nbsp;{{ stage.candidature.departement.nom }}
         </p>
     </div>
@@ -19,6 +19,18 @@
             <i class="bi bi-pencil me-1"></i>Modifier
         </a>
         {% endif %}
+        {% if peut_demarrer %}
+        <form method="post" action="{% url 'stages:stage_demarrer' stage.pk %}" class="d-inline">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-primary btn-sm">
+                <i class="bi bi-play-fill me-1"></i>Démarrer le stage
+            </button>
+        </form>
+        {% elif date_demarrage and role == "Responsable" %}
+        <span class="badge text-bg-light border align-self-center">
+            <i class="bi bi-clock me-1"></i>Démarrage possible à partir du {{ date_demarrage|date:"d/m/Y" }}
+        </span>
+        {% endif %}
         {% if peut_terminer %}
         <a href="{% url 'stages:stage_terminer' stage.pk %}" class="btn btn-success btn-sm">
             <i class="bi bi-check-circle me-1"></i>Terminer
@@ -27,6 +39,16 @@
         {% if peut_interrompre %}
         <a href="{% url 'stages:stage_interrompre' stage.pk %}" class="btn btn-outline-danger btn-sm">
             <i class="bi bi-stop-circle me-1"></i>Interrompre
+        </a>
+        {% endif %}
+        {% if peut_reprendre %}
+        <a href="{% url 'stages:stage_reprendre' stage.pk %}" class="btn btn-primary btn-sm">
+            <i class="bi bi-play-circle me-1"></i>Reprendre le stage
+        </a>
+        {% endif %}
+        {% if peut_evaluer %}
+        <a href="{% url 'stages:stage_evaluer' stage.pk %}" class="btn btn-warning btn-sm">
+            <i class="bi bi-star me-1"></i>{% if stage.note %}Modifier l'évaluation{% else %}Évaluer{% endif %}
         </a>
         {% endif %}
     </div>
@@ -77,33 +99,181 @@
         </div>
     </div>
 
-    <!-- Stagiaire -->
+    <!-- Dossier du candidat (RG-E8 : Secrétaire, Administrateur, Responsable du département) -->
     <div class="col-md-6">
+        {% with cand=stage.candidature candidat=stage.candidature.candidat %}
         <div class="card border-0 shadow-sm h-100">
-            <div class="card-header bg-white border-bottom py-2">
-                <h6 class="mb-0 fw-semibold">Stagiaire</h6>
+            <div class="card-header bg-white border-bottom py-2 d-flex justify-content-between align-items-center">
+                <h6 class="mb-0 fw-semibold"><i class="bi bi-folder2-open me-1"></i>Dossier du candidat</h6>
+                {% if peut_voir_candidature %}<a href="{% url 'candidatures:candidature_detail' cand.pk %}" class="small">Voir la candidature</a>{% endif %}
             </div>
             <div class="card-body">
                 <dl class="row mb-0">
-                    <dt class="col-sm-5 text-muted small">Nom</dt>
-                    <dd class="col-sm-7">{{ stage.candidature.candidat }}</dd>
+                    <dt class="col-sm-5 text-muted small">Identité</dt>
+                    <dd class="col-sm-7">{{ candidat }}</dd>
 
                     <dt class="col-sm-5 text-muted small">Téléphone</dt>
-                    <dd class="col-sm-7">{{ stage.candidature.candidat.telephone }}</dd>
+                    <dd class="col-sm-7">{{ candidat.telephone }}</dd>
 
                     <dt class="col-sm-5 text-muted small">Email</dt>
-                    <dd class="col-sm-7">{{ stage.candidature.candidat.email|default:"—" }}</dd>
+                    <dd class="col-sm-7">{{ candidat.email|default:"—" }}</dd>
+
+                    <dt class="col-sm-5 text-muted small">Adresse</dt>
+                    <dd class="col-sm-7">{{ candidat.adresse|default:"—" }}</dd>
 
                     <dt class="col-sm-5 text-muted small">Établissement</dt>
-                    <dd class="col-sm-7">{{ stage.candidature.candidat.etablissement|default:"—" }}</dd>
+                    <dd class="col-sm-7">{{ candidat.etablissement|default:candidat.etablissement_autre|default:"—" }}</dd>
+
+                    <dt class="col-sm-5 text-muted small">Niveau / filière</dt>
+                    <dd class="col-sm-7">{{ candidat.get_niveau_etudes_display|default:"—" }}{% if candidat.filiere %} — {{ candidat.filiere }}{% endif %}</dd>
+
+                    <dt class="col-sm-5 text-muted small">Type de demande</dt>
+                    <dd class="col-sm-7">{{ cand.get_type_demande_display }}</dd>
+
+                    <dt class="col-sm-5 text-muted small">Offre</dt>
+                    <dd class="col-sm-7">{{ cand.offre|default:"—" }}</dd>
 
                     <dt class="col-sm-5 text-muted small">Type de stage</dt>
-                    <dd class="col-sm-7">{{ stage.candidature.type_stage.libelle }}</dd>
+                    <dd class="col-sm-7">{{ cand.type_stage.libelle }}</dd>
+
+                    <dt class="col-sm-5 text-muted small">Disponibilité</dt>
+                    <dd class="col-sm-7">du {{ cand.debut_disponibilite|date:"d/m/Y" }} au {{ cand.fin_disponibilite|date:"d/m/Y" }}</dd>
+
+                    <dt class="col-sm-5 text-muted small">Durée souhaitée</dt>
+                    <dd class="col-sm-7">{{ cand.duree_souhaitee }} mois</dd>
                 </dl>
+
+{% if peut_telecharger_pieces %}
+                <h6 class="small fw-semibold mt-3 mb-2">Pièces jointes</h6>
+                {% for piece in pieces %}
+                <div class="d-flex align-items-center justify-content-between border-top py-1">
+                    <div class="small">
+                        <span class="badge bg-light text-dark me-1">{{ piece.get_type_piece_display }}</span>
+                        {{ piece.nom_original|default:"Document" }}
+                    </div>
+                    <div class="text-nowrap">
+                        <a href="{% url 'candidatures:piece_telecharger' piece.pk %}?inline=1" target="_blank" rel="noopener"
+                           class="btn btn-sm btn-outline-secondary py-0" title="Voir"><i class="bi bi-eye"></i></a>
+                        <a href="{% url 'candidatures:piece_telecharger' piece.pk %}"
+                           class="btn btn-sm btn-outline-primary py-0" title="Télécharger"><i class="bi bi-download"></i></a>
+                    </div>
+                </div>
+                {% empty %}
+                <p class="text-muted small mb-0">Aucune pièce jointe.</p>
+                {% endfor %}
+{% endif %}
             </div>
         </div>
+        {% endwith %}
     </div>
 </div>
+
+<!-- Évaluation (stage terminé) -->
+{% if stage.statut == "TERMINE" %}
+<div class="card border-0 shadow-sm mb-3">
+    <div class="card-header bg-white border-bottom py-2 d-flex justify-content-between align-items-center">
+        <h6 class="mb-0 fw-semibold"><i class="bi bi-star-fill text-warning me-2"></i>Évaluation</h6>
+        {% if stage.vivier %}
+        <span class="badge bg-success"><i class="bi bi-people-fill me-1"></i>Vivier</span>
+        {% endif %}
+    </div>
+    <div class="card-body">
+        {% if stage.note %}
+        <dl class="row mb-0">
+            <dt class="col-sm-4 text-muted small">Note</dt>
+            <dd class="col-sm-8"><strong>{{ stage.note }}/20</strong></dd>
+            <dt class="col-sm-4 text-muted small">Vivier</dt>
+            <dd class="col-sm-8">{% if stage.vivier %}<span class="text-success fw-semibold">Oui</span>{% else %}Non{% endif %}</dd>
+            <dt class="col-sm-4 text-muted small">Date d'évaluation</dt>
+            <dd class="col-sm-8">{{ stage.date_evaluation|date:"d/m/Y" }}</dd>
+            {% if stage.rapport %}
+            <dt class="col-sm-4 text-muted small">Rapport</dt>
+            <dd class="col-sm-8">
+                {% if peut_telecharger_rapport %}
+                <a href="{% url 'stages:rapport_telecharger' stage.pk %}" class="btn btn-sm btn-outline-primary">
+                    <i class="bi bi-file-earmark-pdf me-1"></i>Télécharger
+                </a>
+                {% else %}
+                <span class="text-muted small">Document disponible</span>
+                {% endif %}
+            </dd>
+            {% endif %}
+        </dl>
+        {% else %}
+        <p class="text-muted small mb-0">
+            <i class="bi bi-exclamation-triangle text-warning me-1"></i>
+            Ce stage n'a pas encore été évalué.
+            {% if peut_evaluer %}
+            <a href="{% url 'stages:stage_evaluer' stage.pk %}" class="ms-2">Évaluer maintenant</a>
+            {% endif %}
+        </p>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+
+<!-- Périodes d'interruption (RG-S13) -->
+{% if periodes_interruption %}
+<div class="card border-0 shadow-sm mb-3">
+    <div class="card-header bg-white border-bottom py-2">
+        <h6 class="mb-0 fw-semibold"><i class="bi bi-pause-circle me-1"></i>Périodes d'interruption</h6>
+    </div>
+    <div class="table-responsive">
+        <table class="table table-sm table-hover mb-0 small">
+            <thead class="table-light">
+                <tr>
+                    <th>Interruption</th>
+                    <th>Motif</th>
+                    <th>Reprise</th>
+                    <th>Motif de reprise</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for p in periodes_interruption %}
+                <tr>
+                    <td class="text-nowrap">{{ p.date_debut|date:"d/m/Y" }}<br><span class="text-muted">{{ p.interrompu_par|default:"—" }}</span></td>
+                    <td>{{ p.motif_interruption }}</td>
+                    <td class="text-nowrap">
+                        {% if p.date_fin %}{{ p.date_fin|date:"d/m/Y" }}<br><span class="text-muted">{{ p.repris_par|default:"—" }}</span>
+                        {% else %}<span class="badge bg-danger">En cours</span>{% endif %}
+                    </td>
+                    <td>{{ p.motif_reprise|default:"—" }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+<!-- Historique des maîtres de stage -->
+{% if role != "Administrateur" and affectations_maitre %}
+<div class="card border-0 shadow-sm mb-3">
+    <div class="card-header bg-white border-bottom py-2">
+        <h6 class="mb-0 fw-semibold"><i class="bi bi-person-badge me-1"></i>Historique des maîtres de stage</h6>
+    </div>
+    <div class="table-responsive">
+        <table class="table table-sm table-hover mb-0 small">
+            <thead class="table-light">
+                <tr>
+                    <th>Date</th>
+                    <th>Maître de stage</th>
+                    <th>Affecté par</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for a in affectations_maitre %}
+                <tr>
+                    <td class="text-nowrap">{{ a.date_affectation|date:"d/m/Y H:i" }}</td>
+                    <td>{{ a.maitre_stage }}</td>
+                    <td>{{ a.affecte_par|default:"—" }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
 
 {% include "commun/_historique.html" with historiques=historiques %}
 {% endblock %}

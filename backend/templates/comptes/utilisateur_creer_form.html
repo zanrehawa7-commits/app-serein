@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% load crispy_forms_tags %}
+
+{% block title %}{{ titre }}{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center gap-3 mb-4">
+    <a href="{{ url_retour }}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left"></i></a>
+    <div>
+        <h5 class="mb-0 fw-semibold">{{ titre }}</h5>
+    </div>
+</div>
+
+{% if designer_mode and personnel_designer %}
+<div class="alert alert-primary d-flex gap-2 py-2 small">
+    <i class="bi bi-person-badge flex-shrink-0 mt-1"></i>
+    <div>
+        Ce compte sera créé pour <strong>{{ personnel_designer }}</strong> avec le rôle <strong>Responsable</strong>.
+        {% if personnel_designer.departement %}
+        Il sera automatiquement désigné(e) responsable du département <strong>{{ personnel_designer.departement }}</strong>.
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+
+{% if avertissement_remplacement %}
+<div class="alert alert-warning d-flex gap-2 py-2 small">
+    <i class="bi bi-exclamation-triangle flex-shrink-0 mt-1"></i>
+    <div>{{ avertissement_remplacement }}</div>
+</div>
+{% endif %}
+
+<div class="card border-0 shadow-sm" style="max-width:600px;">
+    <div class="card-body">
+        <form method="post">
+            {% csrf_token %}
+            {% if designer_mode %}
+            <input type="hidden" name="designer" value="1">
+            <input type="hidden" name="_personnel_pk" value="{{ personnel_designer.pk }}">
+            {% endif %}
+            {% if request.GET.next %}
+            <input type="hidden" name="next" value="{{ request.GET.next }}">
+            {% endif %}
+            {{ form|crispy }}
+            <button type="submit" class="btn btn-primary">Créer le compte</button>
+        </form>
+    </div>
+</div>
+{% endblock %}

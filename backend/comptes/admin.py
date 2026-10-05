@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
-from .models import Utilisateur
+from .models import ProfilRole, Utilisateur
 
 
 @admin.register(Utilisateur)
@@ -13,7 +13,7 @@ class UtilisateurAdmin(BaseUserAdmin):
     fieldsets = (
         (None, {"fields": ("email", "password")}),
         ("Informations personnelles", {"fields": ("first_name", "last_name", "telephone")}),
-        ("Rôle et accès", {"fields": ("groups", "membre", "is_active", "is_staff", "is_superuser")}),
+        ("Rôle et accès", {"fields": ("groups", "personnel", "is_active", "is_staff", "is_superuser")}),
         ("Dates", {"fields": ("last_login", "date_joined"), "classes": ("collapse",)}),
     )
     add_fieldsets = (
@@ -29,3 +29,9 @@ class UtilisateurAdmin(BaseUserAdmin):
         if obj and obj == request.user:
             return False
         return super().has_delete_permission(request, obj)
+
+
+@admin.register(ProfilRole)
+class ProfilRoleAdmin(admin.ModelAdmin):
+    list_display = ["groupe", "est_systeme", "actif"]
+    list_filter = ["est_systeme", "actif"]

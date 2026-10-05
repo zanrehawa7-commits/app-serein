@@ -8,7 +8,7 @@
         <h5 class="mb-0 fw-semibold"><i class="bi bi-inbox me-2 text-primary"></i>Besoins de stage</h5>
         <p class="text-muted small mb-0">Liste des besoins transmis par les départements</p>
     </div>
-    {% if role == "Responsable" and request.user.membre %}
+    {% if role == "Responsable" and request.user.personnel %}
     <a href="{% url 'offres:besoin_creer' %}" class="btn btn-primary btn-sm ms-auto">
         <i class="bi bi-plus-lg me-1"></i>Nouveau besoin
     </a>

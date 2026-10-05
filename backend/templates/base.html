@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}Stage_App{% endblock %} — Serein-GE</title>
+    <title>{% block title %}Accueil{% endblock %} — {{ APP_NAME }}</title>
     {% load static %}
     <link rel="stylesheet" href="{% static 'vendor/bootstrap/bootstrap.min.css' %}">
     <link rel="stylesheet" href="{% static 'vendor/bootstrap-icons/bootstrap-icons.css' %}">
@@ -14,7 +14,7 @@
 <nav class="navbar navbar-expand-lg navbar-dark sticky-top" style="background-color:#1B4F72;">
     <div class="container-fluid px-3">
         <a class="navbar-brand fw-bold" href="{% url 'comptes:tableau_de_bord' %}">
-            <i class="bi bi-briefcase-fill me-1"></i>Gestion de Stage
+            <i class="bi bi-briefcase-fill me-1"></i>{{ APP_NAME }}
         </a>
         <div class="ms-auto d-flex align-items-center gap-3">
 
@@ -107,8 +107,10 @@
             <li><a href="{% url 'comptes:roles_list' %}" class="nav-link text-white {% if 'role' in request.resolver_match.url_name or 'permissions' in request.resolver_match.url_name %}active{% endif %}">
                 <i class="bi bi-shield-lock me-2"></i>Rôles & permissions</a></li>
             <li class="mt-2"><small class="text-white-50 ps-2 text-uppercase fw-bold" style="font-size:.65rem;letter-spacing:.05em;">Référentiels</small></li>
-            <li><a href="{% url 'referentiels:departement_list' %}" class="nav-link text-white {% if request.resolver_match.namespace == 'referentiels' and 'departement' in request.resolver_match.url_name or 'membre' in request.resolver_match.url_name %}active{% endif %}">
+            <li><a href="{% url 'referentiels:departement_list' %}" class="nav-link text-white {% if request.resolver_match.namespace == 'referentiels' and 'departement' in request.resolver_match.url_name %}active{% endif %}">
                 <i class="bi bi-diagram-3 me-2"></i>Départements</a></li>
+            <li><a href="{% url 'referentiels:personnel_list' %}" class="nav-link text-white {% if request.resolver_match.namespace == 'referentiels' and 'personnel' in request.resolver_match.url_name %}active{% endif %}">
+                <i class="bi bi-person-badge me-2"></i>Personnel</a></li>
             <li><a href="{% url 'referentiels:etablissement_list' %}" class="nav-link text-white {% if request.resolver_match.namespace == 'referentiels' and 'etablissement' in request.resolver_match.url_name %}active{% endif %}">
                 <i class="bi bi-building me-2"></i>Établissements</a></li>
             <li><a href="{% url 'referentiels:typestage_list' %}" class="nav-link text-white {% if request.resolver_match.namespace == 'referentiels' and 'typestage' in request.resolver_match.url_name %}active{% endif %}">
@@ -118,11 +120,18 @@
             <li class="mt-2"><small class="text-white-50 ps-2 text-uppercase fw-bold" style="font-size:.65rem;letter-spacing:.05em;">Gestion</small></li>
             <li><a href="{% url 'offres:besoin_list' %}" class="nav-link text-white {% if request.resolver_match.namespace == 'offres' and 'besoin' in request.resolver_match.url_name %}active{% endif %}">
                 <i class="bi bi-inbox me-2"></i>Besoins</a></li>
-            <li><a href="{% url 'offres:offre_list' %}" class="nav-link text-white {% if request.resolver_match.namespace == 'offres' and 'offre' in request.resolver_match.url_name %}active{% endif %}">
+            <li><a href="{% url 'offres:offre_list' %}" class="nav-link text-white {% if request.resolver_match.namespace == 'offres' and 'offre' in request.resolver_match.url_name and request.resolver_match.url_name != 'parametre_offre' %}active{% endif %}">
                 <i class="bi bi-file-earmark-text me-2"></i>Offres</a></li>
+            <li><a href="{% url 'offres:parametre_offre' %}" class="nav-link text-white {% if request.resolver_match.url_name == 'parametre_offre' %}active{% endif %}">
+                <i class="bi bi-file-text me-2"></i>Modèle d'offre</a></li>
             <li class="mt-2"><small class="text-white-50 ps-2 text-uppercase fw-bold" style="font-size:.65rem;letter-spacing:.05em;">Stages</small></li>
-            <li><a href="{% url 'stages:stage_list' %}" class="nav-link text-white {% if request.resolver_match.namespace == 'stages' %}active{% endif %}">
+            <li><a href="{% url 'stages:stage_list' %}" class="nav-link text-white {% if request.resolver_match.namespace == 'stages' and request.resolver_match.url_name == 'stage_list' %}active{% endif %}">
                 <i class="bi bi-mortarboard me-2"></i>Stages</a></li>
+            <li><a href="{% url 'stages:vivier' %}" class="nav-link text-white {% if request.resolver_match.url_name == 'vivier' or request.resolver_match.url_name == 'vivier_export_csv' %}active{% endif %}">
+                <i class="bi bi-people-fill me-2"></i>Vivier</a></li>
+            <li class="mt-2"><small class="text-white-50 ps-2 text-uppercase fw-bold" style="font-size:.65rem;letter-spacing:.05em;">Suivi</small></li>
+            <li><a href="{% url 'suivi:historique_list' %}" class="nav-link text-white {% if request.resolver_match.url_name == 'historique_list' %}active{% endif %}">
+                <i class="bi bi-clock-history me-2"></i>Historique</a></li>
         </ul>
 
         {% elif role_utilisateur == "Secrétaire" %}
@@ -175,6 +184,50 @@
                 <i class="bi bi-check-circle me-2"></i>Terminés</a></li>
             <li><a href="{% url 'stages:stage_list' %}?statut=INTERROMPU" class="nav-link text-white {% if request.resolver_match.namespace == 'stages' and request.GET.statut == 'INTERROMPU' %}active{% endif %}">
                 <i class="bi bi-stop-circle me-2"></i>Interrompus</a></li>
+            <li><a href="{% url 'stages:stages_a_evaluer' %}" class="nav-link text-white {% if request.resolver_match.url_name == 'stages_a_evaluer' %}active{% endif %}">
+                <i class="bi bi-clipboard-check me-2"></i>À évaluer</a></li>
+            <li class="mt-2"><small class="text-white-50 ps-2 text-uppercase fw-bold" style="font-size:.65rem;letter-spacing:.05em;">Talents</small></li>
+            <li><a href="{% url 'stages:vivier' %}" class="nav-link text-white {% if request.resolver_match.url_name == 'vivier' or request.resolver_match.url_name == 'vivier_export_csv' %}active{% endif %}">
+                <i class="bi bi-people-fill me-2"></i>Vivier</a></li>
+        </ul>
+
+        {% elif est_consultation %}
+        {# RG-U10 : menu des rôles de consultation, construit d'après leurs droits (lecture seule). #}
+        <ul class="nav nav-pills flex-column gap-1">
+            <li><a href="{% url 'comptes:tableau_bord_consultation' %}" class="nav-link text-white {% if request.resolver_match.url_name == 'tableau_bord_consultation' %}active{% endif %}">
+                <i class="bi bi-speedometer2 me-2"></i>Tableau de bord</a></li>
+            {% if perms.offres.view_besoin or perms.offres.view_offre %}
+            <li class="mt-2"><small class="text-white-50 ps-2 text-uppercase fw-bold" style="font-size:.65rem;letter-spacing:.05em;">Offres</small></li>
+            {% if perms.offres.view_besoin %}
+            <li><a href="{% url 'offres:besoin_list' %}" class="nav-link text-white {% if request.resolver_match.namespace == 'offres' and 'besoin' in request.resolver_match.url_name %}active{% endif %}">
+                <i class="bi bi-inbox me-2"></i>Besoins</a></li>
+            {% endif %}
+            {% if perms.offres.view_offre %}
+            <li><a href="{% url 'offres:offre_list' %}" class="nav-link text-white {% if request.resolver_match.namespace == 'offres' and 'offre' in request.resolver_match.url_name %}active{% endif %}">
+                <i class="bi bi-file-earmark-text me-2"></i>Offres</a></li>
+            {% endif %}
+            {% endif %}
+            {% if perms.candidatures.view_candidature %}
+            <li class="mt-2"><small class="text-white-50 ps-2 text-uppercase fw-bold" style="font-size:.65rem;letter-spacing:.05em;">Candidatures</small></li>
+            <li><a href="{% url 'candidatures:candidature_list' %}" class="nav-link text-white {% if request.resolver_match.namespace == 'candidatures' %}active{% endif %}">
+                <i class="bi bi-folder2-open me-2"></i>Candidatures</a></li>
+            {% endif %}
+            {% if perms.stages.view_stage or perms.stages.consulter_vivier %}
+            <li class="mt-2"><small class="text-white-50 ps-2 text-uppercase fw-bold" style="font-size:.65rem;letter-spacing:.05em;">Stages</small></li>
+            {% if perms.stages.view_stage %}
+            <li><a href="{% url 'stages:stage_list' %}" class="nav-link text-white {% if request.resolver_match.namespace == 'stages' and request.resolver_match.url_name == 'stage_list' %}active{% endif %}">
+                <i class="bi bi-mortarboard me-2"></i>Stages</a></li>
+            {% endif %}
+            {% if perms.stages.consulter_vivier %}
+            <li><a href="{% url 'stages:vivier' %}" class="nav-link text-white {% if request.resolver_match.url_name == 'vivier' %}active{% endif %}">
+                <i class="bi bi-people-fill me-2"></i>Vivier</a></li>
+            {% endif %}
+            {% endif %}
+            {% if perms.suivi.view_historique %}
+            <li class="mt-2"><small class="text-white-50 ps-2 text-uppercase fw-bold" style="font-size:.65rem;letter-spacing:.05em;">Suivi</small></li>
+            <li><a href="{% url 'suivi:historique_list' %}" class="nav-link text-white {% if request.resolver_match.url_name == 'historique_list' %}active{% endif %}">
+                <i class="bi bi-clock-history me-2"></i>Historique</a></li>
+            {% endif %}
         </ul>
         {% endif %}
     </nav>

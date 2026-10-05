@@ -24,7 +24,7 @@ def _user(email, groupe=None):
 class EnregistrerHistoriqueTests(TestCase):
     def setUp(self):
         self.dept = Departement.objects.create(nom="Dept Test")
-        self.ts = TypeStage.objects.create(libelle="Stage test")
+        self.ts = TypeStage.objects.create(libelle="Stage test", duree_min_mois=1, duree_max_mois=6)
         self.user = _user("test@serein.bf")
         self.besoin = Besoin.objects.create(
             departement=self.dept,

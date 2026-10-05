@@ -1,9 +1,21 @@
 from django import forms
 from django.utils import timezone
 from crispy_forms.helper import FormHelper
-from crispy_forms.layout import Layout, Field, Row, Column, Submit, HTML
+from crispy_forms.layout import Layout, Field, Row, Column, Submit, HTML, Div
 
-from referentiels.models import Membre
+from referentiels.models import Personnel
+
+from .services import debut_modifiable, erreurs_disponibilite
+
+
+def _borner_dates(form, candidature):
+    """Aide de saisie : le calendrier ne propose que la disponibilité du candidat (RG-S11)."""
+    if candidature is None:
+        return
+    for champ in ("date_debut", "date_fin_prevue"):
+        attrs = form.fields[champ].widget.attrs
+        attrs["min"] = candidature.debut_disponibilite.isoformat()
+        attrs["max"] = candidature.fin_disponibilite.isoformat()
 
 
 class ConstituerStageForm(forms.Form):
@@ -17,15 +29,17 @@ class ConstituerStageForm(forms.Form):
     )
     maitre_stage = forms.ModelChoiceField(
         label="Maître de stage",
-        queryset=Membre.objects.none(),
+        queryset=Personnel.objects.none(),
     )
 
-    def __init__(self, *args, departement=None, **kwargs):
+    def __init__(self, *args, departement=None, candidature=None, **kwargs):
         super().__init__(*args, **kwargs)
+        self._candidature = candidature
         if departement is not None:
-            self.fields["maitre_stage"].queryset = Membre.objects.filter(
+            self.fields["maitre_stage"].queryset = Personnel.objects.filter(
                 departement=departement, actif=True
             ).order_by("nom", "prenom")
+        _borner_dates(self, candidature)
 
         self.helper = FormHelper()
         self.helper.layout = Layout(
@@ -43,6 +57,9 @@ class ConstituerStageForm(forms.Form):
         fin = cleaned.get("date_fin_prevue")
         if debut and fin and fin <= debut:
             self.add_error("date_fin_prevue", "La date de fin doit être postérieure à la date de début.")
+        if self._candidature:
+            for champ, message in erreurs_disponibilite(self._candidature, debut, fin).items():
+                self.add_error(champ, message)
         return cleaned
 
 
@@ -58,20 +75,22 @@ class ModifierStageForm(forms.Form):
     )
     maitre_stage = forms.ModelChoiceField(
         label="Maître de stage",
-        queryset=Membre.objects.none(),
+        queryset=Personnel.objects.none(),
     )
 
     def __init__(self, *args, departement=None, stage=None, **kwargs):
         super().__init__(*args, **kwargs)
+        self._stage = stage
         if departement is not None:
-            self.fields["maitre_stage"].queryset = Membre.objects.filter(
+            self.fields["maitre_stage"].queryset = Personnel.objects.filter(
                 departement=departement, actif=True
             ).order_by("nom", "prenom")
 
-        from stages.models import StatutStage
-        if stage and stage.statut == StatutStage.EN_COURS:
+        if stage and not debut_modifiable(stage):
             self.fields["date_debut"].widget.attrs["disabled"] = True
             self.fields["date_debut"].required = False
+        if stage:
+            _borner_dates(self, stage.candidature)
 
         self.helper = FormHelper()
         self.helper.layout = Layout(
@@ -85,10 +104,14 @@ class ModifierStageForm(forms.Form):
 
     def clean(self):
         cleaned = super().clean()
-        debut = cleaned.get("date_debut")
         fin = cleaned.get("date_fin_prevue")
-        if debut and fin and fin <= debut:
+        modifiable = debut_modifiable(self._stage)
+        debut = (cleaned.get("date_debut") or self._stage.date_debut) if modifiable else self._stage.date_demarrage_effective()
+        if fin and fin <= debut:
             self.add_error("date_fin_prevue", "La date de fin doit être postérieure à la date de début.")
+        debut_a_verifier = debut if modifiable else None
+        for champ, message in erreurs_disponibilite(self._stage.candidature, debut_a_verifier, fin).items():
+            self.add_error(champ, message)
         return cleaned
 
 
@@ -115,8 +138,10 @@ class TerminerStageForm(forms.Form):
         today = timezone.localdate()
         if date > today:
             raise forms.ValidationError("La date de fin réelle ne peut pas être dans le futur.")
-        if self._stage and date < self._stage.date_debut:
-            raise forms.ValidationError("La date de fin réelle ne peut pas être antérieure à la date de début.")
+        if self._stage and date < self._stage.date_demarrage_effective():
+            raise forms.ValidationError(
+                "La date de fin réelle ne peut pas être antérieure à la date de début (ou de reprise)."
+            )
         return date
 
 
@@ -148,8 +173,13 @@ class InterrompreStageForm(forms.Form):
         today = timezone.localdate()
         if date > today:
             raise forms.ValidationError("La date d'interruption ne peut pas être dans le futur.")
-        if self._stage and date < self._stage.date_debut:
-            raise forms.ValidationError("La date d'interruption ne peut pas être antérieure à la date de début.")
+        # Un stage à venir s'interrompt avant son début : borne basse seulement s'il est en cours.
+        from .models import StatutStage
+        en_cours = self._stage and self._stage.statut == StatutStage.EN_COURS
+        if en_cours and date < self._stage.date_demarrage_effective():
+            raise forms.ValidationError(
+                "La date d'interruption ne peut pas être antérieure à la date de début (ou de reprise)."
+            )
         return date
 
     def clean_motif_interruption(self):
@@ -157,3 +187,108 @@ class InterrompreStageForm(forms.Form):
         if not motif:
             raise forms.ValidationError("Le motif d'interruption est obligatoire.")
         return motif
+
+
+class ReprendreStageForm(forms.Form):
+    date_reprise = forms.DateField(
+        label="Date de reprise",
+        widget=forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"),
+    )
+    date_fin_prevue = forms.DateField(
+        label="Nouvelle date de fin prévue",
+        widget=forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"),
+    )
+    motif_reprise = forms.CharField(
+        label="Motif de reprise",
+        widget=forms.Textarea(attrs={"rows": 3}),
+    )
+
+    def __init__(self, *args, stage, periode, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._stage = stage
+        self._periode = periode
+        self.fields["date_reprise"].widget.attrs["min"] = periode.date_debut.isoformat()
+        self.fields["date_fin_prevue"].widget.attrs["max"] = stage.candidature.fin_disponibilite.isoformat()
+
+        self.helper = FormHelper()
+        self.helper.layout = Layout(
+            Row(
+                Column("date_reprise", css_class="col-md-6"),
+                Column("date_fin_prevue", css_class="col-md-6"),
+            ),
+            Field("motif_reprise"),
+            Submit("submit", "Reprendre le stage", css_class="btn btn-primary mt-2"),
+        )
+
+    def clean_motif_reprise(self):
+        motif = self.cleaned_data["motif_reprise"].strip()
+        if not motif:
+            raise forms.ValidationError("Le motif de reprise est obligatoire.")
+        return motif
+
+    def clean(self):
+        cleaned = super().clean()
+        reprise = cleaned.get("date_reprise")
+        fin = cleaned.get("date_fin_prevue")
+        if reprise and reprise < self._periode.date_debut:
+            self.add_error(
+                "date_reprise",
+                f"La date de reprise ne peut pas être antérieure à la date d'interruption "
+                f"({self._periode.date_debut:%d/%m/%Y}).",
+            )
+        if reprise and fin and fin <= reprise:
+            self.add_error("date_fin_prevue", "La nouvelle date de fin prévue doit être postérieure à la date de reprise.")
+        for champ, message in erreurs_disponibilite(self._stage.candidature, date_fin_prevue=fin).items():
+            self.add_error(champ, message)
+        return cleaned
+
+
+class EvaluerStageForm(forms.Form):
+    note = forms.IntegerField(
+        label="Note /20",
+        min_value=1,
+        max_value=20,
+        widget=forms.NumberInput(attrs={"min": "1", "max": "20", "id": "id_note"}),
+    )
+    vivier = forms.BooleanField(
+        label="Ajouter au vivier de talents (note ≥ 12 requise)",
+        required=False,
+        widget=forms.CheckboxInput(attrs={"id": "id_vivier"}),
+    )
+    rapport = forms.FileField(
+        label="Rapport de stage (PDF, max 10 Mo)",
+        required=False,
+        widget=forms.ClearableFileInput(attrs={"accept": ".pdf"}),
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.helper = FormHelper()
+        self.helper.layout = Layout(
+            Row(
+                Column(Field("note"), css_class="col-md-4"),
+                Column(
+                    Div(Field("vivier"), css_class="mt-4 pt-2"),
+                    css_class="col-md-8",
+                ),
+            ),
+            Field("rapport"),
+            Submit("submit", "Enregistrer l'évaluation", css_class="btn btn-primary mt-2"),
+        )
+
+    def clean_rapport(self):
+        rapport = self.cleaned_data.get("rapport")
+        if rapport:
+            if not rapport.name.lower().endswith(".pdf"):
+                raise forms.ValidationError("Le rapport doit être un fichier PDF.")
+            if rapport.size > 10 * 1024 * 1024:
+                raise forms.ValidationError("Le rapport ne doit pas dépasser 10 Mo.")
+        return rapport
+
+    def clean(self):
+        cleaned = super().clean()
+        note = cleaned.get("note")
+        vivier = cleaned.get("vivier")
+        if vivier and (note is None or note < 12):
+            self.add_error("vivier", "Le vivier nécessite une note ≥ 12.")
+        return cleaned

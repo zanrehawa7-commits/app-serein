@@ -19,6 +19,7 @@
                 <i class="bi bi-arrow-right text-muted me-1" style="font-size:.65rem;"></i>
                 <span class="badge rounded-pill text-bg-primary" style="font-size:.65rem;">{{ h.nouveau_statut }}</span>
                 {% elif h.nouveau_statut %}
+                <span class="badge rounded-pill bg-success-subtle text-success me-1" style="font-size:.65rem;">Création</span>
                 <span class="badge rounded-pill text-bg-primary" style="font-size:.65rem;">{{ h.nouveau_statut }}</span>
                 {% endif %}
                 {% if h.commentaire %}<span class="text-muted ms-1">{{ h.commentaire }}</span>{% endif %}

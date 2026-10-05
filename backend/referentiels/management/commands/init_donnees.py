@@ -2,6 +2,8 @@ from django.contrib.auth.models import Group, Permission
 from django.contrib.contenttypes.models import ContentType
 from django.core.management.base import BaseCommand
 
+from comptes.models import ProfilRole
+from comptes.permissions import APPS_LECTURE_SEULE_ADMINISTRATEUR
 from referentiels.models import TypeStage
 
 
@@ -12,10 +14,7 @@ GROUPES_PERMISSIONS = {
     "Administrateur": {
         "comptes": _CRUD,
         "referentiels": _CRUD,
-        "offres": _CRUD,
-        "candidatures": ["view"],                # lecture seule (pas de saisie)
-        "stages": _CRUD,
-        "suivi": _CRUD,
+        **{app: ["view"] for app in APPS_LECTURE_SEULE_ADMINISTRATEUR},
     },
     "Secrétaire": {
         "offres.besoin": ["view"],
@@ -37,13 +36,15 @@ GROUPES_PERMISSIONS = {
     },
 }
 
-TYPES_STAGE = [
-    "Stage de perfectionnement",
-    "Stage professionnel",
-    "Stage de géomètre expert",
-    "Stage d'immersion",
-    "Stage de fin d'études",
-]
+# Libellé → (durée min, durée max) en mois. Mêmes valeurs que la migration
+# referentiels/0004 : sur une base neuve, aucune ligne n'existe à compléter.
+TYPES_STAGE = {
+    "Stage de perfectionnement": (1, 3),
+    "Stage professionnel": (1, 6),
+    "Stage de géomètre expert": (3, 12),
+    "Stage d'immersion": (1, 2),
+    "Stage de fin d'études": (3, 6),
+}
 
 
 class Command(BaseCommand):
@@ -59,6 +60,7 @@ class Command(BaseCommand):
             groupe, cree = Group.objects.get_or_create(name=nom_groupe)
             action = "créé" if cree else "déjà existant"
             self.stdout.write(f"  Groupe '{nom_groupe}' {action}.")
+            ProfilRole.objects.update_or_create(groupe=groupe, defaults={"est_systeme": True, "actif": True})
 
             perms_a_ajouter = []
             for cle, actions in apps_perms.items():
@@ -88,7 +90,11 @@ class Command(BaseCommand):
             self.stdout.write(f"    {len(perms_a_ajouter)} permission(s) attribuée(s).")
 
     def _creer_types_stage(self):
-        for libelle in TYPES_STAGE:
-            _, cree = TypeStage.objects.get_or_create(libelle=libelle)
+        for libelle, (duree_min, duree_max) in TYPES_STAGE.items():
+            # Les durées existantes ne sont jamais écrasées : l'admin a pu les modifier.
+            _, cree = TypeStage.objects.get_or_create(
+                libelle=libelle,
+                defaults={"duree_min_mois": duree_min, "duree_max_mois": duree_max},
+            )
             action = "créé" if cree else "déjà existant"
             self.stdout.write(f"  Type de stage '{libelle}' {action}.")

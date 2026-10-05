@@ -3,6 +3,31 @@
 import django.db.models.deletion
 from django.db import migrations, models
 
+_FIELDS_COMMUNS = [
+    ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
+    ('date_debut', models.DateField(verbose_name='date de début')),
+    ('date_fin_prevue', models.DateField(verbose_name='date de fin prévue')),
+    ('date_fin_reelle', models.DateField(blank=True, null=True, verbose_name='date de fin réelle')),
+    ('statut', models.CharField(choices=[('A_VENIR', 'À venir'), ('EN_COURS', 'En cours'), ('TERMINE', 'Terminé'), ('INTERROMPU', 'Interrompu')], default='A_VENIR', max_length=20, verbose_name='statut')),
+    ('motif_interruption', models.TextField(blank=True, verbose_name="motif d'interruption")),
+    ('note', models.PositiveSmallIntegerField(blank=True, null=True, verbose_name='note /20')),
+    ('vivier', models.BooleanField(default=False, verbose_name='vivier')),
+    ('rapport', models.FileField(blank=True, null=True, upload_to='rapports/%Y/', verbose_name='rapport de stage')),
+    ('date_evaluation', models.DateField(blank=True, null=True, verbose_name="date d'évaluation")),
+    ('candidature', models.OneToOneField(on_delete=django.db.models.deletion.PROTECT, related_name='stage', to='candidatures.candidature', verbose_name='candidature')),
+]
+
+_OPTIONS = {
+    'verbose_name': 'Stage',
+    'verbose_name_plural': 'Stages',
+    'ordering': ['-date_debut'],
+    'constraints': [
+        models.CheckConstraint(condition=models.Q(('date_fin_prevue__gt', models.F('date_debut'))), name='stage_date_fin_prevue_gt_date_debut'),
+        models.CheckConstraint(condition=models.Q(('note__isnull', True), models.Q(('note__gte', 1), ('note__lte', 20)), _connector='OR'), name='stage_note_entre_1_et_20'),
+        models.CheckConstraint(condition=models.Q(('vivier', False), ('note__gte', 12), _connector='OR'), name='stage_vivier_necessite_note_gte_12'),
+    ],
+}
+
 
 class Migration(migrations.Migration):
 
@@ -14,27 +39,28 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.CreateModel(
-            name='Stage',
-            fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('date_debut', models.DateField(verbose_name='date de début')),
-                ('date_fin_prevue', models.DateField(verbose_name='date de fin prévue')),
-                ('date_fin_reelle', models.DateField(blank=True, null=True, verbose_name='date de fin réelle')),
-                ('statut', models.CharField(choices=[('A_VENIR', 'À venir'), ('EN_COURS', 'En cours'), ('TERMINE', 'Terminé'), ('INTERROMPU', 'Interrompu')], default='A_VENIR', max_length=20, verbose_name='statut')),
-                ('motif_interruption', models.TextField(blank=True, verbose_name="motif d'interruption")),
-                ('note', models.PositiveSmallIntegerField(blank=True, null=True, verbose_name='note /20')),
-                ('vivier', models.BooleanField(default=False, verbose_name='vivier')),
-                ('rapport', models.FileField(blank=True, null=True, upload_to='rapports/%Y/', verbose_name='rapport de stage')),
-                ('date_evaluation', models.DateField(blank=True, null=True, verbose_name="date d'évaluation")),
-                ('candidature', models.OneToOneField(on_delete=django.db.models.deletion.PROTECT, related_name='stage', to='candidatures.candidature', verbose_name='candidature')),
-                ('maitre_stage', models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name='stages_encadres', to='referentiels.membre', verbose_name='maître de stage')),
+        # SeparateDatabaseAndState : état historique (referentiels.membre, avant renommage) vs
+        # SQL réel (referentiels.personnel, après renommage via referentiels/0002).
+        # Nécessaire pour les installations fraîches où referentiels_membre n'existe plus.
+        # La migration stages/0003 corrige ensuite l'état pour pointer vers referentiels.personnel.
+        migrations.SeparateDatabaseAndState(
+            state_operations=[
+                migrations.CreateModel(
+                    name='Stage',
+                    fields=_FIELDS_COMMUNS + [
+                        ('maitre_stage', models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name='stages_encadres', to='referentiels.membre', verbose_name='maître de stage')),
+                    ],
+                    options=_OPTIONS,
+                ),
             ],
-            options={
-                'verbose_name': 'Stage',
-                'verbose_name_plural': 'Stages',
-                'ordering': ['-date_debut'],
-                'constraints': [models.CheckConstraint(condition=models.Q(('date_fin_prevue__gt', models.F('date_debut'))), name='stage_date_fin_prevue_gt_date_debut'), models.CheckConstraint(condition=models.Q(('note__isnull', True), models.Q(('note__gte', 1), ('note__lte', 20)), _connector='OR'), name='stage_note_entre_1_et_20'), models.CheckConstraint(condition=models.Q(('vivier', False), ('note__gte', 12), _connector='OR'), name='stage_vivier_necessite_note_gte_12')],
-            },
+            database_operations=[
+                migrations.CreateModel(
+                    name='Stage',
+                    fields=_FIELDS_COMMUNS + [
+                        ('maitre_stage', models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name='stages_encadres', to='referentiels.personnel', verbose_name='maître de stage')),
+                    ],
+                    options=_OPTIONS,
+                ),
+            ],
         ),
     ]

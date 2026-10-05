@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+
+{% block title %}Personnels{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center gap-3 mb-4">
+    <div>
+        <h5 class="mb-0 fw-semibold"><i class="bi bi-person-badge me-2 text-primary"></i>Personnels</h5>
+        <p class="text-muted small mb-0">Annuaire du personnel</p>
+    </div>
+    {% if perms.referentiels.add_personnel %}
+    <a href="{% url 'referentiels:personnel_creer' %}" class="btn btn-primary btn-sm ms-auto">
+        <i class="bi bi-plus-lg me-1"></i>Nouveau personnel
+    </a>
+    {% endif %}
+</div>
+
+<div class="card border-0 shadow-sm mb-3">
+    <div class="card-body py-2">
+        <form method="get" class="row g-2 align-items-end">
+            <div class="col-md-4">
+                <input type="search" name="q" value="{{ q }}" class="form-control form-control-sm" placeholder="Rechercher…">
+            </div>
+            <div class="col-md-3">
+                <select name="dept" class="form-select form-select-sm">
+                    <option value="">Tous les départements</option>
+                    {% for d in departements %}
+                    <option value="{{ d.pk }}" {% if dept_filtre == d.pk|stringformat:"s" %}selected{% endif %}>{{ d.nom }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <select name="responsable" class="form-select form-select-sm">
+                    <option value="">Tous</option>
+                    <option value="1" {% if responsable_filtre == "1" %}selected{% endif %}>Responsables</option>
+                    <option value="0" {% if responsable_filtre == "0" %}selected{% endif %}>Non responsables</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <select name="actif" class="form-select form-select-sm">
+                    <option value="">Actif & inactif</option>
+                    <option value="1" {% if actif_filtre == "1" %}selected{% endif %}>Actifs</option>
+                    <option value="0" {% if actif_filtre == "0" %}selected{% endif %}>Inactifs</option>
+                </select>
+            </div>
+            <div class="col-auto">
+                <button type="submit" class="btn btn-outline-primary btn-sm">Filtrer</button>
+                <a href="{% url 'referentiels:personnel_list' %}" class="btn btn-outline-secondary btn-sm ms-1">Réinitialiser</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="card border-0 shadow-sm">
+    <div class="card-body p-0">
+        {% if personnels %}
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Nom</th>
+                        <th>Fonction</th>
+                        <th>Département</th>
+                        <th>Rôle</th>
+                        <th>Compte</th>
+                        <th>Statut</th>
+                        {% if perms.referentiels.change_personnel %}<th class="text-end">Actions</th>{% endif %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for p in personnels %}
+                    <tr>
+                        <td class="fw-semibold">
+                            <a href="{% url 'referentiels:personnel_detail' p.pk %}">{{ p }}</a>
+                        </td>
+                        <td class="text-muted small">{{ p.fonction|default:"—" }}</td>
+                        <td class="small">
+                            {% if p.departement %}
+                            <a href="{% url 'referentiels:departement_detail' p.departement.pk %}">{{ p.departement.nom }}</a>
+                            {% else %}—{% endif %}
+                        </td>
+                        <td>
+                            {% if p.departement_dirige %}
+                            <span class="badge" style="background:#EBF5FB;color:#1B4F72;">Responsable</span>
+                            {% else %}
+                            <span class="text-muted small">—</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if p.compte %}
+                            <span class="badge rounded-pill" style="background:#EAFAF1;color:#1E8449;font-size:.65rem;">
+                                <i class="bi bi-check-circle me-1"></i>{{ p.compte.role|default:"—" }}
+                            </span>
+                            {% else %}
+                            <span class="badge rounded-pill" style="background:#F9EBEA;color:#922B21;font-size:.65rem;">
+                                <i class="bi bi-x-circle me-1"></i>Sans compte
+                            </span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if p.actif %}
+                            <span class="badge rounded-pill" style="background:#D5F5E3;color:#117A65;">Actif</span>
+                            {% else %}
+                            <span class="badge rounded-pill" style="background:#F0F0F0;color:#666;">Inactif</span>
+                            {% endif %}
+                        </td>
+                        {% if perms.referentiels.change_personnel %}
+                        <td class="text-end">
+                            <a href="{% url 'referentiels:personnel_modifier' p.pk %}" class="btn btn-sm btn-outline-primary py-0" title="Modifier">
+                                <i class="bi bi-pencil"></i>
+                            </a>
+                        </td>
+                        {% endif %}
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% include "commun/_pagination.html" %}
+        {% else %}
+        <div class="text-center py-5 text-muted">
+            <i class="bi bi-person-badge fs-1 d-block mb-2" style="opacity:.2;"></i>
+            <p class="small mb-0">Aucun personnel trouvé.</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

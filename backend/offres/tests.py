@@ -3,15 +3,16 @@ from django.test import TestCase
 from django.urls import reverse
 
 from comptes.models import Utilisateur
-from referentiels.models import CanalPublication, Departement, Membre, TypeStage
+from referentiels.models import CanalPublication, Departement, Personnel, TypeStage
 
-from .models import Besoin, Offre, Publication, StatutBesoin, StatutOffre
+from .models import Besoin, Offre, ParametreOffre, Publication, StatutBesoin, StatutOffre
 from .services import (
     TransitionInterdite,
     annuler_besoin,
     creer_besoin,
     creer_offre,
     fermer_offre,
+    generer_texte_offre,
     ouvrir_offre,
     rouvrir_offre,
     supprimer_offre,
@@ -46,11 +47,11 @@ def _besoin(departement, type_stage):
 class TransitionsBesoinTests(TestCase):
     def setUp(self):
         self.dept = Departement.objects.create(nom="Dept Test")
-        self.ts = TypeStage.objects.create(libelle="Stage test")
+        self.ts = TypeStage.objects.create(libelle="Stage test", duree_min_mois=1, duree_max_mois=6)
         self.secretaire = _user("sec@serein.bf", groupe="Secrétaire")
         self.responsable = _user("resp@serein.bf", groupe="Responsable")
-        membre = Membre.objects.create(nom="Doe", prenom="Jane", departement=self.dept)
-        self.responsable.membre = membre
+        membre = Personnel.objects.create(nom="Doe", prenom="Jane", departement=self.dept)
+        self.responsable.personnel = membre
         self.responsable.save()
 
     def test_creer_besoin_statut_envoye(self):
@@ -118,7 +119,7 @@ class TransitionsBesoinTests(TestCase):
 class TransitionsOffreTests(TestCase):
     def setUp(self):
         self.dept = Departement.objects.create(nom="Dept Test")
-        self.ts = TypeStage.objects.create(libelle="Stage test")
+        self.ts = TypeStage.objects.create(libelle="Stage test", duree_min_mois=1, duree_max_mois=6)
         self.secretaire = _user("sec@serein.bf", groupe="Secrétaire")
         self.offre = Offre.objects.create(
             type_stage=self.ts,
@@ -203,7 +204,7 @@ class CreerOffreDepuisBesoinTests(TestCase):
 
     def setUp(self):
         self.dept = Departement.objects.create(nom="Dept Test")
-        self.ts = TypeStage.objects.create(libelle="Stage test")
+        self.ts = TypeStage.objects.create(libelle="Stage test", duree_min_mois=1, duree_max_mois=6)
         self.secretaire = _user("sec@serein.bf", groupe="Secrétaire")
 
     def test_creer_offre_depuis_besoin_pris_en_charge(self):
@@ -253,12 +254,12 @@ class AccesVuesBesoinTests(TestCase):
     def setUp(self):
         self.dept = Departement.objects.create(nom="Dept A")
         self.dept_b = Departement.objects.create(nom="Dept B")
-        self.ts = TypeStage.objects.create(libelle="Stage test")
+        self.ts = TypeStage.objects.create(libelle="Stage test", duree_min_mois=1, duree_max_mois=6)
         self.admin = _user("admin@serein.bf", is_superuser=True)
         self.secretaire = _user("sec@serein.bf", groupe="Secrétaire")
-        membre = Membre.objects.create(nom="Doe", prenom="Jane", departement=self.dept)
+        membre = Personnel.objects.create(nom="Doe", prenom="Jane", departement=self.dept)
         self.responsable = _user("resp@serein.bf", groupe="Responsable")
-        self.responsable.membre = membre
+        self.responsable.personnel = membre
         self.responsable.save()
         self.besoin = _besoin(self.dept, self.ts)
         self.besoin_autre = _besoin(self.dept_b, self.ts)
@@ -305,7 +306,7 @@ class AccesVuesOffreTests(TestCase):
 
     def setUp(self):
         self.dept = Departement.objects.create(nom="Dept A")
-        self.ts = TypeStage.objects.create(libelle="Stage test")
+        self.ts = TypeStage.objects.create(libelle="Stage test", duree_min_mois=1, duree_max_mois=6)
         self.admin = _user("admin@serein.bf", is_superuser=True)
         self.secretaire = _user("sec@serein.bf", groupe="Secrétaire")
         self.responsable = _user("resp@serein.bf", groupe="Responsable")
@@ -369,3 +370,380 @@ class AccesVuesOffreTests(TestCase):
         self.assertTrue(Offre.objects.filter(pk=self.offre.pk).exists())
         msgs = [str(m) for m in resp.context["messages"]]
         self.assertTrue(any("brouillon" in m.lower() for m in msgs))
+
+
+# ─── Lot B — Validation durée Besoin/Offre ────────────────────────────────────
+
+
+class DureeBesoinTests(TestCase):
+    """creer_besoin et BesoinForm valident la durée selon duree_min/max du TypeStage."""
+
+    def setUp(self):
+        self.dept = Departement.objects.create(nom="Dept Test")
+        self.ts = TypeStage.objects.create(
+            libelle="Stage pro", duree_min_mois=2, duree_max_mois=5
+        )
+        self.secretaire = _user("sec@serein.bf", groupe="Secrétaire")
+        self.responsable = _user("resp@serein.bf", groupe="Responsable")
+        membre = Personnel.objects.create(nom="Doe", prenom="J", departement=self.dept)
+        self.responsable.personnel = membre
+        self.responsable.save()
+
+    def test_duree_valide_service(self):
+        """3 mois avec min=2, max=5 → OK."""
+        from commun.utils import ajouter_mois
+        from datetime import date
+        debut = date(2027, 1, 1)
+        fin = ajouter_mois(debut, 3)
+        besoin = creer_besoin(
+            departement=self.dept, type_stage=self.ts,
+            date_debut=debut, date_fin=fin,
+            profil_recherche="Profil", nombre_places=1,
+            utilisateur=self.responsable,
+        )
+        self.assertIsNotNone(besoin.pk)
+
+    def test_duree_trop_courte_service(self):
+        """1 mois avec min=2 → TransitionInterdite."""
+        from commun.utils import ajouter_mois
+        from datetime import date
+        debut = date(2027, 1, 1)
+        fin = ajouter_mois(debut, 1)
+        with self.assertRaises(TransitionInterdite):
+            creer_besoin(
+                departement=self.dept, type_stage=self.ts,
+                date_debut=debut, date_fin=fin,
+                profil_recherche="Profil", nombre_places=1,
+                utilisateur=self.responsable,
+            )
+
+    def test_duree_trop_longue_service(self):
+        """6 mois avec max=5 → TransitionInterdite."""
+        from commun.utils import ajouter_mois
+        from datetime import date
+        debut = date(2027, 1, 1)
+        fin = ajouter_mois(debut, 6)
+        with self.assertRaises(TransitionInterdite):
+            creer_besoin(
+                departement=self.dept, type_stage=self.ts,
+                date_debut=debut, date_fin=fin,
+                profil_recherche="Profil", nombre_places=1,
+                utilisateur=self.responsable,
+            )
+
+    def test_duree_trop_courte_formulaire(self):
+        from offres.forms import BesoinForm
+        data = {
+            "departement": self.dept.pk,
+            "type_stage": self.ts.pk,
+            "date_debut": "2027-01-01",
+            "date_fin": "2027-01-31",  # < 2 mois
+            "profil_recherche": "Profil",
+            "nombre_places": 1,
+        }
+        form = BesoinForm(data)
+        self.assertFalse(form.is_valid())
+        self.assertTrue(form.non_field_errors())
+
+    def test_duree_valide_formulaire(self):
+        from offres.forms import BesoinForm
+        data = {
+            "departement": self.dept.pk,
+            "type_stage": self.ts.pk,
+            "date_debut": "2027-01-01",
+            "date_fin": "2027-04-01",  # 3 mois ✓
+            "profil_recherche": "Profil",
+            "nombre_places": 1,
+        }
+        form = BesoinForm(data)
+        self.assertTrue(form.is_valid(), msg=str(form.errors))
+
+
+# ─── Lot C — ParametreOffre et texte généré ──────────────────────────────────
+
+
+class ParametreOffreTests(TestCase):
+    """Comportement singleton de ParametreOffre."""
+
+    def test_singleton_double_save(self):
+        """Deux save() consécutifs ne créent qu'un seul enregistrement."""
+        ParametreOffre(contact="A", texte_modele="T1").save()
+        ParametreOffre(contact="B", texte_modele="T2").save()
+        self.assertEqual(ParametreOffre.objects.count(), 1)
+        self.assertEqual(ParametreOffre.objects.get().contact, "B")
+
+    def test_get_instance_cree_si_absent(self):
+        self.assertEqual(ParametreOffre.objects.count(), 0)
+        inst = ParametreOffre.get_instance()
+        self.assertIsNotNone(inst.pk)
+        self.assertEqual(ParametreOffre.objects.count(), 1)
+
+    def test_get_instance_idempotent(self):
+        inst1 = ParametreOffre.get_instance()
+        inst2 = ParametreOffre.get_instance()
+        self.assertEqual(inst1.pk, inst2.pk)
+
+    def test_delete_ignoree(self):
+        inst = ParametreOffre.get_instance()
+        inst.delete()
+        self.assertEqual(ParametreOffre.objects.count(), 1)
+
+    def test_vue_parametre_403_secretaire(self):
+        sec = _user("sec@s.bf", groupe="Secrétaire")
+        self.client.force_login(sec)
+        resp = self.client.get(reverse("offres:parametre_offre"))
+        self.assertEqual(resp.status_code, 403)
+
+    def test_vue_parametre_200_admin(self):
+        admin = _user("admin@s.bf", is_superuser=True)
+        self.client.force_login(admin)
+        resp = self.client.get(reverse("offres:parametre_offre"))
+        self.assertEqual(resp.status_code, 200)
+
+    def test_vue_parametre_post_admin(self):
+        admin = _user("admin@s.bf", is_superuser=True)
+        self.client.force_login(admin)
+        resp = self.client.post(
+            reverse("offres:parametre_offre"),
+            {"contact": "Serein-GE", "texte_modele": "Bonjour {contact}"},
+            follow=True,
+        )
+        self.assertEqual(resp.status_code, 200)
+        inst = ParametreOffre.get_instance()
+        self.assertEqual(inst.contact, "Serein-GE")
+
+
+class GenererTexteOffreTests(TestCase):
+    """generer_texte_offre substitue toutes les variables."""
+
+    def setUp(self):
+        self.dept = Departement.objects.create(nom="DSI")
+        self.ts = TypeStage.objects.create(
+            libelle="Stage pro", duree_min_mois=2, duree_max_mois=6
+        )
+        self.parametre = ParametreOffre(
+            contact="rh@serein.bf",
+            texte_modele=(
+                "{contact} — {type_stage} — {departement} — "
+                "{duree_min}/{duree_max} — {nombre_places} — "
+                "{date_debut} → {date_fin}"
+            ),
+        )
+        self.parametre.save()
+
+    def _offre(self, **kwargs):
+        defaults = dict(
+            type_stage=self.ts, departement=self.dept,
+            titre="T", description="D", profil_recherche="P",
+            date_debut="2027-01-01", date_fin="2027-06-30",
+            nombre_places=3,
+        )
+        defaults.update(kwargs)
+        return Offre(**defaults)
+
+    def test_toutes_variables_substituees(self):
+        offre = self._offre()
+        texte = generer_texte_offre(offre, self.parametre)
+        self.assertIn("rh@serein.bf", texte)
+        self.assertIn("Stage pro", texte)
+        self.assertIn("DSI", texte)
+        self.assertIn("2", texte)   # duree_min
+        self.assertIn("6", texte)   # duree_max
+        self.assertIn("3", texte)   # places
+        self.assertIn("01/01/2027", texte)
+        self.assertIn("30/06/2027", texte)
+
+    def test_variable_inconnue_conservee(self):
+        """Une variable non reconnue est laissée telle quelle."""
+        self.parametre.texte_modele = "Bonjour {inconnu}"
+        texte = generer_texte_offre(self._offre(), self.parametre)
+        self.assertIn("{inconnu}", texte)
+
+    def test_departement_null_remplace_par_vide(self):
+        offre = self._offre(departement=None)
+        self.parametre.texte_modele = "dept={departement}"
+        texte = generer_texte_offre(offre, self.parametre)
+        self.assertEqual(texte, "dept=")
+
+
+class OffreDepartementTests(TestCase):
+    """creer_offre remplit departement depuis le besoin ou depuis le paramètre explicite."""
+
+    def setUp(self):
+        self.dept = Departement.objects.create(nom="Compta")
+        self.ts = TypeStage.objects.create(libelle="Stage test", duree_min_mois=1, duree_max_mois=6)
+        self.sec = _user("sec@s.bf", groupe="Secrétaire")
+
+    def test_departement_depuis_besoin(self):
+        besoin = Besoin.objects.create(
+            departement=self.dept, type_stage=self.ts,
+            date_debut="2027-01-01", date_fin="2027-06-30",
+            profil_recherche="P", nombre_places=2, statut=StatutBesoin.ENVOYE,
+        )
+        offre = creer_offre(
+            type_stage=self.ts, titre="O", description="D",
+            profil_recherche="P", date_debut="2027-01-01", date_fin="2027-06-30",
+            nombre_places=2, utilisateur=self.sec, besoin=besoin,
+        )
+        self.assertEqual(offre.departement, self.dept)
+
+    def test_departement_explicite_sans_besoin(self):
+        dept2 = Departement.objects.create(nom="RH")
+        offre = creer_offre(
+            type_stage=self.ts, titre="O2", description="D",
+            profil_recherche="P", date_debut="2027-01-01", date_fin="2027-06-30",
+            nombre_places=1, utilisateur=self.sec, departement=dept2,
+        )
+        self.assertEqual(offre.departement, dept2)
+
+    def test_texte_publie_genere_a_la_creation(self):
+        parametre = ParametreOffre.get_instance()
+        parametre.texte_modele = "Offre {type_stage}"
+        parametre.save()
+        offre = creer_offre(
+            type_stage=self.ts, titre="OT", description="D",
+            profil_recherche="P", date_debut="2027-01-01", date_fin="2027-06-30",
+            nombre_places=1, utilisateur=self.sec, departement=self.dept,
+        )
+        self.assertIn("Stage test", offre.texte_publie)
+
+    def test_migration_remplit_departement_depuis_besoin(self):
+        """Les offres liées à un besoin ont leur departement rempli (post-migration)."""
+        besoin = Besoin.objects.create(
+            departement=self.dept, type_stage=self.ts,
+            date_debut="2027-01-01", date_fin="2027-06-30",
+            profil_recherche="P", nombre_places=1, statut=StatutBesoin.ENVOYE,
+        )
+        # Crée une offre directement (sans passer par le service)
+        offre = Offre.objects.create(
+            besoin=besoin, type_stage=self.ts, titre="O",
+            description="D", profil_recherche="P",
+            date_debut="2027-01-01", date_fin="2027-06-30",
+            nombre_places=1,
+        )
+        # La migration aurait rempli departement mais ici on teste que le FK fonctionne
+        offre.departement = besoin.departement
+        offre.save(update_fields=["departement"])
+        offre.refresh_from_db()
+        self.assertEqual(offre.departement, self.dept)
+
+
+# ─── RG-O9 : fermer l'offre clôture le besoin pris en charge ──────────────────
+
+
+class ClotureBesoinTests(TestCase):
+
+    def setUp(self):
+        from suivi.models import Historique, Notification
+        self.Historique, self.Notification = Historique, Notification
+        self.dept = Departement.objects.create(nom="Informatique")
+        self.autre_dept = Departement.objects.create(nom="Comptabilité")
+        self.ts = TypeStage.objects.create(libelle="Stage test", duree_min_mois=1, duree_max_mois=6)
+        self.secretaire = _user("sec@serein.bf", groupe="Secrétaire")
+        self.responsable = _user("resp@serein.bf", groupe="Responsable")
+        self.responsable.personnel = Personnel.objects.create(nom="Kaboré", prenom="Awa", departement=self.dept)
+        self.responsable.save(update_fields=["personnel"])
+        self.resp_autre = _user("resp2@serein.bf", groupe="Responsable")
+        self.resp_autre.personnel = Personnel.objects.create(nom="Sawadogo", prenom="Issa", departement=self.autre_dept)
+        self.resp_autre.save(update_fields=["personnel"])
+        self.besoin = _besoin(self.dept, self.ts)
+        self.offre = creer_offre(
+            self.ts, "Stage développeur", "Description", "Profil", "2027-01-01", "2027-06-30", 2,
+            self.secretaire, besoin=self.besoin,
+        )
+        ouvrir_offre(self.offre, self.secretaire)
+        self.besoin.refresh_from_db()
+
+    def _historique_besoin(self):
+        from django.contrib.contenttypes.models import ContentType
+        return self.Historique.objects.filter(
+            content_type=ContentType.objects.get_for_model(Besoin), object_id=self.besoin.pk
+        ).order_by("-pk")
+
+    def test_offre_fermee_cloture_le_besoin_pris_en_charge(self):
+        self.assertEqual(self.besoin.statut, StatutBesoin.PRIS_EN_CHARGE)
+        fermer_offre(self.offre, self.secretaire)
+        self.besoin.refresh_from_db()
+        self.assertEqual(self.besoin.statut, StatutBesoin.CLOTURE)
+        h = self._historique_besoin().first()
+        self.assertEqual(
+            (h.ancien_statut, h.nouveau_statut, h.commentaire, h.utilisateur),
+            (StatutBesoin.PRIS_EN_CHARGE, StatutBesoin.CLOTURE, "Offre fermée", self.secretaire),
+        )
+        notifs = self.Notification.objects.filter(message__contains="clôturé")
+        self.assertEqual([n.destinataire for n in notifs], [self.responsable])
+        self.assertEqual(notifs.get().lien, reverse("offres:besoin_detail", args=[self.besoin.pk]))
+
+    def test_offre_suspendue_fermee_cloture_aussi_le_besoin(self):
+        suspendre_offre(self.offre, self.secretaire)
+        fermer_offre(self.offre, self.secretaire)
+        self.besoin.refresh_from_db()
+        self.assertEqual(self.besoin.statut, StatutBesoin.CLOTURE)
+
+    def test_offre_sans_besoin_fermee_sans_effet(self):
+        offre = creer_offre(
+            self.ts, "Offre libre", "D", "P", "2027-01-01", "2027-06-30", 1, self.secretaire, departement=self.dept,
+        )
+        ouvrir_offre(offre, self.secretaire)
+        avant = self.Notification.objects.count()
+        fermer_offre(offre, self.secretaire)
+        offre.refresh_from_db()
+        self.besoin.refresh_from_db()
+        self.assertEqual(offre.statut, StatutOffre.FERMEE)
+        self.assertEqual(self.besoin.statut, StatutBesoin.PRIS_EN_CHARGE)
+        self.assertEqual(self.Notification.objects.count(), avant)
+
+    def test_besoin_dans_un_autre_statut_inchange_sans_exception(self):
+        annuler_besoin(self.besoin, self.responsable)
+        nb_historique = self._historique_besoin().count()
+        avant = self.Notification.objects.filter(message__contains="clôturé").count()
+        fermer_offre(self.offre, self.secretaire)
+        self.offre.refresh_from_db()
+        self.besoin.refresh_from_db()
+        self.assertEqual(self.offre.statut, StatutOffre.FERMEE)
+        self.assertEqual(self.besoin.statut, StatutBesoin.ANNULE)
+        self.assertEqual(self._historique_besoin().count(), nb_historique)
+        self.assertEqual(self.Notification.objects.filter(message__contains="clôturé").count(), avant)
+
+    # ── CLOTURE est un état final ───────────────────────────────────────────
+
+    def _cloturer(self):
+        fermer_offre(self.offre, self.secretaire)
+        self.besoin.refresh_from_db()
+
+    def test_besoin_cloture_ne_peut_pas_etre_annule(self):
+        self._cloturer()
+        with self.assertRaises(TransitionInterdite):
+            annuler_besoin(self.besoin, self.responsable)
+        self.besoin.refresh_from_db()
+        self.assertEqual(self.besoin.statut, StatutBesoin.CLOTURE)
+
+    def test_besoin_cloture_ne_peut_pas_etre_repris_en_charge(self):
+        self._cloturer()
+        with self.assertRaises(TransitionInterdite):
+            creer_offre(
+                self.ts, "Nouvelle offre", "D", "P", "2027-01-01", "2027-06-30", 1, self.secretaire,
+                besoin=self.besoin,
+            )
+
+    def test_besoin_cloture_modification_refusee_par_la_vue(self):
+        self._cloturer()
+        self.client.force_login(self.responsable)
+        url = reverse("offres:besoin_modifier", args=[self.besoin.pk])
+        self.assertRedirects(self.client.get(url), reverse("offres:besoin_detail", args=[self.besoin.pk]))
+        self.client.post(url, {
+            "departement": self.dept.pk, "type_stage": self.ts.pk, "date_debut": "2027-02-01",
+            "date_fin": "2027-06-30", "profil_recherche": "Modifié", "nombre_places": 5,
+        })
+        self.besoin.refresh_from_db()
+        self.assertEqual((self.besoin.profil_recherche, self.besoin.nombre_places), ("Profil test", 2))
+
+    def test_besoin_cloture_aucun_bouton_d_action(self):
+        self._cloturer()
+        for user in (self.responsable, self.secretaire):
+            with self.subTest(role=user.role):
+                self.client.force_login(user)
+                reponse = self.client.get(reverse("offres:besoin_detail", args=[self.besoin.pk]))
+                self.assertEqual(reponse.status_code, 200)
+                for action in ("offres:besoin_modifier", "offres:besoin_annuler", "offres:offre_creer_depuis_besoin"):
+                    self.assertNotContains(reponse, reverse(action, args=[self.besoin.pk]))

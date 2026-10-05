@@ -1,4 +1,4 @@
-# Guide fonctionnel — Serein-GE
+# Guide fonctionnel — Stage Track (Serein-GE)
 
 Ce document explique la logique de l'application, le rôle de chaque acteur, et comment vérifier que chaque fonctionnalité marche correctement.
 
@@ -234,7 +234,7 @@ Après chaque décision du Responsable, la Secrétaire doit contacter le candida
 | **Maître de stage = même département** | Le maître de stage doit appartenir au département de la candidature |
 | **Statut auto du stage** | Si date de début ≤ aujourd'hui → En cours, sinon À venir |
 | **Terminer = date passée** | La date de fin réelle ne peut pas être dans le futur |
-| **Interrompre = motif obligatoire** | L'interruption est irréversible et nécessite un motif |
+| **Interrompre = motif obligatoire** | L'interruption nécessite un motif ; le stage peut ensuite être repris par le Responsable |
 | **Maître de stage actif** | Impossible de désactiver un membre qui encadre un stage en cours |
 
 ---
@@ -288,9 +288,8 @@ Tant que le stage n'est pas constitué, un badge `!` orange apparaît dans la li
    - **Date de début** du stage
    - **Date de fin prévue**
    - **Maître de stage** (liste filtrée aux membres actifs du département)
-4. Valider → le stage est créé automatiquement avec :
-   - Statut **À venir** si la date de début est dans le futur
-   - Statut **En cours** si la date de début est aujourd'hui ou passée
+4. Valider → le stage est créé au statut **À venir**, **toujours** — même si la date de début est
+   aujourd'hui ou déjà passée. C'est le Responsable qui le démarre (voir « Démarrer un stage »).
 5. Les Secrétaires reçoivent une notification → informer le stagiaire de sa date de début
 
 ### Vérifier dans la liste (Menu → Stages)
@@ -303,6 +302,16 @@ Tant que le stage n'est pas constitué, un badge `!` orange apparaît dans la li
 2. Date de début modifiable seulement si statut A_VENIR
 3. Maître de stage et date de fin toujours modifiables (si A_VENIR ou EN_COURS)
 
+### Démarrer un stage (Responsable)
+**Connexion :** `resp@serein.bf`
+
+1. Ouvrir un stage **À venir** de son département (tableau de bord → « Stages à démarrer »)
+2. Le bouton **« Démarrer le stage »** n'apparaît qu'à partir de la date de démarrage (date de début,
+   ou date de reprise après une interruption). Avant, la fiche indique « Démarrage possible à partir du … »
+3. Le stage passe au statut **En cours** ; les Secrétaires reçoivent une notification
+4. **Régularisation** : un stage dont la date de fin prévue est déjà dépassée peut quand même être
+   démarré ; l'alerte « stage à terminer » suivra
+
 ### Terminer un stage (Responsable)
 **Connexion :** `resp@serein.bf`
 
@@ -314,28 +323,43 @@ Tant que le stage n'est pas constitué, un badge `!` orange apparaît dans la li
 ### Interrompre un stage (Responsable)
 1. Ouvrir un stage À venir ou En cours
 2. Bouton "Interrompre" → saisir la date et le motif (obligatoire)
-3. Le stage passe au statut **Interrompu** (irréversible)
+3. Le stage passe au statut **Interrompu** ; le Responsable peut ensuite le **reprendre**
+   (date de reprise, nouvelle fin prévue, motif)
 
 ---
 
-## Commande automatique — Mise à jour des stages
+## Commande quotidienne — Alertes d'échéances
 
-La commande suivante doit être planifiée quotidiennement (par exemple via cron) :
+**Le système alerte, il ne change jamais lui-même le statut d'un stage ni d'une candidature**
+(décision du directeur de mémoire). La commande suivante doit être planifiée une fois par jour :
 
 ```bash
-cd backend && python manage.py mettre_a_jour_stages
+cd backend && python manage.py alerter_echeances
 ```
 
-**Ce qu'elle fait :**
-1. Passe en **En cours** tous les stages À venir dont la date de début est atteinte
-2. Passe en **Terminé** tous les stages En cours dont la date de fin prévue est dépassée
+**Ce qu'elle envoie** (une seule fois par échéance, avec un lien vers la fiche) :
 
-**Simuler une date passée** (utile si le serveur a été éteint plusieurs jours) :
+| Alerte | Quand | À qui |
+|---|---|---|
+| Stage à démarrer | Stage À venir dont la date de démarrage est demain ou déjà passée | Responsable du département |
+| Stage à terminer | Stage En cours dont la fin prévue est dans 72 h ou moins, ou déjà dépassée | Responsable du département |
+| Disponibilité qui expire | Candidature Reçue ou En traitement dont la disponibilité se termine dans 72 h ou moins | Responsable du département |
+| Accordée sans stage | Candidature Accordée sans stage constitué, disponibilité se terminant dans 72 h ou moins | Secrétaires |
+| Rappel d'évaluation | Stage terminé depuis 7 jours, pas encore évalué | Responsable du département |
+
+- Sans Responsable dans le département, les alertes vont aux **Administrateurs**.
+- Une alerte **repart** si la date concernée change (modification ou reprise du stage, modification ou
+  redirection de la candidature).
+- Les mêmes situations apparaissent sur les **tableaux de bord** (Responsable : stages à démarrer, à
+  terminer, disponibilités qui expirent ; Secrétaire : accordées sans stage), tant qu'elles ne sont pas réglées.
+
+**Simuler une autre date** (recette) :
 ```bash
-python manage.py mettre_a_jour_stages --date 2025-06-01
+python manage.py alerter_echeances --date 2026-12-01
 ```
 
-La commande est **idempotente** — relancer plusieurs fois n'a aucun effet négatif.
+La commande est **idempotente**. **Données de recette** : `python manage.py init_demo` prépare un cas de
+chaque alerte et un stage « À venir » démarrable aujourd'hui (département Informatique).
 
 ---
 
@@ -344,7 +368,7 @@ La commande est **idempotente** — relancer plusieurs fois n'a aucun effet nég
 | Règle | Description |
 |---|---|
 | **Maître de stage = même département** | Le maître de stage doit appartenir au département de la candidature |
-| **Statut auto à la constitution** | Si date_debut ≤ aujourd'hui → EN_COURS, sinon A_VENIR |
+| **Statut à la constitution** | Toujours À venir ; démarrage par le Responsable à partir de la date de démarrage |
 | **Terminer = date réelle ≤ aujourd'hui** | Impossible de saisir une date future |
 | **Interrompre = motif obligatoire** | Le motif d'interruption est requis |
 | **Maître de stage actif** | Impossible de désactiver un membre maître de stage d'un stage A_VENIR ou EN_COURS (changer d'abord le maître) |
@@ -358,4 +382,5 @@ La commande est **idempotente** — relancer plusieurs fois n'a aucun effet nég
 | Stage constitué | Secrétaires ("informer le stagiaire de la date de début") |
 | Stage terminé manuellement | Secrétaires |
 | Stage interrompu | Secrétaires |
-| Stage terminé automatiquement | Responsable du département ("à évaluer") |
+| Stage démarré | Secrétaires |
+| Alertes d'échéance (commande `alerter_echeances`) | Responsable du département (repli : Administrateurs) ; Secrétaires pour « accordée sans stage » |

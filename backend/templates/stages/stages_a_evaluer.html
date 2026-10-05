@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+
+{% block title %}Stages à évaluer{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-4 flex-wrap gap-2">
+    <div>
+        <h4 class="mb-0 fw-semibold"><i class="bi bi-clipboard-check me-2"></i>Stages à évaluer</h4>
+        <p class="text-muted small mb-0">Stages terminés depuis plus de 7 jours sans note</p>
+    </div>
+</div>
+
+{% if stages %}
+<div class="card border-0 shadow-sm">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th class="ps-3">Stagiaire</th>
+                        {% if role == "Administrateur" %}<th>Département</th>{% endif %}
+                        <th>Type de stage</th>
+                        <th>Date fin réelle</th>
+                        <th>Maître de stage</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for s in stages %}
+                    <tr>
+                        <td class="ps-3 fw-semibold">{{ s.candidature.candidat }}</td>
+                        {% if role == "Administrateur" %}<td>{{ s.candidature.departement.nom }}</td>{% endif %}
+                        <td>{{ s.candidature.type_stage.libelle }}</td>
+                        <td>{{ s.date_fin_reelle|date:"d/m/Y" }}</td>
+                        <td>{{ s.maitre_stage }}</td>
+                        <td class="text-end pe-3">
+                            <a href="{% url 'stages:stage_detail' s.pk %}" class="btn btn-sm btn-outline-secondary me-1">
+                                <i class="bi bi-eye"></i>
+                            </a>
+                            {% if role == "Responsable" %}
+                            <a href="{% url 'stages:stage_evaluer' s.pk %}" class="btn btn-sm btn-warning">
+                                <i class="bi bi-star me-1"></i>Évaluer
+                            </a>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% else %}
+<div class="text-center py-5 text-muted">
+    <i class="bi bi-check-circle fs-1 d-block mb-2" style="opacity:.3;"></i>
+    <p class="small mb-0">Aucun stage en attente d'évaluation.</p>
+</div>
+{% endif %}
+{% endblock %}

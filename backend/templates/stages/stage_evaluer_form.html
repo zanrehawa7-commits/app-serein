@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+
+{% block title %}Évaluer le stage — {{ stage.candidature.candidat }}{% endblock %}
+
+{% block content %}
+{% load crispy_forms_tags %}
+
+<div class="d-flex align-items-center justify-content-between mb-4 flex-wrap gap-2">
+    <div>
+        <h4 class="mb-0 fw-semibold"><i class="bi bi-star-fill text-warning me-2"></i>Évaluation du stage</h4>
+        <p class="text-muted small mb-0">
+            {{ stage.candidature.candidat }} — <a href="{% url 'stages:stage_detail' stage.pk %}">Retour au stage</a>
+        </p>
+    </div>
+</div>
+
+{% if date_verrou %}
+<div class="alert alert-info py-2 mb-3">
+    <i class="bi bi-info-circle me-2"></i>
+    Ce stage a déjà été évalué le {{ stage.date_evaluation|date:"d/m/Y" }}.
+    Modification possible jusqu'au <strong>{{ date_verrou|date:"d/m/Y" }}</strong>.
+</div>
+{% endif %}
+
+<div class="row">
+    <div class="col-md-7">
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white border-bottom py-3">
+                <h6 class="mb-0 fw-semibold">Saisir l'évaluation</h6>
+            </div>
+            <div class="card-body">
+                <form method="post" enctype="multipart/form-data" novalidate>
+                    {% csrf_token %}
+                    {% crispy form %}
+                </form>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-5">
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white border-bottom py-2">
+                <h6 class="mb-0 fw-semibold">Rappel</h6>
+            </div>
+            <div class="card-body small text-muted">
+                <ul class="mb-0 ps-3">
+                    <li>Note entre <strong>1</strong> et <strong>20</strong></li>
+                    <li>Vivier = candidat recommandable pour un futur stage (note ≥ 12)</li>
+                    <li>Le rapport doit être un PDF (max 10 Mo)</li>
+                    <li>Modification possible pendant <strong>30 jours</strong> après la première évaluation</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+    var noteInput = document.getElementById("id_note");
+    var vivierChk = document.getElementById("id_vivier");
+    if (!noteInput || !vivierChk) return;
+
+    function sync() {
+        var note = parseInt(noteInput.value, 10);
+        if (note < 12 || isNaN(note)) {
+            vivierChk.checked = false;
+            vivierChk.disabled = true;
+        } else {
+            vivierChk.disabled = false;
+        }
+    }
+    noteInput.addEventListener("input", sync);
+    sync();
+}());
+</script>
+{% endblock %}

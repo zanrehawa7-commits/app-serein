@@ -3,6 +3,8 @@ from django.contrib.auth import views as auth_views
 from django.contrib.auth.decorators import login_not_required
 from django.contrib.auth.models import Group, Permission
 from django.contrib.contenttypes.models import ContentType
+from django.core.exceptions import PermissionDenied
+from django.db.models import Count, Q
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse_lazy
 from django.views import View
@@ -12,11 +14,24 @@ from commun.mixins import ListeMixin
 from .forms import (
     FormulaireConnexion,
     ReinitMotDePasseForm,
+    RoleConsultationForm,
     UtilisateurCreerForm,
     UtilisateurModifierForm,
 )
 from .models import Utilisateur
-from .permissions import RolePermMixin, RoleRequisMixin, _role_utilisateur
+from .services import (
+    RoleInterdit,
+    basculer_role_consultation,
+    creer_role_consultation,
+    modifier_role_consultation,
+)
+from .permissions import (
+    APPS_LECTURE_SEULE_ADMINISTRATEUR,
+    ROLES_SYSTEME,
+    RolePermMixin,
+    RoleRequisMixin,
+    _role_utilisateur,
+)
 
 _FORM_TPL = "commun/formulaire.html"
 
@@ -74,7 +89,61 @@ def tableau_de_bord(request):
         "Secrétaire": "comptes:tableau_bord_secretaire",
         "Responsable": "comptes:tableau_bord_responsable",
     }
+    if role not in destinations and _profil_consultation(request.user):
+        return redirect("comptes:tableau_bord_consultation")
     return redirect(destinations.get(role, "comptes:tableau_bord_admin"))
+
+
+def _profil_consultation(user):
+    """Profil du rôle de consultation de l'utilisateur, actif ou non ; None pour un rôle de base."""
+    groupe = user.groups.select_related("profil").first()
+    profil = getattr(groupe, "profil", None) if groupe else None
+    return profil if profil and not profil.est_systeme else None
+
+
+class TableauBordConsultationView(TemplateView):
+    """
+    Tableau de bord générique des rôles de consultation : seulement les compteurs des modules
+    consultables. Rôle désactivé : message, et 403 sur toutes les autres pages (RG-U11).
+    """
+    template_name = "comptes/tableau_bord_consultation.html"
+
+    def dispatch(self, request, *args, **kwargs):
+        self.profil = _profil_consultation(request.user)
+        if self.profil is None:
+            raise PermissionDenied
+        return super().dispatch(request, *args, **kwargs)
+
+    def get_context_data(self, **kwargs):
+        from candidatures.models import Candidature, StatutCandidature
+        from offres.models import Besoin, Offre, StatutBesoin, StatutOffre
+        from stages.models import Stage, StatutStage
+
+        ctx = super().get_context_data(**kwargs)
+        ctx["role_actif"] = self.profil.actif
+        if not self.profil.actif:
+            return ctx
+        peut = self.request.user.has_perm
+        compteurs = []
+        if peut("offres.view_besoin"):
+            compteurs.append(("Besoins en attente", Besoin.objects.filter(statut=StatutBesoin.ENVOYE).count(),
+                              "offres:besoin_list", "bi-inbox"))
+        if peut("offres.view_offre"):
+            compteurs.append(("Offres ouvertes", Offre.objects.filter(statut=StatutOffre.OUVERTE).count(),
+                              "offres:offre_list", "bi-file-earmark-text"))
+        if peut("candidatures.view_candidature"):
+            actives = [StatutCandidature.RECUE, StatutCandidature.EN_TRAITEMENT]
+            compteurs.append(("Candidatures en cours", Candidature.objects.filter(statut__in=actives).count(),
+                              "candidatures:candidature_list", "bi-folder2-open"))
+        if peut("stages.view_stage"):
+            compteurs.append(("Stages en cours", Stage.objects.filter(statut=StatutStage.EN_COURS).count(),
+                              "stages:stage_list", "bi-mortarboard"))
+        if peut("stages.consulter_vivier"):
+            compteurs.append(("Profils au vivier", Stage.objects.filter(vivier=True).count(),
+                              "stages:vivier", "bi-people-fill"))
+        ctx["compteurs"] = compteurs
+        ctx["voit_historique"] = peut("suivi.view_historique")
+        return ctx
 
 
 class TableauBordAdminView(RoleRequisMixin, TemplateView):
@@ -118,6 +187,10 @@ class TableauBordSecretaireView(RoleRequisMixin, TemplateView):
             candidat_informe=False,
             statut__in=[StatutCandidature.ACCORDEE, StatutCandidature.REFUSEE],
         ).count()
+        # RG-S15 : mêmes critères que les alertes, indépendants des indicateurs « envoyée ».
+        from django.utils import timezone
+        from candidatures.services import candidatures_accordees_sans_stage_expirantes
+        ctx["accordees_sans_stage"] = candidatures_accordees_sans_stage_expirantes(timezone.localdate())
         return ctx
 
 
@@ -127,10 +200,10 @@ class TableauBordResponsableView(RoleRequisMixin, TemplateView):
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
-        if self.request.user.membre:
+        if self.request.user.personnel:
             from offres.models import Besoin, StatutBesoin
             from candidatures.models import Candidature, StatutCandidature
-            dept = self.request.user.membre.departement
+            dept = self.request.user.personnel.departement
             ctx["nb_besoins_envoyes"] = Besoin.objects.filter(departement=dept, statut=StatutBesoin.ENVOYE).count()
             ctx["nb_besoins_pris_en_charge"] = Besoin.objects.filter(departement=dept, statut=StatutBesoin.PRIS_EN_CHARGE).count()
             ctx["besoins_recents"] = Besoin.objects.filter(departement=dept).select_related("type_stage").order_by("-date_creation")[:5]
@@ -144,10 +217,26 @@ class TableauBordResponsableView(RoleRequisMixin, TemplateView):
                 .select_related("candidat")
                 .order_by("-date_depot")[:5]
             )
+            import datetime
+            from django.utils import timezone
             from stages.models import Stage, StatutStage
             ctx["nb_stages_en_cours"] = Stage.objects.filter(
                 candidature__departement=dept, statut=StatutStage.EN_COURS
             ).count()
+            seuil = timezone.localdate() - datetime.timedelta(days=7)
+            ctx["nb_a_evaluer"] = Stage.objects.filter(
+                candidature__departement=dept,
+                statut=StatutStage.TERMINE,
+                note__isnull=True,
+                date_fin_reelle__lte=seuil,
+            ).count()
+            # RG-S15 : échéances du département (mêmes critères que les alertes).
+            from candidatures.services import candidatures_disponibilite_expirante
+            from stages.services import stages_a_demarrer, stages_a_terminer
+            aujourd_hui = timezone.localdate()
+            ctx["stages_a_demarrer"] = stages_a_demarrer(aujourd_hui, dept)
+            ctx["stages_a_terminer"] = stages_a_terminer(aujourd_hui, dept)
+            ctx["disponibilites_expirantes"] = candidatures_disponibilite_expirante(aujourd_hui, dept)
         return ctx
 
 
@@ -171,7 +260,7 @@ class UtilisateurListView(RolePermMixin, ListeMixin, ListView):
         role_filtre = self.request.GET.get("role", "")
         if role_filtre:
             qs = qs.filter(groups__name=role_filtre)
-        return qs.prefetch_related("groups", "membre__departement")
+        return qs.prefetch_related("groups", "personnel__departement")
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
@@ -183,25 +272,68 @@ class UtilisateurListView(RolePermMixin, ListeMixin, ListView):
 class UtilisateurCreateView(RolePermMixin, View):
     permission_required = "comptes.add_utilisateur"
 
-    def get(self, request):
-        form = UtilisateurCreerForm()
-        return render(request, _FORM_TPL, {
+    def _get_context(self, request, form):
+        """Contexte enrichi quand appelé depuis le flux designer_responsable."""
+        from referentiels.models import Personnel
+        ctx = {
             "form": form,
             "titre": "Nouvel utilisateur",
             "url_retour": reverse_lazy("comptes:utilisateur_list"),
-        })
+        }
+        personnel_pk = request.GET.get("personnel") or request.POST.get("_personnel_pk")
+        if personnel_pk and request.GET.get("designer") == "1":
+            try:
+                personnel = Personnel.objects.select_related("departement__responsable").get(pk=personnel_pk)
+                ctx["designer_mode"] = True
+                ctx["personnel_designer"] = personnel
+                # Avertissement si un autre responsable existe déjà
+                dept = personnel.departement
+                if dept and dept.responsable and dept.responsable.pk != personnel.pk:
+                    ctx["avertissement_remplacement"] = (
+                        f"Le département « {dept.nom} » a déjà pour responsable "
+                        f"« {dept.responsable} ». En créant ce compte, vous le remplacerez "
+                        f"et son compte sera désactivé."
+                    )
+            except Personnel.DoesNotExist:
+                pass
+        return ctx
+
+    def get(self, request):
+        initial = {}
+        role_pre = request.GET.get("role", "")
+        if role_pre:
+            initial["role"] = role_pre
+        personnel_pk = request.GET.get("personnel")
+        if personnel_pk:
+            initial["personnel"] = personnel_pk
+        form = UtilisateurCreerForm(initial=initial)
+        return render(request, "comptes/utilisateur_creer_form.html", self._get_context(request, form))
 
     def post(self, request):
         form = UtilisateurCreerForm(request.POST)
         if form.is_valid():
             user = form.save()
             messages.success(request, f"Compte de « {user.get_full_name() or user.email} » créé.")
-            return redirect("comptes:utilisateur_list")
-        return render(request, _FORM_TPL, {
-            "form": form,
-            "titre": "Nouvel utilisateur",
-            "url_retour": reverse_lazy("comptes:utilisateur_list"),
-        })
+
+            # Flux designer_responsable : appeler le service après création du compte
+            if request.POST.get("designer") == "1" and user.personnel:
+                from referentiels.services import (
+                    designer_responsable, ConfirmationRequise, TransitionInterdite,
+                )
+                try:
+                    designer_responsable(user.personnel, request.user, confirmer=True)
+                    messages.success(
+                        request,
+                        f"« {user.personnel} » désigné(e) responsable du département "
+                        f"{user.personnel.departement}.",
+                    )
+                except (ConfirmationRequise, TransitionInterdite) as e:
+                    messages.warning(request, f"Compte créé mais désignation échouée : {e}")
+
+            next_url = request.POST.get("next") or request.GET.get("next", "")
+            return redirect(next_url or "comptes:utilisateur_list")
+
+        return render(request, "comptes/utilisateur_creer_form.html", self._get_context(request, form))
 
 
 class UtilisateurUpdateView(RolePermMixin, View):
@@ -212,7 +344,7 @@ class UtilisateurUpdateView(RolePermMixin, View):
 
     def get(self, request, pk):
         utilisateur = self._get_user(pk)
-        form = UtilisateurModifierForm(instance=utilisateur)
+        form = UtilisateurModifierForm(instance=utilisateur, utilisateur_connecte=request.user)
         return render(request, _FORM_TPL, {
             "form": form,
             "titre": f"Modifier — {utilisateur.get_full_name() or utilisateur.email}",
@@ -222,13 +354,13 @@ class UtilisateurUpdateView(RolePermMixin, View):
     def post(self, request, pk):
         utilisateur = self._get_user(pk)
         ancien_role = utilisateur.role
-        form = UtilisateurModifierForm(request.POST, instance=utilisateur)
+        form = UtilisateurModifierForm(request.POST, instance=utilisateur, utilisateur_connecte=request.user)
         if form.is_valid():
             user = form.save()
             nouveau_role = form.cleaned_data.get("role")
             if ancien_role == "Responsable" and nouveau_role != "Responsable":
-                user.membre = None
-                user.save(update_fields=["membre"])
+                user.personnel = None
+                user.save(update_fields=["personnel"])
             messages.success(request, f"Compte de « {user.get_full_name() or user.email} » mis à jour.")
             return redirect("comptes:utilisateur_list")
         return render(request, _FORM_TPL, {
@@ -246,6 +378,13 @@ class UtilisateurActiverView(RoleRequisMixin, View):
         utilisateur = get_object_or_404(Utilisateur, pk=pk)
         if utilisateur == request.user:
             messages.error(request, "Vous ne pouvez pas désactiver votre propre compte.")
+            return redirect("comptes:utilisateur_list")
+        profil = _profil_consultation(utilisateur)
+        if not utilisateur.is_active and profil and not profil.actif:
+            messages.error(
+                request,
+                f"Le rôle « {profil.groupe.name} » est désactivé : changez d'abord le rôle de cet utilisateur.",
+            )
             return redirect("comptes:utilisateur_list")
         utilisateur.is_active = not utilisateur.is_active
         utilisateur.save(update_fields=["is_active"])
@@ -301,9 +440,13 @@ class RolesListView(RoleRequisMixin, TemplateView):
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
-        ctx["groupes"] = Group.objects.filter(
-            name__in=["Administrateur", "Secrétaire", "Responsable"]
-        ).prefetch_related("permissions")
+        ctx["groupes"] = Group.objects.filter(name__in=ROLES_SYSTEME).prefetch_related("permissions")
+        ctx["roles_consultation"] = (
+            Group.objects.filter(profil__est_systeme=False)
+            .select_related("profil")
+            .annotate(nb_utilisateurs=Count("user", filter=Q(user__is_active=True)))
+            .order_by("name")
+        )
         return ctx
 
 
@@ -334,15 +477,19 @@ class PermissionsRoleView(RoleRequisMixin, View):
                         content_type=ct, codename=codename
                     ).first()
                     if perm:
-                        est_verrouillee = (
-                            groupe.name == "Administrateur" and app_code == "comptes"
+                        est_admin = groupe.name == "Administrateur"
+                        est_verrouillee = est_admin and app_code == "comptes"
+                        est_interdite = (
+                            est_admin
+                            and app_code in APPS_LECTURE_SEULE_ADMINISTRATEUR
+                            and action_code != "view"
                         )
                         actions.append({
                             "exists": True,
                             "perm": perm,
                             "action_label": action_label,
-                            "checked": perm.pk in perms_groupe or est_verrouillee,
-                            "disabled": est_verrouillee,
+                            "checked": (perm.pk in perms_groupe or est_verrouillee) and not est_interdite,
+                            "disabled": est_verrouillee or est_interdite,
                         })
                     else:
                         actions.append({"exists": False, "action_label": action_label})
@@ -353,7 +500,7 @@ class PermissionsRoleView(RoleRequisMixin, View):
         return structure
 
     def get(self, request, role_nom):
-        groupe = get_object_or_404(Group, name=role_nom)
+        groupe = get_object_or_404(Group, name=role_nom, name__in=ROLES_SYSTEME)
         structure = self._build_structure(groupe)
         return render(request, self.template_name, {
             "groupe": groupe,
@@ -364,7 +511,7 @@ class PermissionsRoleView(RoleRequisMixin, View):
         })
 
     def post(self, request, role_nom):
-        groupe = get_object_or_404(Group, name=role_nom)
+        groupe = get_object_or_404(Group, name=role_nom, name__in=ROLES_SYSTEME)
         apps_codes = [code for code, _ in APPS_PERMISSIONS]
 
         selected_ids = set(
@@ -378,6 +525,11 @@ class PermissionsRoleView(RoleRequisMixin, View):
                 .values_list("pk", flat=True)
             )
             selected_ids |= comptes_perm_ids
+            selected_ids -= set(
+                Permission.objects.filter(content_type__app_label__in=APPS_LECTURE_SEULE_ADMINISTRATEUR)
+                .exclude(codename__startswith="view_")
+                .values_list("pk", flat=True)
+            )
 
         all_relevant_ids = set(
             Permission.objects.filter(content_type__app_label__in=apps_codes)
@@ -389,3 +541,95 @@ class PermissionsRoleView(RoleRequisMixin, View):
 
         messages.success(request, f"Permissions du rôle « {groupe.name} » mises à jour.")
         return redirect("comptes:permissions_role", role_nom=role_nom)
+
+
+# ─── Lot E — Rôles de consultation (lecture seule) ────────────────────────────
+
+def _groupe_consultation(pk):
+    """404 pour un rôle de base : il ne se modifie ni ne se désactive depuis ces écrans (RG-U8)."""
+    return get_object_or_404(Group.objects.select_related("profil"), pk=pk, profil__est_systeme=False)
+
+
+class RoleConsultationCreateView(RoleRequisMixin, View):
+    roles = ["Administrateur"]
+
+    def _afficher(self, request, form):
+        return render(request, _FORM_TPL, {
+            "form": form,
+            "titre": "Nouveau rôle de consultation",
+            "sous_titre": "Lecture seule : aucune action métier n'est possible avec ce rôle.",
+            "url_retour": reverse_lazy("comptes:roles_list"),
+        })
+
+    def get(self, request):
+        return self._afficher(request, RoleConsultationForm())
+
+    def post(self, request):
+        form = RoleConsultationForm(request.POST)
+        if not form.is_valid():
+            return self._afficher(request, form)
+        try:
+            groupe = creer_role_consultation(
+                form.cleaned_data["nom"], form.cleaned_data["description"], form.cleaned_data["droits"]
+            )
+        except RoleInterdit as e:
+            form.add_error(None, str(e))
+            return self._afficher(request, form)
+        messages.success(request, f"Rôle de consultation « {groupe.name} » créé.")
+        return redirect("comptes:roles_list")
+
+
+class RoleConsultationModifierView(RoleRequisMixin, View):
+    roles = ["Administrateur"]
+
+    def _afficher(self, request, form, groupe):
+        return render(request, _FORM_TPL, {
+            "form": form,
+            "titre": f"Modifier le rôle de consultation — {groupe.name}",
+            "sous_titre": "Lecture seule : aucune action métier n'est possible avec ce rôle.",
+            "url_retour": reverse_lazy("comptes:roles_list"),
+        })
+
+    def get(self, request, pk):
+        groupe = _groupe_consultation(pk)
+        droits = [
+            f"{app}.{code}"
+            for app, code in groupe.permissions.values_list("content_type__app_label", "codename")
+        ]
+        form = RoleConsultationForm(initial={
+            "nom": groupe.name, "description": groupe.profil.description, "droits": droits,
+        })
+        return self._afficher(request, form, groupe)
+
+    def post(self, request, pk):
+        groupe = _groupe_consultation(pk)
+        form = RoleConsultationForm(request.POST)
+        if not form.is_valid():
+            return self._afficher(request, form, groupe)
+        try:
+            modifier_role_consultation(
+                groupe, form.cleaned_data["nom"], form.cleaned_data["description"], form.cleaned_data["droits"]
+            )
+        except RoleInterdit as e:
+            form.add_error(None, str(e))
+            return self._afficher(request, form, groupe)
+        messages.success(request, "Rôle de consultation mis à jour.")
+        return redirect("comptes:roles_list")
+
+
+class RoleConsultationActiverView(RoleRequisMixin, View):
+    roles = ["Administrateur"]
+
+    def post(self, request, pk):
+        groupe = _groupe_consultation(pk)
+        try:
+            profil = basculer_role_consultation(groupe)
+        except RoleInterdit as e:
+            messages.error(request, str(e))
+            return redirect("comptes:roles_list")
+        etat = "activé" if profil.actif else "désactivé"
+        messages.success(request, f"Rôle « {groupe.name} » {etat}.")
+        return redirect("comptes:roles_list")
+
+    def get(self, request, pk):
+        return redirect("comptes:roles_list")

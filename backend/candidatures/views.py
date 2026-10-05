@@ -1,6 +1,5 @@
 import os
 from pathlib import Path
-from django.conf import settings
 from django.contrib import messages
 from django.contrib.contenttypes.models import ContentType
 from django.core.exceptions import PermissionDenied
@@ -11,12 +10,13 @@ from django.views.generic import ListView
 from suivi.models import Historique
 
 from commun.mixins import ListeMixin
-from comptes.permissions import RoleRequisMixin
+from comptes.permissions import ConsultationMixin, RoleRequisMixin, a_acces
 from .forms import (
     AccorderForm,
     CandidatForm,
     CandidatRechercheForm,
-    CandidatureForm,
+    CandidatureCreerForm,
+    CandidatureModifierForm,
     EntretienForm,
     PieceJointeFormSet,
     PreselectionnerForm,
@@ -29,6 +29,7 @@ from .services import (
     CandidatureActiveExistante,
     QuotaAtteint,
     TransitionInterdite,
+    ValidationCandidature,
     accorder,
     creer_candidature,
     marquer_informe,
@@ -61,13 +62,39 @@ class CandidatRechercheView(RoleRequisMixin, View):
     template_name = "candidatures/candidat_recherche.html"
 
     def get(self, request):
-        form = CandidatRechercheForm(request.GET or None)
+        from referentiels.models import Etablissement
+
+        q = request.GET.get("q", "").strip()
+        etablissement_id = request.GET.get("etablissement", "")
+        partenaire = request.GET.get("partenaire", "")
+        has_filter = bool(q or etablissement_id or partenaire)
+
         candidats = []
-        q = ""
-        if form.is_valid():
-            q = form.cleaned_data["q"]
-            candidats = rechercher_candidats(q)
-        return render(request, self.template_name, {"form": form, "candidats": candidats, "q": q})
+        if has_filter:
+            if q:
+                candidats = rechercher_candidats(q).select_related("etablissement")
+            else:
+                from .models import Candidat as _Candidat
+                candidats = (
+                    _Candidat.objects
+                    .select_related("etablissement")
+                    .prefetch_related("candidatures")
+                    .order_by("nom", "prenom")
+                )
+            if etablissement_id:
+                candidats = candidats.filter(etablissement_id=etablissement_id)
+            if partenaire == "1":
+                candidats = candidats.filter(etablissement__partenaire=True)
+
+        return render(request, self.template_name, {
+            "form": CandidatRechercheForm(request.GET or None),
+            "candidats": candidats,
+            "q": q,
+            "etablissements": Etablissement.objects.filter(actif=True).order_by("nom"),
+            "etablissement_filtre": etablissement_id,
+            "partenaire_filtre": partenaire,
+            "has_filter": has_filter,
+        })
 
 
 class CandidatCreateView(RoleRequisMixin, View):
@@ -93,16 +120,23 @@ class CandidatCreateView(RoleRequisMixin, View):
         })
 
 
-class CandidatDetailView(RoleRequisMixin, View):
+class CandidatDetailView(ConsultationMixin, View):
     roles = _ROLES_LECTURE
+    permission_consultation = "candidatures.view_candidat"
     template_name = "candidatures/candidat_detail.html"
 
     def get(self, request, pk):
+        from stages.models import Stage
         candidat = get_object_or_404(Candidat, pk=pk)
         candidatures = candidat.candidatures.select_related("departement", "type_stage").order_by("-date_depot")
+        dans_vivier = Stage.objects.filter(
+            candidature__candidat=candidat,
+            vivier=True,
+        ).exists()
         return render(request, self.template_name, {
             "candidat": candidat,
             "candidatures": candidatures,
+            "candidat_dans_vivier": dans_vivier,
         })
 
 
@@ -158,16 +192,17 @@ class CandidatureCreateView(RoleRequisMixin, View):
 
     def get(self, request, candidat_pk):
         candidat = self._get_candidat(candidat_pk)
-        form = CandidatureForm()
+        form = CandidatureCreerForm()
         formset = PieceJointeFormSet(prefix="pieces")
         return render(request, self.template_name, {
             "form": form, "formset": formset, "candidat": candidat,
             "titre": "Nouvelle candidature",
+            "type_stage_bornes": form._type_stage_bornes,
         })
 
     def post(self, request, candidat_pk):
         candidat = self._get_candidat(candidat_pk)
-        form = CandidatureForm(request.POST)
+        form = CandidatureCreerForm(request.POST)
         formset = PieceJointeFormSet(request.POST, request.FILES, prefix="pieces")
 
         if form.is_valid() and formset.is_valid():
@@ -197,17 +232,19 @@ class CandidatureCreateView(RoleRequisMixin, View):
                 )
                 messages.success(request, f"Candidature {candidature.reference} enregistrée.")
                 return redirect("candidatures:candidature_detail", pk=candidature.pk)
-            except CandidatureActiveExistante as e:
+            except (CandidatureActiveExistante, ValidationCandidature) as e:
                 messages.error(request, str(e))
 
         return render(request, self.template_name, {
             "form": form, "formset": formset, "candidat": candidat,
             "titre": "Nouvelle candidature",
+            "type_stage_bornes": form._type_stage_bornes,
         })
 
 
-class CandidatureListView(RoleRequisMixin, ListeMixin, ListView):
+class CandidatureListView(ConsultationMixin, ListeMixin, ListView):
     roles = _ROLES_LECTURE
+    permission_consultation = "candidatures.view_candidature"
     model = Candidature
     template_name = "candidatures/candidature_list.html"
     context_object_name = "candidatures"
@@ -218,8 +255,8 @@ class CandidatureListView(RoleRequisMixin, ListeMixin, ListView):
         qs = super().get_queryset().select_related("candidat", "departement", "type_stage")
 
         if _est_responsable(self.request.user):
-            if self.request.user.membre:
-                qs = qs.filter(departement=self.request.user.membre.departement)
+            if self.request.user.personnel:
+                qs = qs.filter(departement=self.request.user.personnel.departement)
             else:
                 qs = qs.none()
 
@@ -235,21 +272,32 @@ class CandidatureListView(RoleRequisMixin, ListeMixin, ListView):
         if type_demande:
             qs = qs.filter(type_demande=type_demande)
 
+        etablissement_id = self.request.GET.get("etablissement")
+        if etablissement_id:
+            qs = qs.filter(candidat__etablissement_id=etablissement_id)
+
+        partenaire = self.request.GET.get("partenaire")
+        if partenaire == "1":
+            qs = qs.filter(candidat__etablissement__partenaire=True)
+
         return qs
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
-        from referentiels.models import Departement
+        from referentiels.models import Departement, Etablissement
         from .models import TypeDemande
         ctx["statuts"] = StatutCandidature.choices
         ctx["types_demande"] = TypeDemande.choices
         ctx["departements"] = Departement.objects.filter(actif=True)
+        ctx["etablissements"] = Etablissement.objects.filter(actif=True).order_by("nom")
         ctx["statut_filtre"] = self.request.GET.get("statut", "")
         ctx["departement_filtre"] = self.request.GET.get("departement", "")
         ctx["type_demande_filtre"] = self.request.GET.get("type_demande", "")
+        ctx["etablissement_filtre"] = self.request.GET.get("etablissement", "")
+        ctx["partenaire_filtre"] = self.request.GET.get("partenaire", "")
 
-        if _est_responsable(self.request.user) and self.request.user.membre:
-            dept = self.request.user.membre.departement
+        if _est_responsable(self.request.user) and self.request.user.personnel:
+            dept = self.request.user.personnel.departement
             base = Candidature.objects.filter(departement=dept)
             ctx["nb_recues"] = base.filter(statut=StatutCandidature.RECUE).count()
             ctx["nb_en_traitement"] = base.filter(statut=StatutCandidature.EN_TRAITEMENT).count()
@@ -259,8 +307,9 @@ class CandidatureListView(RoleRequisMixin, ListeMixin, ListView):
         return ctx
 
 
-class CandidatureDetailView(RoleRequisMixin, View):
+class CandidatureDetailView(ConsultationMixin, View):
     roles = _ROLES_LECTURE
+    permission_consultation = "candidatures.view_candidature"
     template_name = "candidatures/candidature_detail.html"
 
     def get(self, request, pk):
@@ -270,17 +319,30 @@ class CandidatureDetailView(RoleRequisMixin, View):
         )
         est_resp = _est_responsable(request.user)
         if est_resp:
-            if not request.user.membre or candidature.departement != request.user.membre.departement:
+            if not request.user.personnel or candidature.departement != request.user.personnel.departement:
                 raise PermissionDenied
 
-        pieces = candidature.pieces.order_by("type_piece")
+        # RG-U10 : pièces jointes (données personnelles) jamais chargées sans le droit.
+        peut_telecharger_pieces = a_acces(request.user, _ROLES_LECTURE, "candidatures.telecharger_pieces_jointes")
+        pieces = candidature.pieces.order_by("type_piece") if peut_telecharger_pieces else None
         historiques = _get_historique(candidature).order_by("-date_action")
+        transferts = candidature.transferts.select_related(
+            "departement_source", "departement_cible", "realise_par"
+        ).order_by("-date_transfert")
+
+        premier = _get_historique(candidature).order_by("date_action").first()
+        depose_par = premier.utilisateur if premier else None
 
         ctx = {
             "candidature": candidature,
             "pieces": pieces,
             "historiques": historiques,
+            "transferts": transferts,
             "est_responsable": est_resp,
+            "depose_par": depose_par,
+            "peut_telecharger_pieces": peut_telecharger_pieces,
+            "peut_voir_candidat": a_acces(request.user, _ROLES_LECTURE, "candidatures.view_candidat"),
+            "peut_voir_offre": a_acces(request.user, ["Administrateur", "Secrétaire", "Responsable"], "offres.view_offre"),
         }
         if est_resp:
             ctx["form_preselection"] = PreselectionnerForm(prefix="presel")
@@ -300,7 +362,7 @@ class CandidatureModifierView(RoleRequisMixin, View):
         if candidature.statut != StatutCandidature.RECUE:
             messages.error(request, "Seules les candidatures au statut REÇUE peuvent être modifiées.")
             return redirect("candidatures:candidature_detail", pk=pk)
-        form = CandidatureForm(instance=candidature)
+        form = CandidatureModifierForm(instance=candidature)
         formset = PieceJointeFormSet(prefix="pieces")
         return render(request, self.template_name, {
             "form": form, "formset": formset,
@@ -308,6 +370,7 @@ class CandidatureModifierView(RoleRequisMixin, View):
             "candidature": candidature,
             "pieces_existantes": candidature.pieces.order_by("type_piece"),
             "titre": f"Modifier — {candidature.reference}",
+            "type_stage_bornes": form._type_stage_bornes,
         })
 
     def post(self, request, pk):
@@ -316,7 +379,7 @@ class CandidatureModifierView(RoleRequisMixin, View):
             messages.error(request, "Seules les candidatures au statut REÇUE peuvent être modifiées.")
             return redirect("candidatures:candidature_detail", pk=pk)
 
-        form = CandidatureForm(request.POST, instance=candidature)
+        form = CandidatureModifierForm(request.POST, instance=candidature)
         formset = PieceJointeFormSet(request.POST, request.FILES, prefix="pieces")
         pieces_existantes = candidature.pieces.order_by("type_piece")
 
@@ -352,22 +415,25 @@ class CandidatureModifierView(RoleRequisMixin, View):
                 })
 
             cd = form.cleaned_data
-            modifier_candidature(
-                candidature=candidature,
-                departement=cd["departement"],
-                type_stage=cd["type_stage"],
-                type_demande=cd["type_demande"],
-                debut_disponibilite=cd["debut_disponibilite"],
-                fin_disponibilite=cd["fin_disponibilite"],
-                duree_souhaitee=cd["duree_souhaitee"],
-                commentaire=cd.get("commentaire", ""),
-                offre=cd.get("offre"),
-                nouvelles_pieces=nouvelles_pieces,
-                pieces_a_supprimer=pieces_a_supprimer,
-                utilisateur=request.user,
-            )
-            messages.success(request, "Candidature mise à jour.")
-            return redirect("candidatures:candidature_detail", pk=pk)
+            try:
+                modifier_candidature(
+                    candidature=candidature,
+                    departement=cd["departement"],
+                    type_stage=cd["type_stage"],
+                    type_demande=cd["type_demande"],
+                    debut_disponibilite=cd["debut_disponibilite"],
+                    fin_disponibilite=cd["fin_disponibilite"],
+                    duree_souhaitee=cd["duree_souhaitee"],
+                    commentaire=cd.get("commentaire", ""),
+                    offre=cd.get("offre"),
+                    nouvelles_pieces=nouvelles_pieces,
+                    pieces_a_supprimer=pieces_a_supprimer,
+                    utilisateur=request.user,
+                )
+                messages.success(request, "Candidature mise à jour.")
+                return redirect("candidatures:candidature_detail", pk=pk)
+            except ValidationCandidature as e:
+                messages.error(request, str(e))
 
         return render(request, self.template_name, {
             "form": form, "formset": formset,
@@ -375,6 +441,7 @@ class CandidatureModifierView(RoleRequisMixin, View):
             "candidature": candidature,
             "pieces_existantes": pieces_existantes,
             "titre": f"Modifier — {candidature.reference}",
+            "type_stage_bornes": form._type_stage_bornes,
         })
 
 
@@ -389,18 +456,19 @@ _CONTENT_TYPES = {
 }
 
 
-class PieceJointeTelechargerView(RoleRequisMixin, View):
+class PieceJointeTelechargerView(ConsultationMixin, View):
     roles = _ROLES_LECTURE
+    permission_consultation = "candidatures.telecharger_pieces_jointes"
 
     def get(self, request, pk):
         piece = get_object_or_404(
             PieceJointe.objects.select_related("candidature__departement"), pk=pk
         )
         if _est_responsable(request.user):
-            if not request.user.membre or piece.candidature.departement != request.user.membre.departement:
+            if not request.user.personnel or piece.candidature.departement != request.user.personnel.departement:
                 raise PermissionDenied
 
-        file_path = Path(settings.FICHIERS_PRIVES_ROOT) / piece.fichier.name
+        file_path = Path(piece.fichier.path)
         if not file_path.exists():
             raise Http404("Fichier introuvable.")
 
@@ -480,7 +548,7 @@ class _DecisionView(RoleRequisMixin, View):
             pk=pk,
         )
         user = self.request.user
-        if not user.membre or cand.departement != user.membre.departement:
+        if not user.personnel or cand.departement != user.personnel.departement:
             raise PermissionDenied
         return cand
 
