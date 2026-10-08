@@ -49,7 +49,7 @@ services:
       start_period: 20s      
 
   nginx:
-    image: nginx:alpine
+    image: nginx:1.31.5-alpine
     container_name: nginx_container
     restart: unless-stopped
     ports:
@@ -64,7 +64,7 @@ services:
       - serein_network
 
   pgadmin:
-    image: dpage/pgadmin4:latest
+    image: dpage/pgadmin4:9.18
     container_name: pgadmin_container
     restart: unless-stopped
     environment:
