@@ -21,8 +21,7 @@ staticfiles/
 media/
 fichiers_prives/
 
-# Docker
-.dockerignore
+
 
 # IDE
 .vscode/
